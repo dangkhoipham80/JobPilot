@@ -352,6 +352,96 @@ class OutcomeStats(BaseModel):
     offer_rate: float | None = None
 
 
+class OutcomeBucketOut(BaseModel):
+    """One source, channel or level, and how its applications actually went.
+
+    ``reply_rate``/``interview_rate`` are ``None`` whenever ``thin`` is true —
+    below ``analytics.outcomes.MIN_SAMPLE`` sent applications the bucket carries
+    counts only. Render ``n={sent}`` in that case; do not divide these yourself,
+    which would put back exactly the percentage the suppression exists to
+    prevent.
+    """
+
+    key: str
+    sent: int
+    answered: int
+    interviewed: int
+    offered: int
+    reply_rate: float | None = None
+    interview_rate: float | None = None
+    thin: bool = True
+
+
+class OutcomeSplitOut(BaseModel):
+    """Buckets for one dimension, plus how much of the corpus carried it."""
+
+    rows: list[OutcomeBucketOut]
+    covered: int
+    total: int
+    note: str = ""
+
+
+class ReplyTimingOut(BaseModel):
+    """How long an answer takes, over the applications that got one.
+
+    ``still_waiting`` and ``undated`` are **excluded** from the median rather
+    than folded in. An application nobody has answered yet is not a slow reply,
+    and counting it as "so far N days" would make the number drift worse every
+    day nothing happens.
+    """
+
+    answered: int
+    still_waiting: int
+    undated: int
+    median_days: float | None = None
+    fastest_days: float | None = None
+    slowest_days: float | None = None
+    thin: bool = True
+
+
+class RepeatPostingOut(BaseModel):
+    """An ad that keeps coming back. A signal for a human, not a verdict.
+
+    Two openings with the same title at one company are ordinary hiring. This
+    row reports the shape — how many distinct postings, over how many days — and
+    deliberately avoids the word "ghost", which the available evidence cannot
+    support.
+
+    ``span_days`` is ``None``, not ``0``, when fewer than two postings carry a
+    date: an unknown spread is not a same-day spread.
+    """
+
+    company: str
+    title: str
+    postings: int
+    sources: list[str]
+    first_posted: str | None = None
+    last_posted: str | None = None
+    span_days: int | None = None
+    undated_postings: int = 0
+
+
+class RepeatPostingsOut(BaseModel):
+    """Repeat groups, with the cap declared so a trimmed list can say so."""
+
+    rows: list[RepeatPostingOut]
+    total_groups: int
+    shown: int
+    min_postings: int
+
+
+class OutcomeAnalyticsOut(BaseModel):
+    """"Which source is worth crawling again?" — PLAN.md §9.1 slot 20."""
+
+    min_sample: int
+    total_sent: int
+    by_source: OutcomeSplitOut
+    by_channel: OutcomeSplitOut
+    by_level: OutcomeSplitOut
+    timing: ReplyTimingOut
+    repeats: RepeatPostingsOut
+
+
 class BackendStatsOut(BaseModel):
     """What one (task, provider, model) combination has cost and delivered.
 

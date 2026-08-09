@@ -14,6 +14,7 @@ from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.schemas import (
     LlmStatsOut,
     ModelOptionOut,
+    OutcomeAnalyticsOut,
     OutcomeStats,
     ProviderSpendOut,
     StatsOut,
@@ -62,6 +63,24 @@ def stats(db: Session = Depends(get_db)) -> StatsOut:
         # happens after that (Phase 18).
         outcomes=OutcomeStats(**outcome_counts(db)),
     )
+
+
+@router.get("/stats/outcomes", response_model=OutcomeAnalyticsOut)
+def outcome_analytics_route(db: Session = Depends(get_db)) -> OutcomeAnalyticsOut:
+    """Outcomes cut by source, channel and level (PLAN.md §9.1 slot 20).
+
+    Separate from ``/stats`` for the same reason ``/stats/llm`` is: this one
+    answers "which board should I crawl again", and folding it into the funnel
+    payload would make every dashboard poll pay for a scan of the whole event
+    log to render a number most page loads don't show.
+
+    Not paginated on purpose — it is an aggregate, not a list. The one part with
+    an unbounded row count, ``repeats``, carries its own ``total_groups`` so a
+    capped list can say what it dropped.
+    """
+    from jobpilot.analytics.outcomes import outcome_analytics
+
+    return OutcomeAnalyticsOut(**outcome_analytics(db))
 
 
 #: A provider's dated snapshot suffix — ``claude-haiku-4-5-20251001``.

@@ -23,6 +23,7 @@ import type {
   Settings,
   LlmStats,
   MarketReport,
+  OutcomeAnalytics,
   Page,
   PageQuery,
   Stats,
@@ -74,6 +75,10 @@ const cvPath = (scope: string) => `/cv/${encodeURIComponent(scope)}`;
 
 export const api = {
   stats: () => req<Stats>("/stats"),
+  /* Which source is worth crawling again (PLAN.md §9.1 slot 20). Its own
+     request rather than folded into /stats: it scans the whole event log, and
+     most dashboard polls never render it. */
+  outcomeAnalytics: () => req<OutcomeAnalytics>("/stats/outcomes"),
   market: () => req<MarketReport>("/analytics/market"),
   llmStats: (live = false) => req<LlmStats>(`/stats/llm${live ? "?live=true" : ""}`),
   jobs: (query: JobsQuery = {}) => req<Page<Job>>(`/jobs${qs(query as Record<string, unknown>)}`),

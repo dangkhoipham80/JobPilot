@@ -130,8 +130,23 @@ make dev
 ## Trạng thái hiện tại
 
 Roadmap `PLAN.md §9` **đã xong** (Phase 0 → 15); roadmap mở rộng **§9.1 (Phase 18 → 25)** đang
-chạy — 18–20c xong. Nhật ký chi tiết từng phase nằm ở **`PHASES.md`**: đọc phần tương ứng trước
-khi đụng vào một vùng code lần đầu. Mục "Nợ kỹ thuật" bên dưới là phần **còn đang áp dụng**.
+chạy. Nhật ký chi tiết từng phase nằm ở **`PHASES.md`**: đọc phần tương ứng trước khi đụng vào
+một vùng code lần đầu. Mục "Nợ kỹ thuật" bên dưới là phần **còn đang áp dụng**.
+
+⚠️ **Số phase bị trùng — đọc kỹ trước khi kết luận "phase nào tiếp".** Bảng bên dưới ghi theo
+`PHASES.md`, mà `PHASES.md` đã **mượn** số 20/20b/20c (model backend) và 21 (trang `/market`)
+cho việc khác với thứ `PLAN.md §9.1` cấp cho các ô đó. Đối chiếu thật với code:
+
+| Ô §9.1 | Việc | Tình trạng |
+|---|---|---|
+| 18, 19 | outcome tracking, inbox sync | ✅ xong |
+| **20** | **Analytics thật** — reply/interview rate theo **nguồn·kênh·level**, time-to-first-reply, tin đăng lại | 🔨 đang làm |
+| **21** | **LLM ranking 2 tầng + dealbreaker** | ❌ **chưa ai làm** — đừng nhầm với `/market` |
+| 22–25 | drafter–reviewer, cắt CV 2 trang, interview prep, upskill | ❌ chưa |
+
+`/market` (bảng dưới ghi "21") mô tả **thị trường từ corpus đã crawl**; ô 20 của §9.1 đo **hiệu
+quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase mới thì **tham chiếu theo ô §9.1**,
+đừng phát thêm số nguyên mới.
 
 | Phase | Nội dung | Code |
 |---|---|---|
