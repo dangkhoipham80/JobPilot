@@ -341,8 +341,7 @@ gemini**, mặc định `claude`, chọn **theo từng việc**. Kèm theo:
 - **Không chặn tier nào, nhưng cảnh báo rõ.** Chỉ Gemini free tier train trên input; Anthropic,
   OpenAI và Gemini trả tiền thì không. `llm.gemini_paid_tier` + `llm.warnings()`.
 - **Đo, đừng đoán.** Bảng `llm_calls` ghi mọi round; `GET /stats/llm`, `jobpilot llm stats`,
-  `jobpilot llm bench` biến phép đo thủ công của Phase 20 thành một lệnh. Mốc để so vẫn là
-  `qwen2.5:7b`: classify **5/5**, tailor **0/4**.
+  `jobpilot llm bench` biến phép đo thủ công của Phase 20 thành một lệnh.
 
 Cái đánh đổi, ghi thẳng: `classify` từng chạy local và thư nhà tuyển dụng **không rời khỏi
 máy**; giờ nó đi qua API. Phần vẫn đúng: thư không khớp đơn nào vẫn dừng trong máy.
@@ -352,10 +351,6 @@ có test ghim; (2) **đổi model từ Web** — trang `/models` chọn provider
 dashboard giá / chất lượng / độ trễ và credit đã dùng-còn lại; (3) **mặc định model rẻ nhất mà vẫn
 hiệu quả**, chứng minh bằng `llm bench`. Lưu ý: "credit còn lại" **không** đọc được từ provider
 (endpoint chi phí đòi Admin key) — nó là ngân sách tự nhập trừ phần JobPilot tự đo.
-
-Nếu có ngày muốn thử lại local, Ollama có endpoint OpenAI-compatible
-(`localhost:11434/v1`) map `response_format` vào cùng grammar của `/api/chat` — tức **một
-entry trong `PROVIDERS` với `base_url` khác**, không phải viết lại một module.
 
 **Quyết định kiến trúc chốt trước, áp cho cả cụm 18–20:** outcome sống ở tầng
 `Application`, **không** thêm giá trị vào enum `job_status`. `JobStatus` mô tả vòng đời

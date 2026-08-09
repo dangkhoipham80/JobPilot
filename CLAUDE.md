@@ -20,7 +20,7 @@ Hai lớp:
 
 1. **Truthfulness**: khi tailor CV, KHÔNG bịa skill/kinh nghiệm/metric. Chỉ nhấn mạnh/diễn đạt lại dữ kiện có thật. Chi tiết: `SKILL.md §0`.
 2. **Human-in-the-loop**: mọi hành động gửi ra ngoài cần user Approve, trừ kênh **email** đã bật rõ. **Không** auto-apply LinkedIn. **Không** scrape LinkedIn.
-3. **Không commit thông tin cá nhân**: Master CV (tên, email, SĐT, học vấn, kinh nghiệm…) sống trong bảng `cv_versions` của Postgres và đi ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
+3. **Không commit thông tin cá nhân**: Master CV sống trong bảng `cv_versions` của Postgres, ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
 4. **Không ghi đè Master CV**: bản tailored sinh ra ở `out/cv/<scope>/`, Master trong DB giữ nguyên.
 5. **Tôn trọng ToS/robots.txt/rate-limit** khi crawl. Site nào fail thì log + chạy tiếp, không retry vô hạn.
 6. **Secrets**: mọi token (Slack, Claude API, email) đặt trong `.env` (đã gitignore). Không log, không commit token, không commit `jobpilot.db`.
@@ -30,21 +30,14 @@ Hai lớp:
 Triển khai theo phase trong `PLAN.md §9`. **Mỗi phase là một vòng khép kín:**
 
 1. **Implement** trọn vẹn 1 phase (theo scope PLAN.md), verify chạy được (không chỉ dựa test).
-2. **Summary for review** — xuất một tóm tắt chuẩn, gồm:
-   - *Scope*: phase nào, mục tiêu.
-   - *Changes*: danh sách file thêm/sửa + vai trò.
-   - *Key decisions*: quyết định kỹ thuật + lý do.
-   - *How to verify*: lệnh chạy thử + kết quả kỳ vọng.
-   - *Risks / follow-ups*: điểm cần lưu ý, nợ kỹ thuật.
-3. **Review gate** — chạy subagent `phase-reviewer` (định nghĩa ở
-   `.claude/agents/phase-reviewer.md`) trên diff, kèm summary ở bước 2 làm context.
-   Nó review **độc lập** trên `git diff` thật, không chỉ đọc summary — và nó biết
-   các bẫy đã trả giá của repo (đọc `PHASES.md` + checklist trong định nghĩa agent).
-   - ✅ **APPROVE** → trình verdict cho user, sang bước 4.
-   - ❌ **CHANGES REQUESTED** → sửa theo finding, quay lại bước 2 (không push).
-   - Reviewer **không tự sửa code** và **không tự push** — nó chỉ ra verdict;
-     quyền quyết định vẫn ở user.
-4. **Push git** — commit (message theo Conventional Commits) + push. Chỉ push **sau khi review approve và user đồng ý**.
+2. **Summary for review** — *Scope* (phase nào, mục tiêu) / *Changes* (file thêm/sửa + vai trò) /
+   *Key decisions* (quyết định + lý do) / *How to verify* (lệnh + kết quả kỳ vọng) /
+   *Risks / follow-ups*.
+3. **Review gate** — chạy subagent `phase-reviewer` trên diff, kèm summary bước 2 làm context.
+   Nó review **độc lập** trên `git diff` thật, không chỉ đọc summary, và **không tự sửa code,
+   không tự push** — chỉ ra verdict, quyền quyết định vẫn ở user.
+   ✅ **APPROVE** → sang bước 4. ❌ **CHANGES REQUESTED** → sửa theo finding, quay lại bước 2.
+4. **Push git** — commit (Conventional Commits) + push. Chỉ push **sau khi review approve và user đồng ý**.
 5. **Tiếp phase sau.**
 
 Ràng buộc:
@@ -77,12 +70,10 @@ uvicorn jobpilot.api.main:app --reload   # API backend (REST + WebSocket) tại 
 cd web && npm run dev               # Web Dashboard (Vite) tại :5173  ← control plane chính
 python -m jobpilot.cli crawl        # crawl các nguồn đang bật → Postgres
 python -m jobpilot.cli crawl --query "java spring" --limit 50   # scope 1 lần chạy
-                                    # query NGẮN thôi: nó thành slug/từ khoá ở từng
-                                    # site, "java spring boot backend" → TopCV 0 job.
-                                    # limit > 1 trang thì `crawl.max_pages` quyết định
-                                    # đi thêm bao nhiêu trang (mặc định 5).
-                                    # (hoặc dùng card "Crawl setup" ở trang Runs: chọn nguồn,
-                                    #  gõ từ khoá — có gợi ý lấy từ Master CV — rồi Crawl now)
+                                    # query NGẮN thôi: nó thành slug ở từng site,
+                                    # "java spring boot backend" → TopCV 0 job.
+                                    # `crawl.max_pages` (mặc định 5) quyết định đi thêm
+                                    # bao nhiêu trang. Hoặc dùng card "Crawl setup" ở trang Runs.
 python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích cho job cũ (idempotent)
 python -m jobpilot.cli backfill --force   # tính lại cả row đã có — dùng sau khi SỬA parser
 python -m jobpilot.cli cv seed      # tạo Master CV rỗng nếu chưa có (idempotent)
@@ -96,8 +87,8 @@ python -m jobpilot.cli apply <job_id> --open-portal   # portal: mở browser pre
 python -m jobpilot.cli confirm-submit <job_id>    # xác nhận đã tự nộp xong (portal/external)
 python -m jobpilot.cli llm providers # provider nào đang chạy việc gì, có key chưa, terms ra sao
 python -m jobpilot.cli llm stats    # chi phí / tỉ lệ qua guardrail lần đầu / độ trễ, theo backend
-python -m jobpilot.cli llm bench --task classify  # chấm trên 5 email có đáp án (mốc qwen2.5:7b = 5/5)
-python -m jobpilot.cli llm bench --task tailor    # chạy 4 job thật, đếm plan qua guardrail (mốc = 0/4)
+python -m jobpilot.cli llm bench --task classify  # chấm trên 5 email có đáp án
+python -m jobpilot.cli llm bench --task tailor    # chạy 4 job thật, đếm plan qua guardrail
 python -m jobpilot.cli slack        # (tùy chọn) Slack Bolt — kênh phụ; cần API đang chạy
 pytest jobpilot/tests               # test
 # tất cả trong 1 lệnh:
@@ -115,7 +106,7 @@ make dev
 - **State**: **Postgres là nguồn sự thật duy nhất**; mọi thay đổi trạng thái đi qua API backend (Web và Slack cùng gọi API → không lệch state). Orchestrator idempotent (chạy lại không hỏng). Đẩy update realtime qua WebSocket (web) + update message (Slack).
 - **Web/Frontend**: React + Vite + TS + TailwindCSS + shadcn/ui; charts theo skill `dataviz`, UI theo skill `frontend-design` (palette nhất quán light/dark, có cá tính riêng). Bind `localhost`, không expose ra ngoài. DB migrations bằng Alembic — đổi schema phải tạo migration, không sửa tay.
 - **CV inline markup**: text trong `CvDocument` **không bao giờ** chứa LaTeX thô. Dùng subset markdown: `**bold**` → `\textbf`, `` `x` `` → `\tech`, `~x~` → `\techfe`, `[label](url)` → `\hreficon`. Mọi thứ còn lại được escape (`jobpilot/cv/latex.py`). Agent tailor (Phase 5) phải xuất đúng subset này.
-- **CV data flow (quan trọng)**: nguồn sự thật của nội dung CV là **JSON structured** (CV Studio + agent tailor cùng dùng) → serialize ra `.tex` qua Jinja2 → Docker build PDF. Không sửa `.tex` tailored bằng tay ngoài luồng này (trừ raw-mode trong Studio, có cảnh báo mất round-trip). Mọi lần save = 1 row `cv_versions` (author = user|agent).
+- **CV data flow (quan trọng)**: nguồn sự thật là **JSON structured** (CV Studio + agent tailor cùng dùng) → serialize ra `.tex` qua Jinja2 → Docker build PDF. Không sửa `.tex` tailored bằng tay ngoài luồng này (trừ raw-mode trong Studio, có cảnh báo mất round-trip). Mọi lần save = 1 row `cv_versions` (author = user|agent).
 - **Verify thay đổi runtime**: sau khi sửa scraper/tailor/apply, chạy thử flow tương ứng và quan sát output thật, đừng chỉ dựa vào test. Sau khi sửa template Jinja2 hoặc `cv/latex.py` phải build lại PDF để chắc không lỗi LaTeX.
 
 ## LinkedIn qua Job Alerts (không crawl)
@@ -139,14 +130,12 @@ LinkedIn, không tài khoản nào bị ban.
    (hoặc bấm trên trang Settings).
 5. `python -m jobpilot.cli run` — hoặc bấm **Crawl now** ở trang Runs.
 
-**Giới hạn thật:** mail alert có title/company/location nhưng **không có JD đầy đủ**.
-Job vào DB với cờ `needs_jd`; mở trang job, dán JD vào rồi mới tailor — nếu không
-agent chẳng có gì để bám. Kênh apply luôn là `external`: bạn tự nộp trên LinkedIn.
+**Giới hạn thật:** mail alert có title/company/location nhưng **không có JD đầy đủ**. Job vào DB
+với cờ `needs_jd`; mở trang job, dán JD vào rồi mới tailor. Kênh apply luôn là `external`.
 
-**Đã verify trên mail thật** (1.116 alert trong hộp thư): parser đọc đúng title/company/
-location/job-id. Hai bug chỉ lộ ra khi chạy thật, đã sửa + có test giữ:
-LinkedIn để **company và location trên CÙNG một dòng** ngăn bằng `·` (không phải 2 dòng),
-và dòng social proof (`34 company alumni`, `4 connections`) lọt vào `location`.
+**Đã verify trên mail thật** (1.116 alert). Hai bẫy parser đã sửa + có test giữ: company và
+location nằm **cùng một dòng** ngăn bằng `·`, và dòng social proof (`4 connections`) lọt vào
+`location`.
 
 **Đường thứ hai:** nút **Add job** ở trang Jobs — dán thẳng link + JD. Dùng cho job
 thấy ngoài alert. Link LinkedIn cho ra id ổn định nên dán lại cùng link sẽ *update*
@@ -159,10 +148,10 @@ chứ không tạo bản trùng.
 
 0. **Đọc `robots.txt` TRƯỚC KHI viết code** (nguyên tắc 5). Nếu site cấm trang job
    thì dừng — không có cách nào "lách" cho hợp lệ (xem LinkedIn ở trên).
-1. **Tìm `<script type="application/ld+json">` có `@type: JobPosting` trước đã.**
-   TopCV và VietnamWorks đều có, và đó là target tốt nhất: JD đầy đủ, `datePosted`
-   tuyệt đối, và site có động lực giữ nó đúng (Google Jobs index dựa vào đó) —
-   mạnh hơn mọi động lực giữ tên class CSS. Dùng `crawler/jsonld.py`, không viết lại.
+1. **Tìm `<script type="application/ld+json">` có `@type: JobPosting` trước đã.** TopCV và
+   VietnamWorks đều có, và đó là target tốt nhất: JD đầy đủ, `datePosted` tuyệt đối, và site có
+   động lực giữ nó đúng (Google Jobs index dựa vào đó) — mạnh hơn động lực giữ tên class CSS.
+   Dùng `crawler/jsonld.py`, không viết lại.
 2. Tạo `crawler/<site>.py` kế thừa `BaseScraper`: `search_url()` + `parse_search()`
    + `parse_detail()`, tất cả **thuần** (HTML string → data, không network).
 3. Nhận diện field **theo giá trị**, dùng `crawler/vietnam.py` (city / "thoả thuận"
@@ -175,16 +164,14 @@ chứ không tạo bản trùng.
 7. Đăng ký trong `crawler/registry.SCRAPERS` + 1 dòng `config.yaml`.
 8. **Crawl thật một lần** rồi đọc output — test xanh không có nghĩa là parser đúng.
 
-**Nguồn có feed chính thức (RSS/JSON) thì kế thừa `crawler/feed.FeedScraper`**, đừng
-viết lại: nó set `needs_detail = False` (feed đã có JD đầy đủ → 25 job = 1 request,
-không phải 26), chọn `HttpFetcher` thay vì browser, và lo phần lọc theo query ở
-`matches_query` (feed không có search phía server). Lọc theo **title + tag của site**,
-không bao giờ theo JD — JD nào cũng nhắc nửa ngành công nghệ ở mục "nice to have".
+**Nguồn có feed chính thức (RSS/JSON) thì kế thừa `crawler/feed.FeedScraper`**, đừng viết lại:
+nó set `needs_detail = False` (feed đã có JD đầy đủ → 25 job = 1 request, không phải 26), chọn
+`HttpFetcher` thay vì browser, và lo phần lọc query ở `matches_query`. Lọc theo **title + tag của
+site**, không bao giờ theo JD — JD nào cũng nhắc nửa ngành công nghệ ở mục "nice to have".
 
-**Đọc HẾT `robots.txt`, đừng `head -40`.** Jobicy để `Disallow: /api/` ở **dòng 48**;
-40 dòng đầu trông rất thoáng. Cách duy nhất đáng tin là chạy chính
-`RobotsPolicy(DEFAULT_USER_AGENT).allowed(url)` — nó parse cả file, và nó là thứ
-sẽ chặn lúc crawl thật.
+**Đọc HẾT `robots.txt`, đừng `head -40`.** Jobicy để `Disallow: /api/` ở **dòng 48**; 40 dòng đầu
+trông rất thoáng. Cách đáng tin duy nhất là chạy `RobotsPolicy(DEFAULT_USER_AGENT).allowed(url)`
+— nó parse cả file, và nó là thứ sẽ chặn lúc crawl thật.
 
 ### Nguồn tier-2 đã loại (đừng kiểm tra lại từ đầu)
 
@@ -193,20 +180,16 @@ sẽ chặn lúc crawl thật.
 | **Remotive** | `robots.txt`: `Disallow: /api/*` — mà API là đường duy nhất dùng được. |
 | **Jobicy** | `robots.txt` dòng 48: `Disallow: /api/`. Filter `tag=` chạy rất tốt, `appliedFilters` còn echo lại — nhưng robots cấm thì dừng (nguyên tắc 5). |
 | **RemoteOK** | `Content-Signal: ai-train=no, use=reference` + `User-agent: ClaudeBot → Disallow: /`. **Giống hệt TopDev** → cần một quyết định rõ ràng, không mặc định làm. |
-| **Himalayas** | robots OK, nhưng API **bỏ qua mọi filter** (thử `q`/`search`/`keyword`/`skill`/`category`/`title` → `totalCount` y hệt 96.394 và cùng job đầu) và **âm thầm cắt `limit` xuống 20**. Feed newest-first đủ mọi ngành: 2/20 title là phần mềm → crawl "thành công" và giao job bác sĩ X-quang. |
+| **Himalayas** | robots OK, nhưng API **bỏ qua mọi filter** (mọi tên param → `totalCount` y hệt 96.394, cùng job đầu) và **âm thầm cắt `limit` xuống 20**. Feed newest-first đủ mọi ngành: 2/20 title là phần mềm → crawl "thành công" và giao job bác sĩ X-quang. |
 
 Bài học chung: một API trả 200 kèm filter bị bỏ qua **nguy hiểm hơn** một API trả lỗi.
 Nếu response có field kiểu `appliedFilters` thì **check nó**, đừng tin.
 
 ## Trạng thái hiện tại
 
-Roadmap `PLAN.md §9` **đã xong** (Phase 0 → 15), và roadmap mở rộng **`PLAN.md §9.1`
-(Phase 18 → 25)** đang chạy — Phase 18–20b xong, tiếp theo là **analytics thật** (ô "20"
-trong bảng §9.1; hai phase model backend dùng nhờ số 20 nên analytics vẫn còn nợ).
-Nhật ký chi tiết từng phase — scope,
-quyết định kỹ thuật, và các bug chỉ lộ ra khi chạy thật — nằm ở **`PHASES.md`**. Đọc
-phần tương ứng trong đó trước khi đụng vào một vùng code lần đầu; mục "Nợ kỹ thuật"
-ngay bên dưới là phần **còn đang áp dụng**, đủ cho việc thường ngày.
+Roadmap `PLAN.md §9` **đã xong** (Phase 0 → 15); roadmap mở rộng **§9.1 (Phase 18 → 25)** đang
+chạy — 18–20c xong. Nhật ký chi tiết từng phase nằm ở **`PHASES.md`**: đọc phần tương ứng trước
+khi đụng vào một vùng code lần đầu. Mục "Nợ kỹ thuật" bên dưới là phần **còn đang áp dụng**.
 
 | Phase | Nội dung | Code |
 |---|---|---|
@@ -229,21 +212,17 @@ ngay bên dưới là phần **còn đang áp dụng**, đủ cho việc thườ
 | 17 | Cover letter ra `.tex` → PDF, đính kèm email; text vẫn là bản chính | `apply/letter_pdf.py`, migration 0006 |
 | 18 | Chuyện gì xảy ra **sau** khi nộp: replied/interview/offer/rejected + lịch sử | `apply/outcome.py`, migration 0007 |
 | 19 | Đọc thư NTD → **đề xuất** outcome, user bấm mới ghi | `apply/inbox.py`, migration 0008 |
-| 20 | Chạy model **trên máy mình** (Ollama) — chọn provider theo từng việc | ~~`llm/ollama.py`~~ (gỡ ở 20b) |
+| 20 | Thử model chạy local — **đã gỡ ở 20b**, chỉ còn là lịch sử trong `PHASES.md` | — |
 | 20b | Một tầng provider: claude/openai/gemini, cảnh báo dữ liệu, **đo chi phí + chất lượng** | `llm/`, migration 0009, `llm/stats.py` |
 | 21 | Trang **/market**: nghiên cứu thị trường từ corpus đã crawl + trích lương/skill/city | `analytics/`, `crawler/salary.py`, `skills.py` |
 | 20c | Trang **/models**: chọn model theo việc, dashboard giá + credit đã dùng/còn, scrub key | `web/src/pages/Models.tsx`, `llm/redact.py` |
 
-637 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**
-(0009 up→down→up sạch), 8 trang web, Docker LaTeX build (Master + tailored), crawl 6+ nguồn
-qua API + Postgres, `llm_calls` ghi/đọc qua Postgres thật + `GET /stats/llm` + `llm bench`.
-**Đã gọi thật cả ba provider thành công** (Claude, Gemini; OpenAI qua key trong `.env`) —
-classify 5/5 trên 6 model, tailor **2/2 qua guardrail vòng đầu** trên job thật. Trang `/models`
-đã chụp thật ở cả light/dark, console sạch, đổi model từ UI ghi xuống `config.local.yaml` và
-lệnh CLI chạy đúng backend mới.
-**Cả ba provider đã chạy thật cho cả schema phẳng (`MailVerdict`) lẫn schema lồng (`TailorPlan`)**,
-kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã gỡ; `llm providers` và trang
-`/models` không còn cảnh báo shadow.
+690 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
+`GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
+(`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
+6 model, tailor 2/2 qua guardrail vòng đầu. Trang `/models` đổi model từ UI ghi xuống
+`config.local.yaml` và CLI chạy đúng backend mới.
 
 **Bài học xuyên suốt** (ca cụ thể ở `PHASES.md`):
 - **Test xanh không chứng minh parser đúng.** Mỗi phase crawl đều có bug chỉ lộ ra khi
@@ -276,53 +255,45 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 - **Đo, đừng đoán.** Mọi lượt gọi ghi một row `llm_calls` (**kể cả lượt bị guard từ chối, kể cả
   lượt gọi hỏng**). Đọc bằng `GET /stats/llm` hoặc `jobpilot llm stats`. `jobpilot llm bench
   --task classify|tailor` chạy lại đúng phép đo của Phase 20 (5 email có đáp án / 4 job thật).
-  Mốc `qwen2.5:7b` để so: classify **5/5**, tailor **0/4**.
 - **Mẫu nhỏ thì hiện `n=<count>`, không hiện %.** `llm/stats.MIN_SAMPLE`. 3 lượt 2 lỗi không
   phải "33%", nó là 3 lượt — và tỉ lệ thì mời người ta so sánh hai backend trên 3 lượt.
 - **`cost_usd = NULL` khác `0.00`.** Model không có trong `llm/pricing.PRICES` thì không đoán
   giá; `unpriced_rounds` đi kèm mọi tổng, để một tổng dựng từ nửa số row không bị đọc như dựng
   từ tất cả. Bảng giá có `CHECKED_ON` — nó **sẽ** cũ đi.
 - **Chỉ một ô cần cảnh báo: Gemini free tier.** Anthropic / OpenAI / Gemini **trả tiền** đều
-  không train trên input API. Gemini **unpaid** thì có, và điều khoản ghi thẳng *"Do not submit
+  không train trên input API; Gemini **unpaid** thì có, và điều khoản ghi thẳng *"Do not submit
   sensitive, confidential, or personal information"* — trong khi `tailor`/`letter` gửi **cả
-  Master CV** (`prompt.py:system_prompt`). Không đọc được tier từ API key, nên có
-  `llm.gemini_paid_tier`. `llm.warnings()` **cảnh báo, không chặn** — quyền là của user.
+  Master CV**. Không đọc được tier từ API key nên có `llm.gemini_paid_tier`; `llm.warnings()`
+  **cảnh báo, không chặn** — quyền là của user.
 - **`llm.blocker(task)` kiểm tra key, không kiểm tra credit.** Key hỏng hay hết tiền chỉ biết
   bằng cách tiêu một request; giả vờ ngược lại chỉ là cách sai chậm hơn. Nó nằm trong
   `get_engine()` của route (không nằm trong route body) để test tự cấp engine không bị đòi key —
   đúng cái bẫy `test_missing_tokens_produce_a_readable_error` đã dính.
-- **Telemetry không bao giờ được làm hỏng việc nó đo.** `usage.record` ghi hai lần: có link
-  job/application, rồi nếu vỡ thì không link. Bản đầu nuốt lỗi im lặng và **mất sạch** row của
-  `llm bench` vì FK — chỉ lộ ra khi chạy thật, đúng thứ mà "nuốt lỗi" che đi.
-- **Prompt phải nói ra thứ schema đã ngầm định.** `section_order` để rỗng = giữ nguyên; outline
-  in `type=` nhưng phải giải thích kiểu nào dùng field nào. `retry_prompt` phải nhắc lại **đúng
-  luật vừa vỡ** (`_REMEDIES`) — bản cũ khuyên về index/summary trong khi cái vỡ là `section_order`.
+- **Telemetry không bao giờ được làm hỏng việc nó đo.** `usage.record` thử ghi có link
+  job/application, vỡ thì ghi lại không link. Bản đầu nuốt lỗi im lặng và **mất sạch** row của
+  `llm bench` vì FK.
+- **Prompt phải nói ra thứ schema đã ngầm định** (`section_order` rỗng = giữ nguyên; kiểu nào
+  dùng field nào). `retry_prompt` phải nhắc lại **đúng luật vừa vỡ** (`_REMEDIES`).
 - **Ba luật chốt cho model backend (user đặt, không tự đổi):** (1) **không được leak API key** —
   đây là rủi ro, không phải chi tiết; (2) **model phải đổi được từ Web** (trang `/models`: chọn
   provider+model cho từng việc, dashboard giá/chất lượng/độ trễ, credit đã dùng/còn lại);
   (3) **mặc định dùng model rẻ nhất mà vẫn hiệu quả**, chứng minh bằng `llm bench` chứ không đoán.
 - **Scrub key ở chỗ *tạo ra* lỗi, không phải ở từng nơi lỗi đi tới.** `llm/redact.py` gọi từ
-  `LlmError.__init__` + `CallLog`. Lý do rất cụ thể: key sai thì provider **trích lại key** trong
-  message (`Incorrect API key provided: sk-proj-…`), và chuỗi đó đi thẳng vào `llm_calls.error`,
-  ra CLI, ra API. Thêm `log.warning` nào mang exception của SDK thì cũng phải `redact()`.
-  Có test ghim: field nào **tên** giống secret **và** kiểu string thì không được xuất hiện trong API.
+  `LlmError.__init__` + `CallLog`: key sai thì provider **trích lại key** trong message
+  (`Incorrect API key provided: sk-proj-…`) và chuỗi đó đi thẳng vào `llm_calls.error`, ra CLI,
+  ra API. `log.warning` nào mang exception của SDK cũng phải `redact()`.
 - **"Credit còn lại" KHÔNG lấy được từ provider.** Anthropic/OpenAI/Google đều đòi **Admin key**
   cho endpoint chi phí (đã thử, cả ba trả 401). Nên nó là `llm.budget_usd` (tự nhập) trừ đi phần
   **JobPilot tự đo** — là bộ đếm ngân sách, không phải số dư tài khoản, và UI phải nói đúng thế.
 - **Mặc định hiện tại: `classify` = `openai/gpt-4o-mini`** (10 lượt, 100% đúng, rẻ nhất **và**
-  nhanh nhất). `tailor`/`letter` giữ `claude-opus-4-8`.
-- **Bài học về chính bộ đo này: n=5 đã cho kết luận SAI.** Ở 5 lượt `gemini-3.1-flash-lite` trông
-  nhanh nhất (p50 **705ms**); lên 10 lượt p50 thành **2732ms**, còn `gpt-4o-mini` 1101ms — đảo
-  ngược cả "rẻ nhất" lẫn "nhanh nhất". Đúng là lý do `MIN_SAMPLE` tồn tại, và nó vừa bắt được
-  chính người viết ra nó. **Đừng chốt model khi cột tỉ lệ còn hiện `n=<count>`.**
-- **Mọi model đã thử đều 5/5 trên bộ classify** ⇒ với việc này phân biệt bằng **giá + độ trễ**,
-  không phải độ chính xác: `gpt-4o-mini`, `gpt-4.1-mini`, `gemini-3.1-flash-lite`,
-  `gemini-3.5-flash-lite`, `claude-haiku-4-5`, `gpt-4.1`, `gemini-3.5-flash` (đắt nhất — thinking
-  token tính giá output).
-- **`tailor` đã chạy thật trên hai backend**: `claude-opus-4-8` **2/2** qua guardrail vòng đầu
-  (~$0.10/lượt, ~39s); `gpt-4.1` **1/1** vòng đầu (~$0.016/lượt, ~9s) — rẻ hơn ~6×, nhanh hơn ~4×.
-  **Chưa đổi**: guardrail chỉ bắt *bịa*, không bắt "đúng sự thật nhưng xếp hạng dở", nên tailor
-  phải chấm bằng mắt ở trang CV Review; n=1 chưa phải bằng chứng.
+  nhanh nhất); `tailor`/`letter` giữ `claude-opus-4-8`. Mọi model đã thử đều 5/5 trên bộ classify
+  ⇒ việc này phân biệt bằng **giá + độ trễ**, không phải độ chính xác.
+- **Đừng chốt model khi cột tỉ lệ còn hiện `n=<count>`.** n=5 đã cho kết luận SAI một lần:
+  `gemini-3.1-flash-lite` p50 705ms ở 5 lượt → **2732ms** ở 10 lượt, đảo ngược cả "rẻ nhất" lẫn
+  "nhanh nhất". Đây là lý do `MIN_SAMPLE` tồn tại, và nó bắt được chính người viết ra nó.
+- **`tailor` rẻ hơn không có nghĩa là đổi được.** `gpt-4.1` qua guardrail vòng đầu với ~$0.016/lượt
+  so với ~$0.10 của `claude-opus-4-8`, nhưng guardrail chỉ bắt *bịa*, không bắt "đúng sự thật
+  nhưng xếp hạng dở" — tailor phải chấm bằng mắt ở trang CV Review trước khi đổi.
 - **`thinking` không bật cho mọi model được.** Haiku trả 400 *"adaptive thinking is not supported
   on this model"* ⇒ để nguyên là **chặn luôn cả tầng model rẻ**. Giờ registry tắt thinking cho
   `classify`, và client tự tắt + gọi lại một lần khi gặp đúng lỗi đó (không hardcode danh sách model).
@@ -331,15 +302,13 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
   chỉ là *menu*, `llm bench` mới là bằng chứng. Và khi so id thì phải **so theo prefix**:
   Anthropic liệt kê `claude-haiku-4-5-20251001` còn alias mình gọi là `claude-haiku-4-5` — so khớp
   chính xác từng đánh dấu nhầm model đang chạy tốt là "không khả dụng".
-- **Ollama đã gỡ (20b).** Đánh đổi có ý thức: `classify` từng chạy local 5/5 và thư nhà tuyển
-  dụng **không rời khỏi máy**; giờ nó đi qua API. Cái *vẫn* đúng: thư không khớp đơn nào vẫn
-  dừng trong máy. Muốn quay lại local thì Ollama có endpoint OpenAI-compatible
-  (`localhost:11434/v1`) map `response_format` vào cùng grammar — tức **một entry trong
-  `PROVIDERS` với `base_url` khác**, không phải viết lại module.
+- **Không chạy model local.** Mọi task LLM đi qua API của provider. Đánh đổi đã chấp nhận:
+  thư nhà tuyển dụng **đã khớp đơn** thì rời khỏi máy. Cái *vẫn* đúng: thư không khớp đơn nào
+  dừng lại trong máy (xem "Inbox sync" bên dưới).
 
 ### Market analytics (Phase 21) — đọc trước khi thêm biểu đồ
 
-- **Mỗi aggregate phải trả kèm `covered`/`total`.** `analytics/market.Facet`. Corpus này 57% là
+- **Mỗi aggregate phải trả kèm `covered`/`total`** (`analytics/market.Facet`). Corpus này 57% là
   LinkedIn, mà LinkedIn **không có** skill/lương/tag ⇒ biểu đồ không kèm mẫu số thì đang mô tả
   *mấy board chịu gắn tag* nhưng trông như mô tả *thị trường*. UI in "18 of 73 jobs", **không**
   in % trần trụi. Dưới `MIN_SAMPLE=8` thì có `note` cảnh báo.
@@ -348,10 +317,9 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 - **Facet là dữ liệu dẫn xuất, luôn nằm CẠNH giá trị thô** (`skills` vs `skills_canonical`,
   `salary` vs `salary_range`). Parser sai thì còn thứ để chạy lại — `backfill --force`.
 - **Ba nguồn nhiễu đã trả giá, cả ba cùng một dạng "trông như đúng":**
-  1. Tag của board xếp `+2` (badge tràn của card ITviec), `Vollzeit`, `Backend Developer`,
-     `IT Services and IT Consulting`, `India` ngang hàng với `Java`. Lọc bằng **pattern**
-     (`_ROLE_RE` khớp danh từ số ít ⇒ bỏ "software engineer", giữ "data engineering"), không
-     bằng blocklist dài mãi.
+  1. Tag của board xếp `+2` (badge tràn card ITviec), `Vollzeit`, `IT Services and IT Consulting`,
+     `India` ngang hàng với `Java`. Lọc bằng **pattern** (`_ROLE_RE` khớp danh từ số ít ⇒ bỏ
+     "software engineer", giữ "data engineering"), không bằng blocklist dài mãi.
   2. `Hà Nội` / `Ha Noi` / `Hanoi` thành **ba** cột, mỗi cột 1/3 số thật. `vietnam.canonical_city`
      fold ASCII (cùng cách `apply/inbox.fold` làm) rồi map alias.
   3. `"15tr - 25tr"` parse ra **15–15**: unit nằm giữa số và dấu gạch làm vỡ regex range, rơi
@@ -362,18 +330,16 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 - **Màu theo *việc* nó làm** (skill `dataviz`, đọc trước khi thêm chart). Mọi chart đếm job dùng
   chung hằng `MEASURE` trong `Market.tsx` — một measure một màu; tô 8 hue xuống 15 dòng là tô
   theo *thứ hạng*. Nominal (skill, city) một hue; ordinal (seniority) `ordinalRamp(n)` — ramp
-  **đổi bước theo n**, ép 6 bước vào dải light thì hai bước giữa thành cùng một xanh; histogram
-  **không** ramp (trục x đã mang thứ tự); quality dùng `STATUS` + icon + chữ, `undated` để **xám**
-  vì không biết ≠ hỏng. Palette mới thì **chạy `validate_palette.js`** với surface của app
-  (`#ffffff` / `#1a1a19`), đừng ước lượng bằng mắt. `SOURCE_ORDER` phải **đúng bằng số hue**.
+  **đổi bước theo n**; histogram **không** ramp (trục x đã mang thứ tự); quality dùng `STATUS` +
+  icon + chữ, `undated` để **xám** vì không biết ≠ hỏng. Palette mới thì **chạy
+  `validate_palette.js`** với surface thật của app, đừng ước lượng bằng mắt.
 - **Donut nguồn xếp lát theo slot palette, không theo số lượng.** Bộ 8 hue chỉ validate cho cặp
-  **kề nhau trong thứ tự slot**. Xếp theo count đo được **xám cạnh magenta ΔE 2.1 (deutan)** ở
-  dark; xếp theo slot thì cặp tệ nhất **ΔE 41**. Xếp hạng nằm ở legend, đọc bằng số. Nhích một
-  hue **không cứu được** (trần all-pairs của bộ dark = ΔE 4.7).
-- **`posting_calendar` dùng `posted_at`**, khác biểu đồ `by_day` của Deck (dùng `crawled_at` —
-  đo thói quen chạy crawler của mình, không đo thị trường). Nó phát ra **cửa sổ lịch 30 ngày
-  thật, zero-fill**, và đếm + khai số bài rơi ngoài cửa sổ. Bản đầu chỉ phát ra *ngày có bài*
-  nên hai điểm liền kề cách nhau khi 1 ngày khi 18 tháng — một trục thời gian không có thời gian.
+  **kề nhau trong thứ tự slot**: xếp theo count cho ra xám cạnh magenta **ΔE 2.1 (deutan)** ở dark,
+  xếp theo slot thì cặp tệ nhất **ΔE 41**. Xếp hạng nằm ở legend, đọc bằng số.
+- **`posting_calendar` dùng `posted_at`**, khác `by_day` của Deck (dùng `crawled_at` — đo thói
+  quen chạy crawler của mình, không đo thị trường). Nó phát ra **cửa sổ lịch 30 ngày thật,
+  zero-fill**, và khai số bài rơi ngoài cửa sổ. Bản đầu chỉ phát ra *ngày có bài* nên hai điểm
+  liền kề cách nhau khi 1 ngày khi 18 tháng — một trục thời gian không có thời gian.
 - **Token màu đưa vào SVG phải là màu.** `--ink-muted` lưu RGB channels cho Tailwind; nhét thẳng
   vào `fill` là thuộc tính không hợp lệ, **bị bỏ qua im lặng** → nhãn trục về gần đen: light mode
   vẫn đọc được nên không ai thấy, dark mode mất sạch. Dùng `axisColor()` / `gridColor()` /
@@ -385,11 +351,10 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 ### Inbox sync (Phase 19) — đọc trước khi đụng vào `apply/inbox.py`
 
 - **Thứ tự fetch → ghép cục bộ → LLM là thiết kế riêng tư, không phải tối ưu.** Thư không
-  thuộc đơn nào **dừng lại ngay trong máy**; chỉ thư đã khớp mới tới model. Đừng đảo thứ
-  tự, đừng "gửi hết cho model cho gọn" — có test ghim
-  (`test_unmatched_mail_is_never_handed_to_the_classifier`). Từ Phase 20b, thư **đã khớp**
-  luôn đi qua API của provider (không còn đường local), nên bước ghép cục bộ **là** phần bảo
-  vệ, và nó phải đứng trước.
+  thuộc đơn nào **dừng lại ngay trong máy**; chỉ thư đã khớp mới tới model. Đừng đảo thứ tự,
+  đừng "gửi hết cho model cho gọn" — có test ghim
+  (`test_unmatched_mail_is_never_handed_to_the_classifier`). Vì mọi task LLM đều đi qua API
+  provider, bước ghép cục bộ **là** phần bảo vệ và nó phải đứng trước.
 - **`quote` phải xuất hiện thật trong thư**, nếu không verdict bị loại và lưu status
   `unusable`. **Vẫn phải lưu** dù bị loại: không lưu thì lần sync sau thư đó lại "mới" và
   lại gọi Claude — trả tiền vô hạn cho một câu trả lời không bao giờ hiển thị.
@@ -405,9 +370,8 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 
 ### Outcome tracking (Phase 18) — đọc trước khi đụng vào số liệu
 
-- **`/stats` trả hai bộ đếm và chúng không thay thế nhau được.** `/stats` trả **hai**
-  bộ đếm và chúng **không** thay thế nhau được: `current` đếm theo `Application.outcome_stage`
-  (board đang hiện gì), `reached` đếm `COUNT(DISTINCT application_id)` trên
+- **`/stats` trả hai bộ đếm và chúng KHÔNG thay thế nhau được**: `current` đếm theo
+  `Application.outcome_stage` (board đang hiện gì), `reached` đếm `COUNT(DISTINCT application_id)` trên
   `application_events` chưa retract (đã từng tới chặng nào). **Mọi tỉ lệ phải dùng
   `reached`** — một đơn phỏng vấn 2 vòng rồi bị từ chối chỉ nằm ở `current["rejected"]`, nên
   tính interview rate theo `current` sẽ báo số đơn đang *kẹt* ở vòng phỏng vấn, một con số
@@ -418,8 +382,8 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
   `web/src/lib/statuses.ts` + funnel + `slack/events.py`. Job `SUBMITTED` vẫn `SUBMITTED` dù
   sau đó offer hay bị từ chối. Muốn thêm loại outcome mới thì thêm một chuỗi vào
   `apply/outcome.ALL_OUTCOMES` + `OutcomeType` bên Pydantic/TS — **không** cần migration.
-- **`ghosted` không tự suy ra theo bộ đếm ngày**, và outcome không bao giờ tự ghi. Phase 19
-  (inbox sync) cũng chỉ được *đề xuất*: mail vào → gợi ý → user bấm xác nhận mới ghi.
+- **`ghosted` không tự suy ra theo bộ đếm ngày**, và outcome không bao giờ tự ghi — inbox sync
+  cũng chỉ *đề xuất*: mail vào → gợi ý → user bấm xác nhận mới ghi.
 - **Guard double-click trong React phải là `useRef`, không phải state.** Hai click cùng một
   tick đều đọc `busy === false` (chưa re-render giữa hai lần) nên state check để lọt click
   thứ hai và ghi event trùng. Xem `web/src/components/OutcomeTracker.tsx`.
@@ -431,10 +395,9 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
   `total` thì UI phải đoán bằng `items.length === limit` — sai đúng lúc tổng là bội số của
   page size. Client phải đọc `.items` (Slack có `_items()` bọc sẵn).
 - **`ORDER BY` phải kết thúc bằng một cột UNIQUE.** `LIMIT/OFFSET` trên thứ tự có tie là bug
-  **im lặng**: dòng bằng nhau ra thứ tự khác nhau giữa query trang 1 và trang 2 ⇒ một dòng
-  hiện hai lần, một dòng không bao giờ hiện. Ở corpus này `posted_at` **null** với mọi
-  LinkedIn alert và giống hệt nhau trong một mẻ crawl, nên tie là mặc định chứ không phải
-  ngoại lệ. `paging.page_query()` **raise** nếu statement không có `ORDER BY`.
+  **im lặng**: dòng bằng nhau ra thứ tự khác nhau giữa trang 1 và trang 2 ⇒ một dòng hiện hai
+  lần, một dòng không bao giờ hiện. Ở corpus này `posted_at` **null** với mọi LinkedIn alert nên
+  tie là mặc định, không phải ngoại lệ. `paging.page_query()` **raise** nếu thiếu `ORDER BY`.
 - **`total` đếm bằng subquery của chính statement đã lọc** (`paging.total_for`), không dựng
   lại `where` bằng tay — dựng lại là cách `total` trôi khỏi thứ nó đếm rồi mời user sang một
   trang trống.
@@ -446,50 +409,38 @@ kể cả OpenAI strict mode. Biến môi trường `OPENAI_API_KEY` cũ đã g�
 - **Guard thì không được phân trang.** `queue.active()` dùng `limit=None`; trang Runs hỏi
   riêng một request để gate nút Crawl. Một guard nhìn nhầm cửa sổ sẽ báo "không có gì đang
   chạy" và cho chạy task thứ hai.
-- **Frontend**: `usePaging(name)` nhớ **size** trong localStorage theo từng list (không nhớ
-  page — vị trí là chuyện một lần xem, size là preference), `useClampPage` kéo về trang cuối
-  hợp lệ khi list co lại, và **`reset()` khi filter đổi** (đứng ở trang 7 của một tìm kiếm
-  giờ chỉ còn 4 kết quả = bảng trống không manh mối). Dropdown compare version trong CV
-  Studio dựng option từ **dải số 1..total**, không từ trang đã tải, nếu không thì hết diff
-  được v1 với v40.
+- **Frontend**: `usePaging(name)` nhớ **size** trong localStorage theo từng list (không nhớ page —
+  vị trí là chuyện một lần xem, size là preference), `useClampPage` kéo về trang cuối hợp lệ khi
+  list co lại, và **`reset()` khi filter đổi** (đứng ở trang 7 của tìm kiếm giờ còn 4 kết quả =
+  bảng trống không manh mối). Dropdown compare version trong CV Studio dựng option từ **dải
+  1..total**, không từ trang đã tải, nếu không thì hết diff được v1 với v40.
 - **`/applications/{id}/events` cố ý KHÔNG phân trang** — lịch sử của *một* đơn, pager trên
   timeline 3 dòng là chrome thuần tuý. Là endpoint list duy nhất còn trả mảng trần.
 
 ### Nợ kỹ thuật còn lại (roadmap PLAN.md §9 đã xong)
 
 - **Crawler**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev còn chưa có scraper (disabled trong config). Trang Runs chỉ cho chọn nguồn `enabled && ready` — `ready` = có scraper đăng ký trong `registry.SCRAPERS`, vì bật trong Settings không có nghĩa là đã implement. Cần `pip install -e '.[crawler]' && playwright install chromium` để crawl (2 nguồn tier-2 **không cần** Playwright).
-- **Bật nguồn trên máy đã dùng Settings**: từ Phase 11, `config.local.yaml` merge **theo key** nên nguồn mới trong `config.yaml` luôn hiện ra; nhưng nếu overlay từng ghi `enabled: false` cho một key thì key đó vẫn tắt. Bật lại trong Settings, hoặc xoá `config.local.yaml`.
-- **VietnamWorks lazy-load — đã xử lý bằng phân trang** (không phải scroll): 1 fetch vẫn chỉ render ~9–20 card, nhưng `search()` đi tiếp `?page=N` nên `jobs_per_site` > 9 vẫn đủ hàng (verify thật: 9 → **29 job**; trang 3 lặp lại trang 2 và bị guard bắt). Giữ nguyên `PlaywrightFetcher` là `(url) -> html` thuần — scroll sẽ đổi contract dùng chung cho mọi site, phân trang thì không.
-- **TopCV thực tế chỉ lấy được ~50 job/lần crawl**: request thứ 2 trong cùng session bị Cloudflare chặn (403). Không phải bug — mặc định `jobs_per_site: 10` không bao giờ chạm tới, và khi chạm thì báo rõ "blocked — anti-bot" rồi giữ lại 50 hit của trang 1.
-- **Query quá dài làm TopCV trả 0 kết quả**: keyword vào *path* nên "Java Spring Boot Backend" thành slug 4 từ → 0 job (crawl cảnh báo "try a shorter query"). `default_query` = 3 stack đầu, nên đổi thứ tự `crawl.stacks` là đổi luôn chất lượng search TopCV.
-- **Nguồn tier-2 là remote/toàn cầu** (WWR: US/worldwide; Arbeitnow: Đức/EU, JD nhiều bài tiếng Đức) và **thiên về senior**, nên `exclude_keywords: [Senior, Lead, ...]` mặc định lọc đi khá nhiều. Tắt trong Settings nếu chỉ muốn job Việt Nam.
-- **TopDev**: `robots.txt` `Allow: /` cho `User-agent: *` nhưng chặn riêng `ClaudeBot` và đặt `Content-Signal: ai-train=no, use=reference`. Chưa làm — không phải vì thiếu code mà vì cần quyết định rõ, và TopCV/VNW đã là 2 nguồn core đã chốt.
-- **Bài học selector (ITviec)**: ITviec dùng utility CSS nên **match class theo substring là bẫy** — `[class*=city]` khớp `opa-city-50` khiến mọi job có location `"Hiring"`, `[class*=salary]` bắt trúng banner "IT Salary Report". Location/posted/salary giờ nhận diện **theo giá trị** (danh sách thành phố, regex thời gian), không theo cấu trúc. ITviec giấu lương sau login → `salary=None` là câu trả lời đúng, không phải placeholder. Test `test_itviec.py` ghim đúng các bẫy này. Bộ nhận diện theo giá trị nay dùng chung ở `crawler/vietnam.py` cho cả 3 site VN.
-- **SQLite KHÔNG enforce `VARCHAR(n)`, Postgres thì có.** Verify crawl trên SQLite là chưa đủ: một field quá dài chỉ nổ khi chạy Postgres thật, và nó nổ *giữa flush* → `PendingRollbackError` **rollback cả crawl**, 1 field xấu làm mất sạch cả batch. `normalize._fit()` giờ clamp `title/company/location/salary` theo đúng width cột (payload vẫn giữ text đầy đủ). Verify crawl phải chạy qua **Postgres + API thật**, không chỉ SQLite.
-- **Đừng quét salary trên cả body detail.** `.box-job-information-detail` của TopCV chứa cả panel "việc làm tương tự", và card trong đó **có lương riêng** sau khi hydrate → 2 job không liên quan cùng ra "20 - 60 triệu". Salary chỉ lấy từ nguồn chắc chắn thuộc job này: card của chính nó, hoặc `baseSalary`. Không có thì `None` là câu trả lời đúng. Cùng bài học với ITviec. `parse_salary` cũng có guard `MAX_SALARY_LEN=80` — lương là *label*, không phải đoạn văn (từng trả về nguyên blob 6.7 KB JD làm salary).
-- **`select_one("a, b")` KHÔNG theo thứ tự selector** mà theo thứ tự trong document. Trên card VietnamWorks link logo đứng trước `h2 a`, nên one-liner lấy trúng logo (không có text, chỉ có `title`) và title lặng lẽ đến từ sai element. Dùng helper `_first(root, *selectors)` khi thứ tự ưu tiên là có ý.
-- **Fetch strategy**: `PlaywrightFetcher` load bằng `domcontentloaded` rồi *cố* chờ `networkidle` trong 6s và bỏ qua nếu timeout. Chờ `networkidle` như điều kiện load là bẫy: job board chạy analytics/socket không bao giờ im, trang render xong nhưng `goto` treo tới timeout rồi fail cả crawl (đúng lỗi ITviec gặp). Từ Phase 11 nó **raise theo status code** — trang chặn (403/429) là một *trang* hợp lệ với parser, nên nếu không chặn ở tầng fetch thì nó lặng lẽ thành "0 job".
-- **Chọn fetcher theo thứ site phục vụ, không theo thói quen**: `HttpFetcher` cho document (RSS/JSON/HTML server-render), `PlaywrightFetcher` cho app (ITviec/VNW). Đừng truyền 1 fetcher dùng chung cho mọi scraper trong production — `build_scrapers(fetcher=...)` chỉ dành cho test, vì browser sẽ bọc JSON thành `<pre>` và feed parser vỡ.
-- **`infer_level` vẫn quét cả JD**, nên một JD nhắc "we hire senior engineers" có thể kéo job mid thành senior. Đã sửa phần substring (Phase 11) nhưng phạm vi quét thì chưa thu hẹp — thu về title-only sẽ mất các job VN ghi "thực tập sinh" trong body.
-- **Raw LaTeX đã có** (chi tiết + bẫy preview ở `PHASES.md`): override ở `cv_versions.meta.tex_override` đè cách JSON *serialize*, không thay JSON. **Một chiều** — không gì parse `.tex` về JSON — nên khi nó còn hiệu lực thì field **không tới được PDF**, UI phải nói ra. Lưu document không xoá nó; `rollback` mang nó theo.
-- **CV Studio còn thiếu**: HTML live preview, theme gallery. Diff giữa 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới thì thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
-- **Cover letter đã ra PDF** (Phase 17): template riêng `cv/templates/awesome_cv/cover_letter.tex.j2` dùng chung `_preamble.tex.j2` với CV. **`awesome-cv.cls` bản trim trong repo KHÔNG có macro letter nào** (`\cvletter`, `\recipient`… đều không tồn tại — grep class file trước khi tin spec). Text vẫn là bản chính (email mang text ở body, PDF là đính kèm); build hỏng thì **đơn vẫn gửi**, lý do vào `meta.letter.pdf_error`. Ngắt đoạn trong template LaTeX phải viết `\par` tường minh — Jinja `trim_blocks` ăn dòng trống và biến 2 đoạn thành 1 dòng dính liền, compile vẫn sạch.
+- **Bật nguồn trên máy đã dùng Settings**: `config.local.yaml` merge **theo key** nên nguồn mới trong `config.yaml` luôn hiện ra; nhưng key nào overlay từng ghi `enabled: false` thì vẫn tắt. Bật lại trong Settings, hoặc xoá `config.local.yaml`.
+- **VietnamWorks lazy-load — xử lý bằng phân trang, không phải scroll**: 1 fetch chỉ render ~9–20 card, nhưng `search()` đi tiếp `?page=N` nên `jobs_per_site` > 9 vẫn đủ hàng (verify thật: 9 → **29 job**; trang 3 lặp lại trang 2 và bị guard bắt). Giữ `PlaywrightFetcher` là `(url) -> html` thuần — scroll sẽ đổi contract dùng chung cho mọi site, phân trang thì không.
+- **TopCV thực tế chỉ ~50 job/lần crawl**: request thứ 2 trong cùng session bị Cloudflare chặn (403). Không phải bug — mặc định `jobs_per_site: 10` không chạm tới, và khi chạm thì báo "blocked — anti-bot" rồi giữ 50 hit của trang 1. **Query dài cũng làm TopCV trả 0 job**: keyword vào *path* nên "Java Spring Boot Backend" thành slug 4 từ; `default_query` = 3 stack đầu nên đổi thứ tự `crawl.stacks` là đổi chất lượng search.
+- **Nguồn tier-2 là remote/toàn cầu** (WWR: US/worldwide; Arbeitnow: Đức/EU) và **thiên về senior**, nên `exclude_keywords: [Senior, Lead, ...]` mặc định lọc đi khá nhiều. Tắt trong Settings nếu chỉ muốn job Việt Nam.
+- **TopDev**: robots `Allow: /` cho `*` nhưng chặn riêng `ClaudeBot` + `Content-Signal: ai-train=no`. Chưa làm — cần một quyết định rõ, không mặc định làm.
+- **Bài học selector (ITviec)**: site dùng utility CSS nên **match class theo substring là bẫy** — `[class*=city]` khớp `opa-city-50` (mọi job thành location `"Hiring"`), `[class*=salary]` bắt trúng banner "IT Salary Report". Location/posted/salary nhận diện **theo giá trị** (`crawler/vietnam.py`, dùng chung cho cả 3 site VN), không theo cấu trúc. ITviec giấu lương sau login → `salary=None` là câu trả lời đúng. `test_itviec.py` ghim các bẫy này.
+- **SQLite KHÔNG enforce `VARCHAR(n)`, Postgres thì có.** Field quá dài chỉ nổ trên Postgres thật, và nó nổ *giữa flush* → `PendingRollbackError` **rollback cả crawl**: 1 field xấu mất sạch cả batch. `normalize._fit()` clamp `title/company/location/salary` theo width cột (payload vẫn giữ text đầy đủ). Verify crawl phải chạy qua **Postgres thật**, không chỉ SQLite.
+- **Đừng quét salary trên cả body detail.** Body detail của TopCV chứa panel "việc làm tương tự", card trong đó **có lương riêng** sau khi hydrate → 2 job không liên quan cùng ra "20 - 60 triệu". Salary chỉ lấy từ nguồn chắc chắn thuộc job này: card của chính nó, hoặc `baseSalary`; không có thì `None`. `parse_salary` có guard `MAX_SALARY_LEN=80` — lương là *label*, không phải đoạn văn (từng trả nguyên blob 6.7 KB JD làm salary).
+- **`select_one("a, b")` KHÔNG theo thứ tự selector** mà theo thứ tự trong document. Trên card VietnamWorks link logo đứng trước `h2 a` nên one-liner lấy trúng logo và title lặng lẽ đến từ sai element. Dùng `_first(root, *selectors)` khi thứ tự ưu tiên là có ý.
+- **Fetch strategy**: `PlaywrightFetcher` load bằng `domcontentloaded` rồi *cố* chờ `networkidle` 6s, timeout thì bỏ qua. Chờ `networkidle` như **điều kiện** load là bẫy: job board chạy analytics/socket không bao giờ im → trang render xong nhưng `goto` treo tới timeout rồi fail cả crawl. Nó cũng **raise theo status code**: trang chặn (403/429) là một *trang* hợp lệ với parser, không chặn ở tầng fetch thì lặng lẽ thành "0 job".
+- **Chọn fetcher theo thứ site phục vụ**: `HttpFetcher` cho document (RSS/JSON/HTML server-render), `PlaywrightFetcher` cho app (ITviec/VNW). Đừng dùng chung 1 fetcher cho mọi scraper trong production — `build_scrapers(fetcher=...)` chỉ dành cho test, vì browser bọc JSON thành `<pre>` và feed parser vỡ.
+- **`infer_level` vẫn quét cả JD**, nên JD nhắc "we hire senior engineers" có thể kéo job mid thành senior. Phần substring đã sửa, phạm vi quét thì chưa — thu về title-only sẽ mất job VN ghi "thực tập sinh" trong body.
+- **Raw LaTeX đã có** (bẫy preview ở `PHASES.md`): `cv_versions.meta.tex_override` đè cách JSON *serialize*, không thay JSON. **Một chiều** — không gì parse `.tex` về JSON — nên khi nó còn hiệu lực thì sửa field **không tới được PDF**, UI phải nói ra. Lưu document không xoá nó; `rollback` mang nó theo.
+- **CV Studio còn thiếu**: HTML live preview, theme gallery. Diff 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới = thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
+- **Cover letter đã ra PDF** (Phase 17): `cv/templates/awesome_cv/cover_letter.tex.j2` dùng chung `_preamble.tex.j2` với CV. **`awesome-cv.cls` bản trim trong repo KHÔNG có macro letter nào** (`\cvletter`, `\recipient`… — grep class file trước khi tin spec). Text vẫn là bản chính (email mang text ở body, PDF là đính kèm); build hỏng thì **đơn vẫn gửi**, lý do vào `meta.letter.pdf_error`. Ngắt đoạn phải viết `\par` tường minh — Jinja `trim_blocks` ăn dòng trống, biến 2 đoạn thành 1 dòng dính liền mà compile vẫn sạch.
 - **Cần `pip install -e '.[cv]'`** cho `pypdf`, nếu không page count trả `None` (badge "1 trang" biến mất, không còn cảnh báo CV tràn 2 trang). Build PDF vẫn chạy bình thường — chỉ mất phần đếm trang.
 - **Queue vẫn 1 worker**: tailor xếp sau một crawl đang chạy sẽ đứng `queued` vài phút. Đúng nghĩa "queued", nhưng nếu thấy vướng thì nâng `max_workers` — task body đã mở session riêng nên an toàn về mặt DB.
-- **Slack đã verify thật** (2026-08-08): app cần đúng **một** scope `chat:write`, cộng Socket Mode
-  + app-level token `connections:write`, cộng bật **Interactivity** (quên cái này thì tin nhắn vẫn
-  hiện mà bấm nút im lặng), cộng `/invite @jobpilot` vào channel. Bấm nút trên Slack đổi state
-  trong Postgres và dashboard thấy ngay — `PLAN.md §10` đã được quan sát, không còn là giả định.
-  Lỗi hay gặp: channel **riêng tư** mà bot chưa được mời trả `channel_not_found`, không phải
-  `not_in_channel` — hai lỗi đó phân biệt public/private.
-- **Chưa verify được: một lượt gọi model *thành công*.** Anthropic: key hợp lệ nhưng **hết
-  credit** (400 `credit balance is too low`). OpenAI: `OPENAI_API_KEY` trong `.env` bị từ chối
-  **401**. Gemini: chưa có `GOOGLE_API_KEY`. Nghĩa là **shape request của OpenAI/Gemini chưa
-  đối chiếu với API thật** — 401 xảy ra *trước* khi request được validate. Đường lỗi thì đã
-  chạy thật đầu-cuối (bench → `llm_calls` trong Postgres → `/stats/llm`). Có key rồi thì việc
-  đầu tiên là `jobpilot llm bench --task classify`, và **rủi ro cao nhất là Gemini có nuốt nổi
-  `TailorPlan` không** — docs chỉ hỗ trợ subset JSON Schema.
-- **Đã verify trên môi trường thật**: `alembic upgrade head` chạy sạch 3 migration lên **PostgreSQL 17 local** (schema `jobpilot`, GIN index, enum `job_status` đầy đủ); toàn bộ 8 trang web chạy trên Postgres thật, không lỗi console; Compile PDF từ CV Studio và tailor→PDF đều qua Docker LaTeX thật.
+- **Slack đã verify thật** (2026-08-08): cần đúng **một** scope `chat:write`, Socket Mode +
+  app-level token `connections:write`, bật **Interactivity** (quên thì tin nhắn vẫn hiện mà bấm
+  nút im lặng), và `/invite @jobpilot` vào channel. Lỗi hay gặp: channel **riêng tư** mà bot chưa
+  được mời trả `channel_not_found`, không phải `not_in_channel` — hai lỗi đó phân biệt public/private.
 - **Lưu ý khi chụp/screenshot UI**: headless Chrome **không có PDF viewer**, nên khung preview PDF sẽ trống (`net::ERR_ABORTED` trên blob URL). Đó là giới hạn của headless chứ không phải bug — chạy `headless=False` để kiểm tra thật.
 - **Gmail OAuth** chưa làm — dùng `method: smtp` (Gmail app password chạy được).
 
