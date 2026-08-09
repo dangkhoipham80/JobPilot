@@ -1,0 +1,97 @@
+# `jobpilot/crawler/` — crawl job board
+
+> Nạp **on-demand** khi Claude đọc file trong thư mục này. Luật chung của repo ở `CLAUDE.md` gốc.
+> Parser facet (`salary.py`, `skills.py`, `vietnam.canonical_city`) sinh dữ liệu cho trang
+> `/market` — luật về facet ở `jobpilot/analytics/CLAUDE.md`.
+
+## Thêm một site crawl mới
+
+> Có subagent `scraper-smith` (`.claude/agents/scraper-smith.md`) đóng gói đúng quy
+> trình dưới đây + toàn bộ bẫy đã gặp. Dùng nó thay vì làm tay.
+
+0. **Đọc `robots.txt` TRƯỚC KHI viết code** (nguyên tắc 5). Nếu site cấm trang job
+   thì dừng — không có cách nào "lách" cho hợp lệ (xem LinkedIn bên dưới).
+1. **Tìm `<script type="application/ld+json">` có `@type: JobPosting` trước đã.** TopCV và
+   VietnamWorks đều có, và đó là target tốt nhất: JD đầy đủ, `datePosted` tuyệt đối, và site có
+   động lực giữ nó đúng (Google Jobs index dựa vào đó) — mạnh hơn động lực giữ tên class CSS.
+   Dùng `crawler/jsonld.py`, không viết lại.
+2. Tạo `crawler/<site>.py` kế thừa `BaseScraper`: `search_url()` + `parse_search()`
+   + `parse_detail()`, tất cả **thuần** (HTML string → data, không network).
+3. Nhận diện field **theo giá trị**, dùng `crawler/vietnam.py` (city / "thoả thuận"
+   / posted / noise). Đừng match class theo substring — xem "Bài học selector".
+4. `native_id` lấy từ **URL**, không bao giờ từ JSON-LD `identifier` (đó là id của
+   *nhà tuyển dụng*: mọi job cùng công ty sẽ chung 1 row). Strip query tracking.
+5. Normalize output về `Job` schema; set `apply_channel`/`apply_target`.
+6. Test bằng snapshot HTML thật đã trim, ghim đúng các bẫy đã gặp (badge lẫn vào
+   title, social proof lẫn vào location, "negotiable" thành salary).
+7. Đăng ký trong `crawler/registry.SCRAPERS` + 1 dòng `config.yaml`.
+8. **Crawl thật một lần** rồi đọc output — test xanh không có nghĩa là parser đúng.
+
+**Nguồn có feed chính thức (RSS/JSON) thì kế thừa `crawler/feed.FeedScraper`**, đừng viết lại:
+nó set `needs_detail = False` (feed đã có JD đầy đủ → 25 job = 1 request, không phải 26), chọn
+`HttpFetcher` thay vì browser, và lo phần lọc query ở `matches_query`. Lọc theo **title + tag của
+site**, không bao giờ theo JD — JD nào cũng nhắc nửa ngành công nghệ ở mục "nice to have".
+
+**Đọc HẾT `robots.txt`, đừng `head -40`.** Jobicy để `Disallow: /api/` ở **dòng 48**; 40 dòng đầu
+trông rất thoáng. Cách đáng tin duy nhất là chạy `RobotsPolicy(DEFAULT_USER_AGENT).allowed(url)`
+— nó parse cả file, và nó là thứ sẽ chặn lúc crawl thật.
+
+### Nguồn tier-2 đã loại (đừng kiểm tra lại từ đầu)
+
+| Nguồn | Lý do loại |
+|---|---|
+| **Remotive** | `robots.txt`: `Disallow: /api/*` — mà API là đường duy nhất dùng được. |
+| **Jobicy** | `robots.txt` dòng 48: `Disallow: /api/`. Filter `tag=` chạy rất tốt, `appliedFilters` còn echo lại — nhưng robots cấm thì dừng (nguyên tắc 5). |
+| **RemoteOK** | `Content-Signal: ai-train=no, use=reference` + `User-agent: ClaudeBot → Disallow: /`. **Giống hệt TopDev** → cần một quyết định rõ ràng, không mặc định làm. |
+| **Himalayas** | robots OK, nhưng API **bỏ qua mọi filter** (mọi tên param → `totalCount` y hệt 96.394, cùng job đầu) và **âm thầm cắt `limit` xuống 20**. Feed newest-first đủ mọi ngành: 2/20 title là phần mềm → crawl "thành công" và giao job bác sĩ X-quang. |
+
+Bài học chung: một API trả 200 kèm filter bị bỏ qua **nguy hiểm hơn** một API trả lỗi.
+Nếu response có field kiểu `appliedFilters` thì **check nó**, đừng tin.
+
+## LinkedIn qua Job Alerts (không crawl)
+
+`linkedin.com/robots.txt` **cấm** truy cập tự động vào trang job — kể cả endpoint
+`/jobs-guest/` khi không đăng nhập — và mở đầu bằng *"The use of robots or other
+automated means to access LinkedIn without the express permission of LinkedIn is
+strictly prohibited."* Nên **không có cách crawl LinkedIn nào tuân thủ robots.txt**,
+và dự án không làm (nguyên tắc 5).
+
+Thay vào đó dùng chính cơ chế LinkedIn cung cấp: **Job Alerts**. LinkedIn gửi job
+khớp vào mail của bạn, JobPilot đọc **hộp mail của bạn**. Không request nào tới
+LinkedIn, không tài khoản nào bị ban.
+
+**Cài đặt:**
+1. LinkedIn → Jobs → tìm theo tiêu chí → bật **Job alert** (nên tạo 5–10 alert, đặt *Daily*).
+2. Bật 2-Step Verification cho Google, rồi tạo **App Password** tại
+   <https://myaccount.google.com/apppasswords> (mật khẩu Gmail thường sẽ bị từ chối).
+3. Điền `IMAP_USER` / `IMAP_PASSWORD` trong `.env`.
+4. Bật nguồn: `sources: - { key: linkedin, enabled: true }` trong `config.yaml`
+   (hoặc bấm trên trang Settings).
+5. `python -m jobpilot.cli run` — hoặc bấm **Crawl now** ở trang Runs.
+
+**Giới hạn thật:** mail alert có title/company/location nhưng **không có JD đầy đủ**. Job vào DB
+với cờ `needs_jd`; mở trang job, dán JD vào rồi mới tailor. Kênh apply luôn là `external`.
+
+**Đã verify trên mail thật** (1.116 alert). Hai bẫy parser đã sửa + có test giữ: company và
+location nằm **cùng một dòng** ngăn bằng `·`, và dòng social proof (`4 connections`) lọt vào
+`location`.
+
+**Đường thứ hai:** nút **Add job** ở trang Jobs — dán thẳng link + JD. Dùng cho job
+thấy ngoài alert. Link LinkedIn cho ra id ổn định nên dán lại cùng link sẽ *update*
+chứ không tạo bản trùng.
+
+## Nợ kỹ thuật + bẫy đã trả giá
+
+- **Nguồn đang chạy**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev còn chưa có scraper (disabled trong config). Trang Runs chỉ cho chọn nguồn `enabled && ready` — `ready` = có scraper đăng ký trong `registry.SCRAPERS`, vì bật trong Settings không có nghĩa là đã implement. Cần `pip install -e '.[crawler]' && playwright install chromium` để crawl (2 nguồn tier-2 **không cần** Playwright).
+- **Bật nguồn trên máy đã dùng Settings**: `config.local.yaml` merge **theo key** nên nguồn mới trong `config.yaml` luôn hiện ra; nhưng key nào overlay từng ghi `enabled: false` thì vẫn tắt. Bật lại trong Settings, hoặc xoá `config.local.yaml`.
+- **VietnamWorks lazy-load — xử lý bằng phân trang, không phải scroll**: 1 fetch chỉ render ~9–20 card, nhưng `search()` đi tiếp `?page=N` nên `jobs_per_site` > 9 vẫn đủ hàng (verify thật: 9 → **29 job**; trang 3 lặp lại trang 2 và bị guard bắt). Giữ `PlaywrightFetcher` là `(url) -> html` thuần — scroll sẽ đổi contract dùng chung cho mọi site, phân trang thì không.
+- **TopCV thực tế chỉ ~50 job/lần crawl**: request thứ 2 trong cùng session bị Cloudflare chặn (403). Không phải bug — mặc định `jobs_per_site: 10` không chạm tới, và khi chạm thì báo "blocked — anti-bot" rồi giữ 50 hit của trang 1. **Query dài cũng làm TopCV trả 0 job**: keyword vào *path* nên "Java Spring Boot Backend" thành slug 4 từ; `default_query` = 3 stack đầu nên đổi thứ tự `crawl.stacks` là đổi chất lượng search.
+- **Nguồn tier-2 là remote/toàn cầu** (WWR: US/worldwide; Arbeitnow: Đức/EU) và **thiên về senior**, nên `exclude_keywords: [Senior, Lead, ...]` mặc định lọc đi khá nhiều. Tắt trong Settings nếu chỉ muốn job Việt Nam.
+- **TopDev**: robots `Allow: /` cho `*` nhưng chặn riêng `ClaudeBot` + `Content-Signal: ai-train=no`. Chưa làm — cần một quyết định rõ, không mặc định làm.
+- **Bài học selector (ITviec)**: site dùng utility CSS nên **match class theo substring là bẫy** — `[class*=city]` khớp `opa-city-50` (mọi job thành location `"Hiring"`), `[class*=salary]` bắt trúng banner "IT Salary Report". Location/posted/salary nhận diện **theo giá trị** (`crawler/vietnam.py`, dùng chung cho cả 3 site VN), không theo cấu trúc. ITviec giấu lương sau login → `salary=None` là câu trả lời đúng. `test_itviec.py` ghim các bẫy này.
+- **SQLite KHÔNG enforce `VARCHAR(n)`, Postgres thì có.** Field quá dài chỉ nổ trên Postgres thật, và nó nổ *giữa flush* → `PendingRollbackError` **rollback cả crawl**: 1 field xấu mất sạch cả batch. `normalize._fit()` clamp `title/company/location/salary` theo width cột (payload vẫn giữ text đầy đủ). Verify crawl phải chạy qua **Postgres thật**, không chỉ SQLite.
+- **Đừng quét salary trên cả body detail.** Body detail của TopCV chứa panel "việc làm tương tự", card trong đó **có lương riêng** sau khi hydrate → 2 job không liên quan cùng ra "20 - 60 triệu". Salary chỉ lấy từ nguồn chắc chắn thuộc job này: card của chính nó, hoặc `baseSalary`; không có thì `None`. `parse_salary` có guard `MAX_SALARY_LEN=80` — lương là *label*, không phải đoạn văn (từng trả nguyên blob 6.7 KB JD làm salary).
+- **`select_one("a, b")` KHÔNG theo thứ tự selector** mà theo thứ tự trong document. Trên card VietnamWorks link logo đứng trước `h2 a` nên one-liner lấy trúng logo và title lặng lẽ đến từ sai element. Dùng `_first(root, *selectors)` khi thứ tự ưu tiên là có ý.
+- **Fetch strategy**: `PlaywrightFetcher` load bằng `domcontentloaded` rồi *cố* chờ `networkidle` 6s, timeout thì bỏ qua. Chờ `networkidle` như **điều kiện** load là bẫy: job board chạy analytics/socket không bao giờ im → trang render xong nhưng `goto` treo tới timeout rồi fail cả crawl. Nó cũng **raise theo status code**: trang chặn (403/429) là một *trang* hợp lệ với parser, không chặn ở tầng fetch thì lặng lẽ thành "0 job".
+- **Chọn fetcher theo thứ site phục vụ**: `HttpFetcher` cho document (RSS/JSON/HTML server-render), `PlaywrightFetcher` cho app (ITviec/VNW). Đừng dùng chung 1 fetcher cho mọi scraper trong production — `build_scrapers(fetcher=...)` chỉ dành cho test, vì browser bọc JSON thành `<pre>` và feed parser vỡ.
+- **`infer_level` vẫn quét cả JD**, nên JD nhắc "we hire senior engineers" có thể kéo job mid thành senior. Phần substring đã sửa, phạm vi quét thì chưa — thu về title-only sẽ mất job VN ghi "thực tập sinh" trong body.
