@@ -24,11 +24,11 @@ from typing import Any
 def flatten_schema(schema: dict) -> dict:
     """Inline ``$ref``/``$defs`` so the reader sees one plain tree.
 
-    Written for Ollama's grammar compiler, kept for Gemini, which has the same
-    weak spot: references are the shakiest corner of schema-to-grammar, and a
-    schema that fails to compile reports a problem with the grammar rather than
-    with the model. Inlining costs nothing here — these schemas are small, two
-    levels deep, and non-recursive by construction.
+    Gemini documents only a subset of JSON Schema, and references are the
+    shakiest corner of schema-to-grammar: a schema that fails to compile
+    reports a problem with the grammar rather than with the model. Inlining
+    costs nothing here — these schemas are small, two levels deep, and
+    non-recursive by construction.
     """
     defs = schema.get("$defs") or {}
 
