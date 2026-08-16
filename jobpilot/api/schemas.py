@@ -388,11 +388,17 @@ class ReplyTimingOut(BaseModel):
     than folded in. An application nobody has answered yet is not a slow reply,
     and counting it as "so far N days" would make the number drift worse every
     day nothing happens.
+
+    ``inconsistent`` counts answers timestamped *before* the send — a skewed
+    mail header or a hand-typed date. They are dropped rather than clamped to
+    zero, which would turn a bad pair of timestamps into the fastest reply in
+    the corpus.
     """
 
     answered: int
     still_waiting: int
     undated: int
+    inconsistent: int = 0
     median_days: float | None = None
     fastest_days: float | None = None
     slowest_days: float | None = None

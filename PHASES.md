@@ -741,8 +741,24 @@ kết quả cũ trong khi `python -c` cùng module trả kết quả mới ⇒ n
   **bấm thật từng tab** rồi assert `<th>` khớp — vì đây là bug của *tương tác*, ảnh tĩnh một
   trạng thái không bao giờ lộ ra.
 
-  **Còn nợ, reviewer nêu:** `median_days` có thể **âm** nếu `occurred_at < submitted_at`
-  (backdate tay, hoặc Phase 19 lấy timestamp mail lệch múi giờ). Không crash, nhưng UI sẽ in
-  "-2.0 days, typically". Chưa chặn — cần quyết định nó là dữ liệu bẩn (kẹp về 0) hay là lỗi
-  nhập liệu đáng hiện ra.
+  **Nợ "median âm" đã trả (vòng review thứ hai):** `occurred_at < submitted_at` (backdate tay,
+  hoặc Phase 19 lấy timestamp mail lệch múi giờ) từng cho "-2.0 days, typically". Đã chọn
+  **loại hẳn cặp đó** và đếm ở `timing.inconsistent`, **không kẹp về 0** — kẹp về 0 biến một
+  header mail lệch giờ thành *câu trả lời nhanh nhất corpus*, tức là biến dữ liệu bẩn thành
+  một kỷ lục trông rất đẹp. Cùng họ với `undated` và `still_waiting`: không tính được ≠ bằng 0.
+
+  **Hai thứ nữa của vòng review thứ hai:**
+  - `repeat_postings` lấy tên hiển thị từ `members[0]` mà query **không có `ORDER BY`** — cùng
+    một group có thể ra "Công ty TNHH X" lần này, "CONG TY TNHH X" lần sau. Đã sort theo `job_id`
+    trước khi chọn nhãn. Gom nhóm vốn đã đúng; chỉ cái **nhãn** là ngẫu nhiên.
+  - Card "Ads that keep coming back" trước đây nấp sau `total_sent > 0`. Nhưng tin đăng lại là
+    dữ kiện của **corpus crawl**, không phải của việc nộp đơn — nó đáng giá nhất với đúng người
+    mà điều kiện cũ giấu nó đi: crawl nhiều, chưa nộp đơn nào (DB thật lúc kiểm: 83 job / 0 đơn,
+    panel ẩn sạch). Giờ Deck hiện riêng card đó khi `repeats.total_groups > 0`.
+
+  **Verify vòng hai:** dựng DB `jobpilot_demo` riêng (42 đơn hư cấu, 4 tin lặp viết 4 kiểu tên)
+  rồi trỏ web sang API thứ hai — DB thật không đụng tới. Bảng suppress đúng (`n=5 · needs 8`),
+  `covered 39/42` khi thiếu level, 4 cách viết tên gộp làm 1 group, light + dark sạch console.
+  Chi tiết: `.env.local` **thắng** biến môi trường `VITE_API_BASE` của shell — lần chụp đầu ra
+  đúng dữ liệu DB thật trong khi tưởng đang xem demo. Sửa file rồi restart Vite mới đổi được.
 

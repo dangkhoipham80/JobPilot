@@ -251,10 +251,19 @@ def time_to_first_reply(rows: list[dict]) -> dict:
 
     ``still_waiting`` is reported next to it and is never folded in — see the
     module docstring.
+
+    An answer timestamped *before* the send is counted in ``inconsistent`` and
+    dropped, not clamped to zero. Nothing here can reply before it was sent, so
+    the pair is evidence that one of the two timestamps is wrong — a mail header
+    with a skewed clock, or an outcome recorded with a hand-typed date. Keeping
+    it would produce a negative "fastest reply", and a negative median small
+    enough to read as a rounding artefact rather than as bad data; clamping to
+    zero would invent the fastest reply in the corpus out of the same bad pair.
     """
     waits: list[float] = []
     still_waiting = 0
     undated = 0
+    inconsistent = 0
     for row in rows:
         sent_at, answer_at = row["submitted_at"], row["first_answer_at"]
         if sent_at is None:
@@ -264,12 +273,17 @@ def time_to_first_reply(rows: list[dict]) -> dict:
         if answer_at is None:
             still_waiting += 1
             continue
-        waits.append(round((answer_at - sent_at).total_seconds() / 86400, 2))
+        days = round((answer_at - sent_at).total_seconds() / 86400, 2)
+        if days < 0:
+            inconsistent += 1
+            continue
+        waits.append(days)
 
     return {
         "answered": len(waits),
         "still_waiting": still_waiting,
         "undated": undated,
+        "inconsistent": inconsistent,
         "median_days": round(median(waits), 2) if waits else None,
         "fastest_days": min(waits) if waits else None,
         "slowest_days": max(waits) if waits else None,
@@ -308,6 +322,11 @@ def repeat_postings(db, *, limit: int = REPEAT_LIMIT) -> dict:
     for (_company_key, _title_key), members in groups.items():
         if len(members) < REPEAT_MIN_POSTINGS:
             continue
+        # The group key is folded, so members can spell the company three ways.
+        # Sort by job id before picking the label: the query has no ORDER BY, so
+        # without this the displayed spelling is whatever the backend happened to
+        # return first and can change between runs on the same data.
+        members.sort(key=lambda m: m[0])
         dates = sorted(d for *_, d in members if d is not None)
         found.append(
             {

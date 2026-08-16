@@ -54,10 +54,14 @@ export function Dashboard({ version }: { version: number }) {
 
       <OutcomeRow outcomes={stats.outcomes} />
 
-      {/* Which board earned those answers (PLAN.md §9.1 slot 20). Rendered only
-          once something has actually been sent — an empty scorecard would be
-          four cards of "nothing yet" above a funnel that already says so. */}
-      {analytics && analytics.total_sent > 0 && <SourceScorecard data={analytics} />}
+      {/* Which board earned those answers (PLAN.md §9.1 slot 20). The outcome
+          tables need something to have been sent — an empty scorecard would be
+          four cards of "nothing yet" above a funnel that already says so — but
+          repeat postings come from the crawl corpus alone, so a user with 80
+          crawled jobs and no applications still gets that card. */}
+      {analytics && (analytics.total_sent > 0 || analytics.repeats.total_groups > 0) && (
+        <SourceScorecard data={analytics} />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">

@@ -228,6 +228,39 @@ def test_no_applications_gives_no_median(session_factory):
         assert timing["thin"] is True
 
 
+def test_an_answer_dated_before_the_send_is_dropped_not_clamped(session_factory):
+    """A mail header with a skewed clock must not become the fastest reply.
+
+    Clamping to ``0`` would report a same-day answer that never happened, and
+    keeping the raw delta would report a *negative* wait — a median of ``-0.02``
+    reads as a rounding artefact rather than as broken data. Both hide the same
+    thing, so the pair is dropped and counted where it can be seen.
+    """
+    with session_factory() as db:
+        app = _sent(db, "itviec:1", days_ago=10)
+        record_outcome(db, app.id, REPLIED, occurred_at=NOW - timedelta(days=12))
+
+        timing = outcome_analytics(db)["timing"]
+        assert timing["inconsistent"] == 1
+        assert timing["answered"] == 0
+        assert timing["median_days"] is None
+        assert timing["fastest_days"] is None
+
+
+def test_a_good_answer_survives_a_neighbouring_bad_one(session_factory):
+    """Dropping the broken pair must not drop the corpus around it."""
+    with session_factory() as db:
+        bad = _sent(db, "itviec:1", days_ago=10)
+        record_outcome(db, bad.id, REPLIED, occurred_at=NOW - timedelta(days=12))
+        good = _sent(db, "itviec:2", days_ago=10)
+        record_outcome(db, good.id, REPLIED, occurred_at=NOW - timedelta(days=6))
+
+        timing = outcome_analytics(db)["timing"]
+        assert timing["inconsistent"] == 1
+        assert timing["answered"] == 1
+        assert timing["median_days"] == 4.0
+
+
 # --------------------------------------------------------------------------- #
 # repeat postings — a signal, never a verdict
 # --------------------------------------------------------------------------- #
@@ -349,4 +382,43 @@ def test_the_endpoint_serves_the_split(session_factory):
     # One application is not a rate, and the wire format has to say so.
     assert bucket["thin"] is True
     assert bucket["reply_rate"] is None
+
+
+def test_the_endpoint_serves_an_empty_corpus(session_factory):
+    """A fresh DB has to survive the schema, not just the aggregation.
+
+    The unit tests cover the empty aggregate; this covers *serialising* it. A
+    day-one user opens the dashboard before any application exists, and a
+    required field that is only ever populated with data would turn that first
+    visit into a 500.
+    """
+    from fastapi.testclient import TestClient
+
+    from jobpilot.api.deps import get_db
+    from jobpilot.api.main import app as fastapi_app
+    from jobpilot.config import get_secrets
+
+    def override_get_db():
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    fastapi_app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(fastapi_app)
+        res = client.get("/stats/outcomes", headers={"X-API-Token": get_secrets().jobpilot_api_token})
+        assert res.status_code == 200
+        body = res.json()
+    finally:
+        fastapi_app.dependency_overrides.pop(get_db, None)
+
+    assert body["total_sent"] == 0
+    assert body["by_source"]["rows"] == []
+    # Says so out loud rather than rendering an empty table with no explanation.
+    assert body["by_source"]["note"]
+    assert body["timing"]["median_days"] is None
+    assert body["timing"]["inconsistent"] == 0
+    assert body["repeats"]["rows"] == []
     assert body["repeats"]["total_groups"] == 0

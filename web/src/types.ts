@@ -94,6 +94,8 @@ export interface ReplyTiming {
   answered: number;
   still_waiting: number;
   undated: number;
+  /** Answered before it was sent — a broken timestamp, dropped rather than clamped to 0. */
+  inconsistent: number;
   median_days: number | null;
   fastest_days: number | null;
   slowest_days: number | null;

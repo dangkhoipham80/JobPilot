@@ -35,6 +35,13 @@ export function SourceScorecard({ data }: { data: OutcomeAnalytics }) {
   // "Source" — right numbers, wrong label, which is worse than either.
   const label = DIMENSIONS.find(([key]) => key === dimension)![1];
 
+  // A repeat posting is a fact about the crawled corpus, not about applying —
+  // "this ad has been reposted five times in four months" is worth knowing
+  // *before* an evening goes into it. Tying it to the outcome tables would hide
+  // it from exactly the user who can still act on it: crawled a lot, applied to
+  // nothing yet.
+  if (data.total_sent === 0) return <RepeatsCard data={data} />;
+
   return (
     <div className="space-y-4">
       <Card>
@@ -183,8 +190,12 @@ function TimingCard({ data }: { data: OutcomeAnalytics }) {
               </span>
               <span className="text-sm text-ink-muted">days, typically</span>
             </div>
+            {/* `?? "?"`: the three come from the same list so the backend never
+                splits them, but the type says nullable and "fastest nulld" is a
+                worse way to learn that than a question mark. */}
             <p className="text-xs text-ink-muted">
-              fastest {t.fastest_days}d · slowest {t.slowest_days}d · from {t.answered} answered
+              fastest {t.fastest_days ?? "?"}d · slowest {t.slowest_days ?? "?"}d · from{" "}
+              {t.answered} answered
             </p>
           </>
         )}
@@ -194,6 +205,10 @@ function TimingCard({ data }: { data: OutcomeAnalytics }) {
         <p className="text-xs text-ink-muted">
           {t.still_waiting} still waiting — not counted above
           {t.undated > 0 && ` · ${t.undated} with no send date`}
+          {/* Dropped, not clamped to 0: an answer dated before the send means one
+              of the two timestamps is wrong, and a 0-day reply would read as the
+              fastest one in the corpus. */}
+          {t.inconsistent > 0 && ` · ${t.inconsistent} answered before the send date`}
         </p>
         {t.thin && t.median_days !== null && (
           <p className="flex items-start gap-1.5 text-xs text-ink-muted">
