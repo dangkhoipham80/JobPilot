@@ -682,3 +682,83 @@ trước để lại một **worker mồ côi vẫn giữ cổng 8000** — Wind
 bind cùng một cổng, nên request rơi vào bản cũ. Dấu hiệu nhận ra: `curl` API trả
 kết quả cũ trong khi `python -c` cùng module trả kết quả mới ⇒ nghi hai process,
 đừng nghi cache.
+
+- ✅ **Analytics thật** (`PLAN.md §9.1` ô 20) — `jobpilot/analytics/outcomes.py` +
+  `GET /stats/outcomes` + khối "Where the answers come from" trên Deck. Trả lời đúng một câu
+  hỏi: *tối nay crawl lại board nào?*
+
+  **Số phase: cố ý không phát số nguyên mới.** `PHASES.md` đã mượn 20/20b/20c (model backend)
+  và 21 (`/market`) cho việc khác với thứ §9.1 cấp cho các ô đó, nên phase này tham chiếu
+  **theo ô §9.1**. Ô 21 (LLM ranking 2 tầng) vẫn chưa ai làm — đừng nhầm với `/market`.
+
+  **Ngưỡng mẫu nằm trong split, không chỉ ở con số tổng.** `outcome_counts` chỉ chặn tỉ lệ khi
+  mẫu số bằng 0 — đúng cho **một** con số toàn corpus. Nhưng cắt theo nguồn *chính là* thứ làm
+  mẫu bé đi: 80 đơn chia 5 nguồn là 5 nhóm 16 đơn, và "1/3 = 33%" nằm cạnh một tỉ lệ thật thì
+  trông cũng đáng tin y hệt. Nên `Bucket.reply_rate = None` khi `sent < MIN_SAMPLE`, UI in
+  `n=3 · needs 8`. **Chọn bảng thay vì bar chart chính vì lý do này**: bar chart buộc mọi dòng
+  phải có một cái cột, mà nửa số dòng ở đây *không được phép* có số — vẽ 0 thì đọc thành
+  "nguồn này chẳng ai trả lời", bỏ dòng đi thì đọc thành "nguồn này không tồn tại".
+
+  **Ngưỡng đang lệch nhau, chưa sửa:** `OutcomeRow` (Phase 18) hardcode `total_real >= 10`, còn
+  `analytics/outcomes.MIN_SAMPLE = 8`. Hai ngưỡng "quá ít để tính tỉ lệ" trên **cùng một trang**.
+  Không tự sửa vì đó là hành vi của phase khác; nợ này để user quyết.
+
+  **Chưa hồi âm ≠ hồi âm chậm.** Đơn còn im lặng bị **loại khỏi** median và đếm riêng ở
+  `still_waiting`. Gộp vào kiểu "đã N ngày" sẽ làm con số xấu đi mỗi ngày **không có gì xảy ra**.
+  `submitted_at = NULL` là `undated`, không phải trả lời tức thì.
+
+  **Tin đăng lại là *tín hiệu*, không phải phán quyết.** Gom theo `fold(company) + fold(title)`
+  (cùng cách `inbox.fold`), ngưỡng 3 bài. Hai vị trí cùng tên ở một công ty là tuyển dụng bình
+  thường — bằng chứng ở đây không phân biệt được với tin không ai lấp, nên module **không** dùng
+  chữ "ghost", và có test ghim điều đó. `span_days = None` (không phải 0) khi dưới 2 bài có ngày.
+
+  **Verify thật, và nó bắt được 3 thứ test không bắt:**
+  1. **Mutation test trước đã.** 19/19 xanh ngay lần đầu là lúc đáng nghi nhất, nên phá logic
+     có chủ đích: bỏ chặn `MIN_SAMPLE` → 2 test đỏ; gộp đơn chưa hồi âm vào median → 1 test đỏ;
+     đếm theo kiểu `current` → 1 test đỏ. Đúng test dự định, không phải test khác.
+  2. **DB nháp trên Postgres thật** (`jobpilot_acheck`, tạo → seed → đọc → drop; DB thật không
+     đụng tới). Test chỉ chạy SQLite, mà SQLite trả datetime **naive** còn Postgres trả **aware**
+     — nhánh Postgres của `_aware()` chưa từng chạy. Nó chạy sạch, và mọi con số khớp tay:
+     đơn phỏng vấn-rồi-bị-từ-chối vẫn tính `interviewed`, nhóm 2 đơn vẫn `thin`, median 4.5.
+  3. **`repeats: 0` trên 83 job thật là ĐÚNG, không phải detector chết.** Kiểm tra riêng: 83 job
+     / 68 công ty, **không** cặp (company, title) nào trùng. Nhưng nghĩa là bộ dò **chưa từng
+     chạy trên dữ liệu thật có tin lặp** — độ nhiễu tên công ty giữa các nguồn còn là ẩn số.
+
+  **Bug có sẵn từ Phase 4 lộ ra khi chụp ảnh** (đã sửa, 1 dòng, commit riêng): `ApproachFunnel`
+  chuẩn hoá mọi thanh theo `by_status.DISCOVERED`, coi đó luôn là đỉnh phễu. Nhưng `by_status`
+  đếm theo trạng thái **hiện tại** — job đã nộp thì **rời khỏi** DISCOVERED. Với 24 submitted /
+  4 discovered, `width = 24/4*100 = 600%`, thanh tràn khỏi card ra hết chiều ngang trang.
+  **Phễu vỡ đúng lúc công cụ chạy tốt.** Giờ `top` lấy max trên mọi chặng.
+
+  **Và một bẫy verify tự dính:** ảnh "dark mode" đầu tiên ra **light**. `add_init_script` đúng
+  kỹ thuật như `web/src/CLAUDE.md` dặn, nhưng key là `jobpilot-theme` chứ không phải `theme`.
+  Không mở ảnh ra nhìn thì đã báo cáo "đã verify dark" trên một tấm ảnh sáng trưng. Giờ script
+  chụp **assert `document.documentElement.classList.contains('dark')`** trước khi chụp.
+
+  **Review gate bắt được một bug tôi tự tạo:** `SplitTable` hardcode header cột đầu là "Source",
+  nên bấm tab **Channel** thì bảng hiện `email`/`portal`/`external` dưới một cột ghi "Source" —
+  số đúng, nhãn sai, tệ hơn cả hai. Header giờ đi theo tab (`DIMENSIONS`), và verify bằng cách
+  **bấm thật từng tab** rồi assert `<th>` khớp — vì đây là bug của *tương tác*, ảnh tĩnh một
+  trạng thái không bao giờ lộ ra.
+
+  **Nợ "median âm" đã trả (vòng review thứ hai):** `occurred_at < submitted_at` (backdate tay,
+  hoặc Phase 19 lấy timestamp mail lệch múi giờ) từng cho "-2.0 days, typically". Đã chọn
+  **loại hẳn cặp đó** và đếm ở `timing.inconsistent`, **không kẹp về 0** — kẹp về 0 biến một
+  header mail lệch giờ thành *câu trả lời nhanh nhất corpus*, tức là biến dữ liệu bẩn thành
+  một kỷ lục trông rất đẹp. Cùng họ với `undated` và `still_waiting`: không tính được ≠ bằng 0.
+
+  **Hai thứ nữa của vòng review thứ hai:**
+  - `repeat_postings` lấy tên hiển thị từ `members[0]` mà query **không có `ORDER BY`** — cùng
+    một group có thể ra "Công ty TNHH X" lần này, "CONG TY TNHH X" lần sau. Đã sort theo `job_id`
+    trước khi chọn nhãn. Gom nhóm vốn đã đúng; chỉ cái **nhãn** là ngẫu nhiên.
+  - Card "Ads that keep coming back" trước đây nấp sau `total_sent > 0`. Nhưng tin đăng lại là
+    dữ kiện của **corpus crawl**, không phải của việc nộp đơn — nó đáng giá nhất với đúng người
+    mà điều kiện cũ giấu nó đi: crawl nhiều, chưa nộp đơn nào (DB thật lúc kiểm: 83 job / 0 đơn,
+    panel ẩn sạch). Giờ Deck hiện riêng card đó khi `repeats.total_groups > 0`.
+
+  **Verify vòng hai:** dựng DB `jobpilot_demo` riêng (42 đơn hư cấu, 4 tin lặp viết 4 kiểu tên)
+  rồi trỏ web sang API thứ hai — DB thật không đụng tới. Bảng suppress đúng (`n=5 · needs 8`),
+  `covered 39/42` khi thiếu level, 4 cách viết tên gộp làm 1 group, light + dark sạch console.
+  Chi tiết: `.env.local` **thắng** biến môi trường `VITE_API_BASE` của shell — lần chụp đầu ra
+  đúng dữ liệu DB thật trong khi tưởng đang xem demo. Sửa file rồi restart Vite mới đổi được.
+

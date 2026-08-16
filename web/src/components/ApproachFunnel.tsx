@@ -18,7 +18,13 @@ const LABELS: Record<JobStatus, string> = {
 
 export function ApproachFunnel({ stats }: { stats: Stats }) {
   const ramp = isDark() ? ORDINAL_BLUE_DARK : ORDINAL_BLUE_LIGHT;
-  const top = Math.max(stats.by_status.DISCOVERED, 1);
+  // The widest stage, not DISCOVERED. `by_status` counts jobs by their *current*
+  // status, and a job that gets submitted leaves DISCOVERED — so SUBMITTED
+  // overtaking it is the normal end state of using the tool, not an anomaly.
+  // Normalising against DISCOVERED rendered those bars at well over 100% and the
+  // bar escaped its card across the whole page: the funnel broke precisely when
+  // the search was going well.
+  const top = Math.max(...FUNNEL_ORDER.map((s) => stats.by_status[s] ?? 0), 1);
 
   return (
     <div className="flex flex-col gap-1.5">

@@ -62,6 +62,70 @@ export interface Stats {
 }
 
 /**
+ * One source, channel or level, and how its applications actually went.
+ *
+ * `reply_rate` and `interview_rate` are `null` whenever `thin` is true — below
+ * the backend's `min_sample` the bucket carries counts only. Render `n={sent}`
+ * in that case. Do **not** divide `answered / sent` yourself: that puts back the
+ * exact percentage the backend suppressed, and the suppression is the point —
+ * slicing by source is what makes samples small, and "50%" from two
+ * applications sits next to a real rate looking just as authoritative.
+ */
+export interface OutcomeBucket {
+  key: string;
+  sent: number;
+  answered: number;
+  interviewed: number;
+  offered: number;
+  reply_rate: number | null;
+  interview_rate: number | null;
+  thin: boolean;
+}
+
+export interface OutcomeSplit {
+  rows: OutcomeBucket[];
+  covered: number;
+  total: number;
+  note: string;
+}
+
+/** Applications still waiting are excluded from the median, never folded in. */
+export interface ReplyTiming {
+  answered: number;
+  still_waiting: number;
+  undated: number;
+  /** Answered before it was sent — a broken timestamp, dropped rather than clamped to 0. */
+  inconsistent: number;
+  median_days: number | null;
+  fastest_days: number | null;
+  slowest_days: number | null;
+  thin: boolean;
+}
+
+/** An ad that keeps coming back — a signal for a human, not a verdict. */
+export interface RepeatPosting {
+  company: string;
+  title: string;
+  postings: number;
+  sources: string[];
+  first_posted: string | null;
+  last_posted: string | null;
+  /** `null`, not `0`, when fewer than two postings carry a date. */
+  span_days: number | null;
+  undated_postings: number;
+}
+
+export interface OutcomeAnalytics {
+  min_sample: number;
+  total_sent: number;
+  by_source: OutcomeSplit;
+  by_channel: OutcomeSplit;
+  by_level: OutcomeSplit;
+  timing: ReplyTiming;
+  repeats: { rows: RepeatPosting[]; total_groups: number; shown: number; min_postings: number };
+}
+
+/**
  * One window onto a list, plus the size of the list it came from.
  *
  * `total` is the reason this wrapper exists. Every list endpoint used to answer
