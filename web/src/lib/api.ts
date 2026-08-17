@@ -30,7 +30,16 @@ import type {
   Task,
 } from "@/types";
 
-const BASE = (import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000").replace(/\/$/, "");
+/* Relative by default, so the bundle works at whatever host serves it — the
+   FastAPI process in deployment, the Vite dev server (which proxies /api) in
+   development. Hardcoding 127.0.0.1 made the build wrong everywhere except the
+   machine that produced it. Override only to point a dev bundle at a backend on
+   another host. */
+const BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/$/, "");
+
+/* Baked into the bundle at build time by Vite, and therefore readable by anyone
+   who can load the page. It is not what keeps strangers out — Tailscale is.
+   See jobpilot/api/security.py. */
 const TOKEN = import.meta.env.VITE_API_TOKEN ?? "changeme";
 
 export class ApiError extends Error {
@@ -200,6 +209,21 @@ export const api = {
   },
 };
 
+/** Where the realtime socket lives.
+ *
+ * Derived from `window.location` rather than from BASE so the scheme follows
+ * the page: behind Tailscale the dashboard is served over https, and a `ws://`
+ * socket on an `https://` page is blocked by the browser as mixed content.
+ * BASE is only consulted when it names an absolute host (dev pointing at a
+ * remote backend). */
 export function wsUrl(): string {
-  return `${BASE.replace(/^http/, "ws")}/ws?token=${encodeURIComponent(TOKEN)}`;
+  if (/^https?:\/\//.test(BASE)) return `${BASE.replace(/^http/, "ws")}/ws`;
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${BASE}/ws`;
+}
+
+/** First frame on a new socket. The token travels in the body, not the query
+ *  string, so it stays out of access logs and browser history. */
+export function wsAuthFrame(): string {
+  return JSON.stringify({ type: "auth", token: TOKEN });
 }

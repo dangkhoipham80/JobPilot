@@ -8,7 +8,8 @@ import time
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app as fastapi_app
@@ -298,7 +299,7 @@ def client(session_factory, monkeypatch):
         s.commit()
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
-    c = TestClient(fastapi_app)
+    c = api_client(fastapi_app)
     yield c, test_queue
     fastapi_app.dependency_overrides.clear()
     test_queue.shutdown(wait=True)
@@ -404,6 +405,67 @@ def test_settings_never_leak_secrets(client):
     blob = str(c.get("/settings", headers=AUTH).json()).lower()
     for word in ("password", "api_key", "refresh_token", "smtp_user"):
         assert word not in blob
+
+
+def _isolated_config(tmp_path, monkeypatch):
+    from jobpilot import config as config_mod
+
+    base = tmp_path / "config.yaml"
+    base.write_text(yaml.safe_dump(Config().model_dump()))
+    monkeypatch.setattr(config_mod, "CONFIG_PATH", base)
+    monkeypatch.setattr(config_mod, "LOCAL_CONFIG_PATH", tmp_path / "config.local.yaml")
+    config_mod.get_config.cache_clear()
+    return config_mod
+
+
+def test_the_email_gates_cannot_be_opened_over_http(client, tmp_path, monkeypatch):
+    """The shortest path from a leaked token to outgoing mail is closed.
+
+    Without this, one PUT flips ``enabled`` on and ``dry_run`` off, and the next
+    apply mails a stranger in the user's name.
+    """
+    config_mod = _isolated_config(tmp_path, monkeypatch)
+    c, _ = client
+
+    for patch in (
+        {"apply": {"email": {"enabled": True}}},
+        {"apply": {"email": {"dry_run": False}}},
+        {"apply": {"email": {"test_recipient": "attacker@example.com"}}},
+    ):
+        r = c.put("/settings", headers=AUTH, json=patch)
+        assert r.status_code == 403, patch
+        assert "config.local.yaml" in r.json()["detail"]
+
+    cfg = config_mod.get_config()
+    assert cfg.apply.email.enabled is False
+    assert cfg.apply.email.dry_run is True
+    assert cfg.apply.email.test_recipient == ""
+    config_mod.get_config.cache_clear()
+
+
+def test_resending_a_locked_value_unchanged_is_not_a_rejection(client, tmp_path, monkeypatch):
+    """The Settings page saves a whole section at a time, so it resends these
+    fields whenever an unrelated preference on the same card changes. Refusing
+    that would make the card unsaveable and teach everyone to edit the file."""
+    config_mod = _isolated_config(tmp_path, monkeypatch)
+    c, _ = client
+
+    r = c.put(
+        "/settings",
+        headers=AUTH,
+        json={"apply": {"email": {"enabled": False, "dry_run": True}, "portal_prefill": False}},
+    )
+    assert r.status_code == 200
+    assert config_mod.get_config().apply.portal_prefill is False
+    config_mod.get_config.cache_clear()
+
+
+def test_settings_tell_the_ui_which_fields_are_locked(client):
+    c, _ = client
+    locked = c.get("/settings", headers=AUTH).json()["locked"]
+    assert "apply.email.enabled" in locked
+    assert "apply.email.dry_run" in locked
+    assert "apply.email.test_recipient" in locked
 
 
 # --- crawl scoping: sources / limit / suggestions --------------------------- #

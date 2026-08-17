@@ -177,7 +177,7 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - Idempotent: đọc/ghi trạng thái từ **Postgres**; chạy lại không hỏng.
 
 ### 5.6 `web/` — Web Dashboard (control plane chính)
-Backend **FastAPI** (REST + WebSocket) + Frontend **React (Vite + TypeScript) + TailwindCSS + shadcn/ui** (UI/UX gọn, hiện đại). Chạy local (`localhost`).
+Backend **FastAPI** (REST + WebSocket) + Frontend **React (Vite + TypeScript) + TailwindCSS + shadcn/ui** (UI/UX gọn, hiện đại). FastAPI phục vụ luôn `web/dist` **cùng origin**, nên chỉ có **một** địa chỉ để đưa vào Tailscale; mọi route REST/WS nằm dưới **`/api`** (trang `/jobs`, `/cv`, `/settings` là route của client-side router, trùng path với API nếu không có prefix). uvicorn bind `127.0.0.1`; truy cập từ xa qua `tailscale serve` — xem `DEPLOY.md`.
 
 **Các trang:**
 - **📊 Dashboard**: KPI cards (crawled / shortlisted / tailored / applied / success / fail), **funnel** theo status, biểu đồ job theo nguồn & theo ngày, tỉ lệ nộp thành công, cờ 🔥 job <48h. (Theo chuẩn dataviz: palette nhất quán light/dark.)
@@ -371,7 +371,8 @@ hay bị từ chối. Thêm value vào Postgres enum còn kéo theo migration `A
 | Auto-send email sai người | Trung | Preview email trên Slack trước lần đầu; whitelist/kênh bật rõ ràng. |
 | Secrets rò rỉ | Cao | `.env` (gitignore), không log token, không commit DB dump/`out/`. |
 | CAPTCHA khi apply portal | Trung | Không tự vượt CAPTCHA; chuyển sang human-in-the-loop. |
-| Web/API lộ ra ngoài | Trung | Chỉ bind `localhost`; token auth đơn giản; không expose Postgres port ra ngoài compose. |
+| Web/API lộ ra ngoài | Cao | uvicorn bind `127.0.0.1`; ra ngoài **chỉ** qua `tailscale serve` (private mesh, không phải public). **Token KHÔNG phải lớp chặn** — Vite nướng nó vào bundle nên ai mở được trang là đọc được; tầng mạng mới là auth. Không `funnel`, không bind `0.0.0.0`, không expose port Postgres. Xem `DEPLOY.md §0`. |
+| Máy chạy 24/7 | Trung | Chuyển từ laptop sang **VPS VN** (2026-08-17): laptop mang đi là JobPilot offline. VPS đặt ở VN để crawl không bị Cloudflare challenge như IP datacenter nước ngoài. |
 | Lệch state giữa Web ↔ Slack | Trung | **1 nguồn sự thật = Postgres**; mọi action đi qua API; đẩy update realtime (WS + Slack message update). |
 
 ---

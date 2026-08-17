@@ -20,7 +20,8 @@ is barely worth a test. These pin the parts that fail *without an error*:
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app
@@ -58,7 +59,7 @@ def client(session_factory):
         )
         s.commit()
 
-    c = TestClient(app)
+    c = api_client(app)
     yield c
     app.dependency_overrides.clear()
 

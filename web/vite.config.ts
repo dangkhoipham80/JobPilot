@@ -12,5 +12,10 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
+    // Same-origin in dev too, so the code path exercised here is the one that
+    // ships. `ws: true` also covers /api/ws, which lives under the same prefix.
+    proxy: {
+      "/api": { target: "http://127.0.0.1:8000", changeOrigin: false, ws: true },
+    },
   },
 });

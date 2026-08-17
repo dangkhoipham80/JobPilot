@@ -84,8 +84,11 @@ docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder
 # rồi đặt trong .env:  DATABASE_URL=postgresql+psycopg://postgres:<pass>@127.0.0.1:5432/jobpilot
 # (Hoặc `docker-compose up -d postgres` nếu muốn chạy Postgres trong Docker.)
 alembic upgrade head                # migrate DB — tạo schema `jobpilot`
-uvicorn jobpilot.api.main:app --reload   # API backend (REST + WebSocket) tại :8000
-cd web && npm run dev               # Web Dashboard (Vite) tại :5173  ← control plane chính
+uvicorn jobpilot.api.main:app --reload   # API + dashboard đã build, tại :8000
+                                    # MỌI route REST/WS nằm dưới /api — xem api/CLAUDE.md.
+                                    # Đã `npm run build` thì mở thẳng :8000 là ra dashboard.
+cd web && npm run dev               # Vite tại :5173 — chỉ khi đang sửa UI; nó proxy /api
+                                    # sang :8000 nên dev cũng same-origin như bản deploy.
 python -m jobpilot.cli crawl        # crawl các nguồn đang bật → Postgres
 python -m jobpilot.cli crawl --query "java spring" --limit 50   # scope 1 lần chạy
                                     # query NGẮN thôi: nó thành slug ở từng site,
@@ -122,7 +125,8 @@ make dev
 - **LaTeX**: giữ cú pháp Awesome-CV; dùng macro có sẵn `\tech{}`, `\techfe{}`, `\cvsimpleentry`, `\cvitems`. Đổi màu chủ đạo trong CV Studio (`theme.color`), không sửa `.tex` tay.
 - **Job schema**: mọi scraper phải normalize về `Job` schema chung (PLAN.md §3.1) để dedup theo `id = "<source>:<native_id>"`.
 - **State**: **Postgres là nguồn sự thật duy nhất**; mọi thay đổi trạng thái đi qua API backend (Web và Slack cùng gọi API → không lệch state). Orchestrator idempotent (chạy lại không hỏng). Đẩy update realtime qua WebSocket (web) + update message (Slack).
-- **Web/Frontend**: React + Vite + TS + TailwindCSS + shadcn/ui; charts theo skill `dataviz`, UI theo skill `frontend-design` (palette nhất quán light/dark, có cá tính riêng). Bind `localhost`, không expose ra ngoài. DB migrations bằng Alembic — đổi schema phải tạo migration, không sửa tay.
+- **Web/Frontend**: React + Vite + TS + TailwindCSS + shadcn/ui; charts theo skill `dataviz`, UI theo skill `frontend-design` (palette nhất quán light/dark, có cá tính riêng). **uvicorn luôn bind `127.0.0.1`** — ra ngoài chỉ qua `tailscale serve` proxy vào loopback, **không bao giờ** bind `0.0.0.0`, không mở port firewall, không `tailscale funnel`. Bundle chứa token nên tầng mạng mới là auth thật (`jobpilot/api/CLAUDE.md`). DB migrations bằng Alembic — đổi schema phải tạo migration, không sửa tay.
+- **Chạy service thì `--workers 1`, không `--reload`.** `TaskQueue` là ThreadPoolExecutor **trong tiến trình** (`orchestrator.py`, bind ở lifespan), nên worker thứ hai = hàng đợi thứ hai + WS manager thứ hai: guard "1 task/1 job" thôi giữ, và progress của task chạy ở worker A không tới dashboard đang nối worker B. Cả hai đều hỏng **im lặng** — `cli serve` vì thế **từ chối** `--workers > 1` thay vì cảnh báo.
 - **CV inline markup**: text trong `CvDocument` **không bao giờ** chứa LaTeX thô. Dùng subset markdown: `**bold**` → `\textbf`, `` `x` `` → `\tech`, `~x~` → `\techfe`, `[label](url)` → `\hreficon`. Mọi thứ còn lại được escape (`jobpilot/cv/latex.py`). Agent tailor (Phase 5) phải xuất đúng subset này.
 - **CV data flow (quan trọng)**: nguồn sự thật là **JSON structured** (CV Studio + agent tailor cùng dùng) → serialize ra `.tex` qua Jinja2 → Docker build PDF. Không sửa `.tex` tailored bằng tay ngoài luồng này (trừ raw-mode trong Studio, có cảnh báo mất round-trip). Mọi lần save = 1 row `cv_versions` (author = user|agent).
 - **Verify thay đổi runtime**: sau khi sửa scraper/tailor/apply, chạy thử flow tương ứng và quan sát output thật, đừng chỉ dựa vào test. Sau khi sửa template Jinja2 hoặc `cv/latex.py` phải build lại PDF để chắc không lỗi LaTeX.
@@ -173,8 +177,9 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | 20b | Một tầng provider: claude/openai/gemini, cảnh báo dữ liệu, **đo chi phí + chất lượng** | `llm/`, migration 0009, `llm/stats.py` |
 | 21 | Trang **/market**: nghiên cứu thị trường từ corpus đã crawl + trích lương/skill/city | `analytics/`, `crawler/salary.py`, `skills.py` |
 | 20c | Trang **/models**: chọn model theo việc, dashboard giá + credit đã dùng/còn, scrub key | `web/src/pages/Models.tsx`, `llm/redact.py` |
+| deploy | FastAPI serve `web/dist` **same-origin** (API xuống `/api`), siết token + khoá gate email, systemd/timer + backup, CI/CD | `api/static.py`, `api/security.py`, `deploy/`, `.github/workflows/ci.yml`, `DEPLOY.md` |
 
-690 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+746 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
@@ -212,7 +217,13 @@ Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `ll
 
 - Apply = **hybrid theo kênh** (email full-auto, portal/LinkedIn human-in-the-loop).
 - Nguồn = **ITviec + TopCV + VietnamWorks** lõi (pluggable, mở rộng theo tier — PLAN.md §5.1.1); không LinkedIn/Facebook.
-- Giao diện = **Web Dashboard local** là chính, **Slack** phụ. DB = **PostgreSQL**.
-- Chạy = **local**, tay hoặc cron nhẹ.
+- Giao diện = **Web Dashboard** là chính, **Slack** phụ. DB = **PostgreSQL**.
+- Chạy = **VPS Việt Nam (~100k/tháng) + Tailscale**, service 24/7 + systemd timer cho crawl.
+  Đổi từ "local trên laptop" (2026-08-17) vì laptop là thứ mang đi, mà mang đi thì
+  JobPilot offline. **Vẫn không phải public**: uvicorn bind loopback, ra ngoài chỉ qua
+  tailnet — xem `DEPLOY.md §0` trước khi đụng vào chuyện phơi ra ngoài.
+  VPS đặt ở **VN** vì ITviec/TopCV/VietnamWorks sau Cloudflare, IP datacenter nước ngoài
+  bị challenge nhiều hơn; đường lui nếu vẫn bị chặn: crawl ở laptop, DB ở VPS, chỉ đổi
+  `DATABASE_URL` (`DEPLOY.md §7`). Máy phải **x86-64** — ảnh Docker LaTeX chỉ có amd64.
 - Stack = Python (FastAPI + Playwright stealth + Docker LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
 - LLM = **Claude mặc định**, openai/gemini chọn được **theo từng việc** (`llm.*`, Phase 20b). Không chạy model local.

@@ -1,0 +1,43 @@
+[Unit]
+Description=JobPilot API + dashboard
+# Docker is a hard dependency, not a nicety: the LaTeX build shells out to
+# `docker run`, and tailor/build.py raises BuildError with no fallback when the
+# socket is missing. Starting before dockerd means every CV build fails until
+# something restarts this.
+After=network-online.target postgresql.service docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+User=jobpilot
+Group=jobpilot
+WorkingDirectory=/opt/jobpilot
+EnvironmentFile=/opt/jobpilot/.env
+
+# --workers 1 is mandatory, not tuning. The task queue is a ThreadPoolExecutor
+# inside this process, so a second worker is a second queue with its own
+# WebSocket manager: the same job gets tailored twice and progress goes to a
+# dashboard that isn't listening. Both failures are silent.
+# No --reload either: it spawns a reloader parent, which doubles the queue the
+# same way.
+ExecStart=/opt/jobpilot/.venv/bin/uvicorn jobpilot.api.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1
+
+# Bound to loopback on purpose. Reachable from other devices only through
+# `tailscale serve`, which terminates TLS and proxies back here — so there is no
+# firewall port to open and nothing listening on a public interface.
+
+Restart=always
+RestartSec=5
+
+# The process needs to write out/ (built PDFs) and jobpilot/config.local.yaml,
+# and to read .env. Nothing else on the box is its business.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/jobpilot/out /opt/jobpilot/jobpilot
+
+[Install]
+WantedBy=multi-user.target

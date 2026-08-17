@@ -11,7 +11,8 @@ from __future__ import annotations
 import time
 
 import pytest
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app as fastapi_app
@@ -124,9 +125,9 @@ def client(session_factory, worker_db, tmp_path, monkeypatch):
     fastapi_app.dependency_overrides[get_engine] = lambda: FixtureEngine(plan=PLAN)
     fastapi_app.dependency_overrides[get_letter_engine] = lambda: None
 
-    http = TestClient(fastapi_app)
+    http = api_client(fastapi_app)
     c = JobPilotClient(
-        base_url="http://testserver",
+        base_url="http://testserver/api",
         token=get_secrets().jobpilot_api_token,
         http_client=http,
     )
@@ -268,7 +269,7 @@ def test_client_404_for_unknown_job(client):
 
 
 def test_client_rejects_a_bad_token():
-    with TestClient(fastapi_app) as http:
+    with api_client(fastapi_app) as http:
         bad = JobPilotClient(base_url="http://testserver", token="wrong", http_client=http)
         with pytest.raises(ApiError) as exc:
             bad.jobs()
@@ -420,3 +421,41 @@ def test_slack_module_imports_without_the_sdk():
     import jobpilot.slack.app as slack_app
 
     assert callable(slack_app.run)
+
+
+# --------------------------------------------------------------------------- #
+# The production defaults themselves.
+#
+# Every other test here injects `base_url` into JobPilotClient, which is right
+# for exercising behaviour but means the constants the app actually ships with
+# are never touched. When the API moved under /api, that gap hid a completely
+# broken Slack companion behind a green suite — and `client.health()` could not
+# catch it either, because /health is deliberately served at both roots. These
+# tests exist to pin the constants themselves.
+# --------------------------------------------------------------------------- #
+def test_the_shipped_api_base_carries_the_prefix():
+    from jobpilot.api.main import API_PREFIX
+    from jobpilot.slack.app import API_BASE
+    from jobpilot.slack.client import DEFAULT_BASE
+
+    for base in (API_BASE, DEFAULT_BASE):
+        assert base.endswith(API_PREFIX), base
+
+
+def test_the_cli_slack_default_carries_the_prefix():
+    from jobpilot.api.main import API_PREFIX
+    from jobpilot.cli import build_parser
+
+    args = build_parser().parse_args(["slack"])
+    assert args.api.endswith(API_PREFIX)
+
+
+def test_the_mirror_socket_url_is_derived_from_the_api_base():
+    """Reproduces the ws_url line in slack/app.py. If the socket keeps living at
+    a hand-written /ws, it silently times out against the new handshake."""
+    from jobpilot.slack.app import API_BASE
+
+    ws_url = API_BASE.replace("http", "ws", 1) + "/ws"
+    assert ws_url == "ws://127.0.0.1:8000/api/ws"
+    # The token must not be in the URL — that is what the access log records.
+    assert "token" not in ws_url

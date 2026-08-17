@@ -10,7 +10,7 @@ editing ``config.yaml``, whose comments document the email safety gates.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,7 +18,13 @@ from sqlalchemy.orm import Session
 from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.paging import LimitParam, OffsetParam, page_list, page_query
 from jobpilot.api.schemas import CrawlRequest, Page, RunOut, SettingsIn, TaskOut
-from jobpilot.config import get_config, save_local_config
+from jobpilot.config import (
+    LOCAL_CONFIG_PATH,
+    LOCKED_SETTINGS,
+    get_config,
+    locked_violations,
+    save_local_config,
+)
 from jobpilot.crawler.pipeline import default_query
 from jobpilot.orchestrator import crawl_body, queue
 from jobpilot.store.models import Job, Run
@@ -163,8 +169,16 @@ def list_runs(
 
 @router.get("/settings")
 def read_settings() -> dict:
-    """The resolved config (base + overlay). Secrets are never included."""
-    return get_config().model_dump()
+    """The resolved config (base + overlay). Secrets are never included.
+
+    Carries ``locked`` so the Settings page can render those controls read-only.
+    A disabled switch explains itself; one that moves and then fails on save
+    teaches the user that the page is unreliable.
+    """
+    return {
+        **get_config().model_dump(),
+        "locked": [".".join(path) for path in LOCKED_SETTINGS],
+    }
 
 
 @router.put("/settings")
@@ -173,6 +187,19 @@ def write_settings(body: SettingsIn) -> dict:
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status_code=422, detail="nothing to change")
+
+    # The email gates are not editable over HTTP at any privilege level; see
+    # config.LOCKED_SETTINGS. 403 and not 422: the request is well-formed, it is
+    # simply not something this interface is allowed to do.
+    locked = locked_violations(patch)
+    if locked:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"{', '.join(locked)} can only be changed by editing "
+                f"{LOCAL_CONFIG_PATH.name} on the host, then restarting"
+            ),
+        )
     try:
         return save_local_config(patch).model_dump()
     except Exception as exc:

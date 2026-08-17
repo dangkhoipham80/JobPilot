@@ -9,7 +9,8 @@ actually reach and pushes on the boundaries between them.
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app
@@ -60,7 +61,7 @@ def client(session_factory):
         s.commit()
 
     app.dependency_overrides[get_db] = override_get_db
-    c = TestClient(app)
+    c = api_client(app)
     yield c
     app.dependency_overrides.clear()
 

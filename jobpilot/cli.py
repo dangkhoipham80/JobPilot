@@ -471,11 +471,30 @@ def cmd_serve(args: argparse.Namespace) -> int:
     except ImportError:
         print("uvicorn not installed — run: pip install -e '.[api]'", file=sys.stderr)
         return 1
+
+    if args.workers != 1:
+        # Not a preference. The task queue is a ThreadPoolExecutor living inside
+        # this process (orchestrator.py, bound in the API's lifespan), so a
+        # second uvicorn worker is a second, independent queue with its own
+        # WebSocket manager. The "one task per job" guard in queue.submit() only
+        # sees its own process, so the same job gets tailored twice at once;
+        # progress for a task started in worker A never reaches a dashboard
+        # connected to worker B. Both failures are silent — hence a hard refusal
+        # rather than a warning nobody reads in a service log.
+        print(
+            f"--workers {args.workers} is not supported: the task queue is in-process, "
+            "so extra workers each get their own queue and the one-task-per-job "
+            "guard stops holding. Run one worker.",
+            file=sys.stderr,
+        )
+        return 2
+
     uvicorn.run(
         "jobpilot.api.main:app",
         host=args.host,
         port=args.port,
         reload=args.reload,
+        workers=1,
     )
     return 0
 
@@ -575,9 +594,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", default="127.0.0.1", help="bind host (localhost only)")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--reload", action="store_true", help="auto-reload on code change")
+    p_serve.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="must be 1 — the task queue is in-process (see cmd_serve)",
+    )
     p_serve.set_defaults(func=cmd_serve)
     p_slack = sub.add_parser("slack", help="run the Slack companion app (Phase 7)")
-    p_slack.add_argument("--api", default="http://127.0.0.1:8000", help="JobPilot API base URL")
+    p_slack.add_argument(
+        "--api",
+        default="http://127.0.0.1:8000/api",
+        help="JobPilot API base URL (must include the /api prefix)",
+    )
     p_slack.add_argument("--web", default="http://localhost:5173", help="dashboard base URL")
     p_slack.set_defaults(func=cmd_slack)
 

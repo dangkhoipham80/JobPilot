@@ -137,3 +137,22 @@ def test_page_summary_says_unknown_rather_than_warning_about_none_pages():
     assert page_summary(1) == "OK: 1 page"
     assert "WARNING" in page_summary(2)
     assert "unknown" in page_summary(None)
+
+
+def test_docker_runs_as_the_calling_user_on_posix(monkeypatch):
+    """On Linux the container would otherwise write cv.pdf as root, and the next
+    build's unlink() would fail with EACCES while reporting stale output."""
+    import jobpilot.tailor.build as build_mod
+
+    monkeypatch.setattr(build_mod.os, "getuid", lambda: 1000, raising=False)
+    monkeypatch.setattr(build_mod.os, "getgid", lambda: 1000, raising=False)
+    assert build_mod._user_args() == ["-u", "1000:1000"]
+
+
+def test_docker_passes_no_uid_on_windows(monkeypatch):
+    """Docker Desktop translates ownership at the mount layer and there is no
+    getuid to pass; sending one would be a guess dressed up as a setting."""
+    import jobpilot.tailor.build as build_mod
+
+    monkeypatch.delattr(build_mod.os, "getuid", raising=False)
+    assert build_mod._user_args() == []

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app
 from jobpilot.config import get_secrets
+from jobpilot.tests.conftest import api_client
 from jobpilot.store.models import Job, JobStatus
 
 TOKEN = get_secrets().jobpilot_api_token
@@ -40,7 +43,7 @@ def client(session_factory):
         )
         s.commit()
 
-    c = TestClient(app)
+    c = api_client(app)
     yield c
     app.dependency_overrides.clear()
 
@@ -152,8 +155,15 @@ def test_shortlist_404(client):
     assert client.post("/jobs/nope:0/shortlist", headers=_auth(client)).status_code == 404
 
 
+def _ws_auth(token: str = TOKEN) -> str:
+    return json.dumps({"type": "auth", "token": token})
+
+
 def test_websocket_echo(client):
-    with client.websocket_connect(f"/ws?token={TOKEN}") as ws:
+    # Absolute path: Starlette's websocket_connect ignores the client's
+    # base_url, so the /api prefix has to be written out here.
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_text(_ws_auth())
         hello = ws.receive_json()
         assert hello["type"] == "hello"
         ws.send_text("ping")
@@ -163,8 +173,30 @@ def test_websocket_echo(client):
 
 def test_websocket_rejects_bad_token(client):
     with pytest.raises(Exception):
-        with client.websocket_connect("/ws?token=wrong") as ws:
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(_ws_auth("wrong"))
             ws.receive_json()
+
+
+def test_websocket_token_is_not_accepted_in_the_query_string(client):
+    """The query string is written to the access log; the frame body is not.
+
+    Leaving the old path working would have kept the leak while looking fixed.
+    """
+    with pytest.raises(Exception):
+        with client.websocket_connect(f"/api/ws?token={TOKEN}") as ws:
+            ws.receive_json()
+
+
+def test_websocket_never_broadcasts_before_authentication(client):
+    """An unauthenticated socket must not be in the broadcast set while it is
+    being asked for a token — otherwise every job update leaks to it."""
+    from jobpilot.api.ws import manager
+
+    with client.websocket_connect("/api/ws") as ws:
+        assert manager.active == set()
+        ws.send_text(_ws_auth())
+        assert ws.receive_json()["type"] == "hello"
 
 
 def test_filter_jobs_by_run_id(client, session_factory):
@@ -236,3 +268,19 @@ def test_runs_report_their_job_count(client, session_factory):
 
     runs = client.get("/runs", headers=_auth(client)).json()["items"]
     assert runs[0]["job_count"] == 3
+
+
+def test_a_client_that_vanishes_during_auth_is_not_an_error(client):
+    """Closing the tab before authenticating is ordinary, not exceptional.
+
+    Calling close() on an already-disconnected socket makes uvicorn raise
+    "Unexpected ASGI message", which reaches the service log as a traceback —
+    and a log full of tracebacks for normal events is a log nobody reads.
+    """
+    with client.websocket_connect("/api/ws") as ws:
+        ws.close()  # leave without ever sending the auth frame
+
+    # The next connection must still work; a wedged handler would show up here.
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_text(_ws_auth())
+        assert ws.receive_json()["type"] == "hello"
