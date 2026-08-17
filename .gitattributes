@@ -1,0 +1,17 @@
+# Line endings are a deployment concern here, not a style one.
+#
+# The repo is edited on Windows and runs on Linux. A shell script committed with
+# CRLF fails on the VPS as `bad interpreter: /usr/bin/env bash^M` — which names
+# neither the file nor the real problem — and a systemd unit with CRLF is parsed
+# with a trailing \r inside every value, so ExecStart points at a path that does
+# not exist. Both depend on whoever committed having core.autocrlf set the right
+# way, which is not something to leave to chance.
+
+* text=auto
+
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Makefile text eol=lf
