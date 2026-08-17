@@ -43,6 +43,12 @@ lớn. Nhắm gói ~100–120k có ≥25 GB NVMe.
 ## 2. Cài trên VPS
 
 ```bash
+# Timezone TRƯỚC, không phải sau. Timer dùng giờ local; VPS thường ship UTC,
+# để nguyên là crawl chạy 15:30/01:30 thay vì 08:30/18:30 — lệch 7 tiếng mà
+# không có lỗi nào, chỉ có "sao mấy hôm nay không thấy job mới".
+sudo timedatectl set-timezone Asia/Ho_Chi_Minh
+timedatectl | grep "Time zone"
+
 sudo adduser --system --group --home /opt/jobpilot jobpilot
 sudo apt update && sudo apt install -y git curl postgresql docker.io python3.11-venv
 
@@ -107,11 +113,18 @@ sudo visudo -c    # syntax sai là hỏng sudo của cả máy — check trướ
 Hai chi tiết dễ sai:
 - **`/usr/bin/`, không phải `/bin/`.** Ubuntu 22.04+ dùng merged-usr, sudo resolve ra
   `/usr/bin/journalctl`; rule ghi `/bin/...` sẽ không match.
-- **Trong sudoers mỗi `*` khớp *một* argument.** Rule `journalctl -u jobpilot-api *` mà lệnh
-  thật là `journalctl -u jobpilot-api -n 40 --no-pager` (ba argument) thì **không khớp** → sudo
-  từ chối. Dấu `*` cuối ở đây nằm cuối rule nên khớp phần còn lại; nếu bạn đổi lệnh trong
-  `update.sh` thì kiểm lại. Hỏng chỗ này chỉ lộ ra ở **error path** — đúng lúc service không
-  lên và bạn cần đọc log nhất, thì log không hiện.
+- **Wildcard trong sudoers là glob, không phải "một `*` = một argument".** Nó khớp trên
+  **toàn bộ** chuỗi argument nên `*` cuối rule phủ được cả `-n 40 --no-pager`. Đừng dựa vào
+  suy đoán — **test thật** trước khi cần tới nó:
+
+  ```bash
+  sudo -u jobpilot sudo -ln /usr/bin/journalctl -u jobpilot-api -n 40 --no-pager
+  sudo -u jobpilot sudo -ln /usr/bin/systemctl restart jobpilot-api
+  ```
+
+  In ra đường dẫn lệnh = được phép; `sudo: sorry` = rule không khớp. Sai chỗ này chỉ lộ ra ở
+  **error path** — đúng lúc service không lên và bạn cần đọc log nhất thì log không hiện, nên
+  nó phải được thử lúc mọi thứ còn đang tốt.
 
 ## 3. Tailscale
 
@@ -133,6 +146,9 @@ Tailscale cùng tài khoản.
 Theo đúng luật trong `CLAUDE.md`: test xanh không chứng minh nó chạy.
 
 - [ ] `curl -fsS http://127.0.0.1:8000/health` trên VPS → `{"status":"ok",...}`
+- [ ] `systemctl list-timers jobpilot-*` → cột NEXT phải là **08:30 / 18:30 / 03:00 giờ VN**.
+      Kiểm ở đây chứ không phải `systemd-analyze calendar`: đã có ca timer bị tính theo UTC
+      trong khi `systemd-analyze` trả đúng giờ local. Lệch 7 tiếng không kèm lỗi nào.
 - [ ] Mở URL `.ts.net` từ **điện thoại dùng 4G, tắt wifi**. Wifi có thể đi đường
       LAN và không chứng minh được tailnet hoạt động.
 - [ ] Dashboard load, chấm **LIVE** sáng (WS đã auth xong — nó chỉ sáng khi nhận

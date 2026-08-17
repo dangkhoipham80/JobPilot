@@ -2,7 +2,9 @@
 Description=Back up JobPilot nightly
 
 [Timer]
-OnCalendar=Asia/Ho_Chi_Minh 03:00
+# Local time — the host timezone is set in DEPLOY.md §2. See the note in
+# jobpilot-crawl.timer for why the zone is not written inline.
+OnCalendar=03:00
 RandomizedDelaySec=10min
 # Catch up after downtime: a backup skipped because the box was off is exactly
 # the backup you wanted.
