@@ -24,6 +24,32 @@ const SOURCE_NAMES: Record<string, string> = {
   topdev: "TopDev",
 };
 
+/**
+ * Where each source lives, so a chip can link to the board it crawls.
+ *
+ * The homepage, not a search URL: what a query looks like is the scraper's
+ * business and changes with it, while "which site is this" is the question a
+ * link next to a source name answers.
+ */
+const SOURCE_HOMES: Record<string, string> = {
+  itviec: "https://itviec.com",
+  topcv: "https://www.topcv.vn",
+  vietnamworks: "https://www.vietnamworks.com",
+  // The scraper never touches LinkedIn — it reads Job Alert mail — but the
+  // alerts are configured on LinkedIn, so that is where the link should go.
+  linkedin: "https://www.linkedin.com/jobs",
+  weworkremotely: "https://weworkremotely.com",
+  arbeitnow: "https://www.arbeitnow.com",
+  greenhouse: "https://www.greenhouse.io",
+  lever: "https://www.lever.co",
+  topdev: "https://topdev.vn",
+};
+
+/** Homepage of the board behind a source key, or `null` if we don't know one. */
+export function sourceHome(key: string): string | null {
+  return SOURCE_HOMES[key.toLowerCase()] ?? null;
+}
+
 const QUALITY_NAMES: Record<string, string> = {
   clean: "Clean",
   no_jd: "No description",

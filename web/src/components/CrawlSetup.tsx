@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Loader2, Play, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, Loader2, Play, Sparkles, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select } from "@/components/ui";
-import { sourceColor } from "@/components/charts/palette";
-import { titleCase } from "@/lib/format";
+import { SourceIcon } from "@/components/SourceIcon";
+import { sourceHome, sourceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
 /**
@@ -99,27 +99,50 @@ export function CrawlSetup({
         <div>
           <Label>Sources</Label>
           <div className="flex flex-wrap gap-2">
-            {runnable.map((key) => (
-              <button
-                key={key}
-                onClick={() => toggleSource(key)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors",
-                  selected.includes(key)
-                    ? "border-accent bg-accent/10 text-ink"
-                    : "text-ink-muted hover:bg-surface-2",
-                )}
-              >
+            {runnable.map((key) => {
+              const on = selected.includes(key);
+              const home = sourceHome(key);
+              return (
+                // The chip is a toggle *and* a way out to the board, so the
+                // border lives on the wrapper: an <a> nested inside a <button>
+                // is invalid HTML, and browsers resolve it by dropping one.
                 <span
-                  className="h-2 w-2 rounded-sm"
-                  style={{
-                    background: selected.includes(key) ? sourceColor(key) : "currentColor",
-                    opacity: selected.includes(key) ? 1 : 0.4,
-                  }}
-                />
-                {titleCase(key)}
-              </button>
-            ))}
+                  key={key}
+                  className={cn(
+                    "inline-flex items-center rounded-lg border transition-colors",
+                    on ? "border-accent bg-accent/10 text-ink" : "text-ink-muted",
+                  )}
+                >
+                  <button
+                    onClick={() => toggleSource(key)}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-l-lg py-1.5 pl-2.5 pr-2 text-sm font-medium transition-colors",
+                      !on && "hover:bg-surface-2",
+                    )}
+                    aria-pressed={on}
+                  >
+                    {/* Colour still carries the selection — the logo says which
+                        board, the tint says whether this run includes it. */}
+                    <SourceIcon
+                      source={key}
+                      className={cn("transition-opacity", !on && "opacity-50 grayscale")}
+                    />
+                    {sourceLabel(key)}
+                  </button>
+                  {home && (
+                    <a
+                      href={home}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={home.replace(/^https?:\/\//, "")}
+                      className="rounded-r-lg py-1.5 pl-1 pr-2 text-ink-muted transition-colors hover:text-accent"
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                  )}
+                </span>
+              );
+            })}
             {!runnable.length && (
               <p className="text-sm text-ink-muted">
                 No source is ready to crawl. Turn one on in{" "}
@@ -134,12 +157,12 @@ export function CrawlSetup({
             <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
               <AlertTriangle size={11} className="text-accent" />
               On in Settings but not implemented yet:{" "}
-              {notReady.map((s) => s.key).join(", ")} — they'd crawl nothing.
+              {notReady.map((s) => sourceLabel(s.key)).join(", ")} — they'd crawl nothing.
             </p>
           )}
           {off.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-muted">
-              Off in Settings: {off.map((s) => s.key).join(", ")}
+              Off in Settings: {off.map((s) => sourceLabel(s.key)).join(", ")}
             </p>
           )}
         </div>
