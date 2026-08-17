@@ -1,0 +1,12 @@
+[Unit]
+Description=Back up JobPilot nightly
+
+[Timer]
+OnCalendar=Asia/Ho_Chi_Minh 03:00
+RandomizedDelaySec=10min
+# Catch up after downtime: a backup skipped because the box was off is exactly
+# the backup you wanted.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

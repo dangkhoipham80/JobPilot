@@ -381,7 +381,7 @@ def test_the_endpoint_serves_the_split(session_factory):
     """The contract the dashboard reads. Pinned end to end because a schema
     that silently drops ``thin`` would let the page render a percentage the
     module went out of its way to suppress."""
-    from fastapi.testclient import TestClient
+    from jobpilot.tests.conftest import api_client
 
     from jobpilot.api.deps import get_db
     from jobpilot.api.main import app as fastapi_app
@@ -400,7 +400,7 @@ def test_the_endpoint_serves_the_split(session_factory):
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
     try:
-        client = TestClient(fastapi_app)
+        client = api_client(fastapi_app)
         res = client.get("/stats/outcomes", headers={"X-API-Token": get_secrets().jobpilot_api_token})
         assert res.status_code == 200
         body = res.json()
@@ -424,7 +424,7 @@ def test_the_endpoint_serves_an_empty_corpus(session_factory):
     required field that is only ever populated with data would turn that first
     visit into a 500.
     """
-    from fastapi.testclient import TestClient
+    from jobpilot.tests.conftest import api_client
 
     from jobpilot.api.deps import get_db
     from jobpilot.api.main import app as fastapi_app
@@ -439,7 +439,7 @@ def test_the_endpoint_serves_an_empty_corpus(session_factory):
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
     try:
-        client = TestClient(fastapi_app)
+        client = api_client(fastapi_app)
         res = client.get("/stats/outcomes", headers={"X-API-Token": get_secrets().jobpilot_api_token})
         assert res.status_code == 200
         body = res.json()

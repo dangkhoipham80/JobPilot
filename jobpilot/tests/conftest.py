@@ -25,6 +25,26 @@ from jobpilot.config import get_secrets
 from jobpilot.store.db import Base, make_engine
 
 
+def api_client(app, **kwargs):
+    """A ``TestClient`` whose relative paths land under the API prefix.
+
+    Every REST route moved to ``/api`` when the dashboard started sharing the
+    origin, but tests still say ``client.get("/jobs")`` — which reads better
+    and, more usefully, keeps the prefix in one place instead of in 700
+    assertions. httpx appends a relative path to ``base_url``'s own path, so
+    this is exact rather than a rewrite.
+
+    Does **not** cover ``websocket_connect``: Starlette builds that URL with
+    ``urljoin("ws://testserver", url)`` and never consults ``base_url``, so
+    those few call sites spell out ``/api/ws`` themselves.
+    """
+    from fastapi.testclient import TestClient
+
+    from jobpilot.api.main import API_PREFIX
+
+    return TestClient(app, base_url=f"http://testserver{API_PREFIX}", **kwargs)
+
+
 @pytest.fixture(autouse=True)
 def _seed_with_sample_cv(monkeypatch):
     """The app bootstraps an *empty* CV — it ships no content. Tests need a

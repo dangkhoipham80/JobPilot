@@ -382,6 +382,56 @@ def prune_to_schema(model: type[BaseModel], data: dict) -> dict:
     return out
 
 
+#: Settings that may only be changed by editing a file on the host, never
+#: through the API.
+#:
+#: These are the three gates standing between "JobPilot drafted an email" and
+#: "JobPilot sent an email to a stranger on your behalf" (``apply/email.py``).
+#: Every other setting on that page is a preference; these decide whether a
+#: machine speaks in your name. An HTTP request that can flip them turns one
+#: leaked token into outgoing mail, so the shortest path to sending is
+#: deliberately not on the network at all — you have to be on the host.
+LOCKED_SETTINGS: tuple[tuple[str, ...], ...] = (
+    ("apply", "email", "enabled"),
+    ("apply", "email", "dry_run"),
+    ("apply", "email", "test_recipient"),
+)
+
+
+class LockedSettingError(ValueError):
+    """A patch tried to change a setting that is file-only."""
+
+
+def _dig(data: object, path: tuple[str, ...]):
+    """Value at ``path``, or ``KeyError`` if the patch doesn't set it."""
+    for key in path:
+        if not isinstance(data, dict) or key not in data:
+            raise KeyError(path)
+        data = data[key]
+    return data
+
+
+def locked_violations(patch: dict, current: Config | None = None) -> list[str]:
+    """Which locked settings ``patch`` would actually change.
+
+    Only *changes* are rejected, not mere presence. The Settings page saves a
+    whole section at a time, so it resends these fields on every save of an
+    unrelated preference; refusing those would make the page unusable and teach
+    everyone to route around the lock. Sending the value it already has is a
+    no-op and is allowed to pass.
+    """
+    cfg = current or get_config()
+    out = []
+    for path in LOCKED_SETTINGS:
+        try:
+            proposed = _dig(patch, path)
+        except KeyError:
+            continue
+        if proposed != _dig(cfg.model_dump(), path):
+            out.append(".".join(path))
+    return out
+
+
 def save_local_config(patch: dict) -> Config:
     """Merge ``patch`` into the overlay, validate the result, then persist it.
 

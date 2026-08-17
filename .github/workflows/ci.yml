@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first: nobody reads the results
+# of a run that was already superseded, and the queue is shared.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # No Postgres service: the suite runs on the SQLite fixture in
+      # tests/conftest.py, with the `jobpilot` schema translated away. What that
+      # does *not* cover is migrations, which is why the deploy job runs
+      # `alembic upgrade head` against the real database before restarting.
+      - name: Install
+        run: pip install -e '.[all,dev]'
+
+      - name: Lint
+        run: ruff check jobpilot
+
+      # No `black --check` step yet, deliberately. The tree has never been
+      # black-formatted at the configured line-length, so switching it on would
+      # fail on ~19 files nobody is touching — and the only ways out are a
+      # repo-wide reformat that buries the next review's diff, or a step
+      # everyone learns to ignore. Reformat in its own commit, then add it here.
+
+      # The API token guard reads .env, which is not in the repo. Give the run a
+      # real one so the one test that starts a lifespan behaves like production
+      # rather than like a machine with no config.
+      - name: Test
+        env:
+          JOBPILOT_API_TOKEN: ci-token-not-a-secret-just-long-enough
+        run: pytest jobpilot/tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      # tsc separately from the build: Vite transpiles without type-checking, so
+      # a build that goes green proves nothing about types.
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: web
+
+      - name: Build
+        working-directory: web
+        env:
+          # Not the real token — this build is only checking that the bundle
+          # compiles. The deployed bundle is rebuilt on the host with the real
+          # value, because Vite bakes it in at build time.
+          VITE_API_TOKEN: build-check-placeholder-token
+        run: npm run build
+
+  # Deploy is a job in this workflow rather than its own, so `needs` guarantees
+  # it cannot run on a red build. A separate workflow would need `workflow_run`
+  # plumbing to get the same guarantee, and gets it wrong quietly.
+  deploy:
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Point this at a GitHub Environment with a required reviewer if you ever
+    # want a human to approve deploys; the job then waits instead of shipping.
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false # never interrupt a half-applied migration
+    steps:
+      # The VPS has no public SSH port — it is only reachable on the Tailnet, so
+      # the runner has to join it. This is what replaces "open port 22 to
+      # 0.0.0.0/0 and hope fail2ban keeps up".
+      - name: Join the Tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # Must match an ACL tag that is allowed to reach the host on :22.
+          tags: tag:ci
+
+      - name: Deploy
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }} # e.g. jobpilot-vps (a Tailnet name)
+          USER: ${{ secrets.DEPLOY_USER }} # e.g. jobpilot
+        run: |
+          install -m 600 /dev/null key
+          printf '%s\n' "$SSH_KEY" > key
+          # StrictHostKeyChecking=accept-new, not `no`: it still pins the key
+          # after first contact, so a later substitution fails loudly. `no` would
+          # accept a different host every time and never notice.
+          ssh -i key -o StrictHostKeyChecking=accept-new \
+              "$USER@$HOST" 'bash -lc "/opt/jobpilot/deploy/update.sh"'

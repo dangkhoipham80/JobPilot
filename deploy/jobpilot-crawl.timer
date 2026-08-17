@@ -1,0 +1,21 @@
+[Unit]
+Description=Crawl job boards twice a day
+
+[Timer]
+# Vietnamese boards post during office hours; twice a day catches the morning
+# batch and the afternoon one without hammering anybody. Times are in the unit's
+# timezone — set it explicitly rather than inheriting whatever the VPS shipped
+# with (most default to UTC, which would make these 15:00 and 01:00 local).
+OnCalendar=Asia/Ho_Chi_Minh 08:30
+OnCalendar=Asia/Ho_Chi_Minh 18:30
+
+# Spread the start so every JobPilot box on earth doesn't hit ITviec at the same
+# second, and so a board can't fingerprint the schedule.
+RandomizedDelaySec=20min
+
+# Run on the next boot if the machine was off when the timer was due. The whole
+# point of moving off the laptop was not missing runs.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

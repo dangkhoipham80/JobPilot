@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Loader2, Save, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Lock, Save, ShieldAlert } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Skeleton } from "@/components/ui";
@@ -24,6 +24,12 @@ export function Settings() {
   useEffect(() => {
     if (data) setDraft(structuredClone(data));
   }, [data]);
+
+  /* Which controls the server will refuse to change (config.LOCKED_SETTINGS).
+     Read from the response rather than hardcoded here, so the two lists cannot
+     drift into a switch that moves and then fails on save. */
+  const lockedFields = data?.locked ?? [];
+  const isLocked = (path: string) => lockedFields.includes(path);
 
   const save = useCallback(
     async (section: keyof SettingsData) => {
@@ -169,6 +175,7 @@ export function Settings() {
             label="Enabled"
             hint="nothing is sent at all while this is off"
             checked={draft.apply.email.enabled}
+            locked={isLocked("apply.email.enabled")}
             onChange={(enabled) =>
               set({ apply: { ...draft.apply, email: { ...draft.apply.email, enabled } } })
             }
@@ -177,6 +184,7 @@ export function Settings() {
             label="Dry run"
             hint="build and record the message, never send it"
             checked={draft.apply.email.dry_run}
+            locked={isLocked("apply.email.dry_run")}
             onChange={(dry_run) =>
               set({ apply: { ...draft.apply, email: { ...draft.apply.email, dry_run } } })
             }
@@ -187,6 +195,7 @@ export function Settings() {
             label="Test recipient"
             hint="deliver here instead of employers"
             value={draft.apply.email.test_recipient}
+            locked={isLocked("apply.email.test_recipient")}
             onChange={(test_recipient) =>
               set({ apply: { ...draft.apply, email: { ...draft.apply.email, test_recipient } } })
             }
@@ -202,6 +211,18 @@ export function Settings() {
         <p className="text-xs text-ink-muted">
           SMTP credentials live in <code className="font-mono">.env</code>, not here.
         </p>
+        {lockedFields.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs text-ink-muted">
+            <Lock size={13} className="mt-0.5 shrink-0" />
+            <span>
+              The three gates that decide whether mail actually leaves are deliberately not
+              editable over the network. Change them in{" "}
+              <code className="font-mono">jobpilot/config.local.yaml</code> on the host and
+              restart — so a stolen token cannot turn JobPilot into something that writes to
+              employers in your name.
+            </span>
+          </p>
+        )}
       </Section>
 
       <Section
@@ -328,16 +349,21 @@ function TextField({
   hint,
   value,
   onChange,
+  locked,
 }: {
   label: string;
   hint?: string;
   value: string;
   onChange: (v: string) => void;
+  locked?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <Label label={label} hint={hint} />
-      <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      <span className="flex items-center gap-2">
+        <Label label={label} hint={hint} />
+        {locked && <LockNote />}
+      </span>
+      <Input value={value} disabled={locked} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -376,22 +402,41 @@ function Toggle({
   hint,
   checked,
   onChange,
+  locked,
 }: {
   label: string;
   hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  locked?: boolean;
 }) {
   return (
-    <label className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm">
+    <label
+      className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+        locked ? "opacity-60" : ""
+      }`}
+    >
       <input
         type="checkbox"
         checked={checked}
+        disabled={locked}
         onChange={(e) => onChange(e.target.checked)}
         className="h-4 w-4 accent-[rgb(var(--accent))]"
       />
       <span className="font-medium">{label}</span>
       {hint && <span className="text-xs text-ink-muted">{hint}</span>}
+      {locked && <LockNote />}
     </label>
+  );
+}
+
+/** Marks a control the API refuses to change (config.LOCKED_SETTINGS). Shown
+ *  inline rather than as one banner, so it is attached to the thing it explains. */
+function LockNote() {
+  return (
+    <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-ink-muted">
+      <Lock size={11} />
+      host only
+    </span>
   );
 }

@@ -818,3 +818,113 @@ tưởng chỉ strip level.
 - Trace trên dữ liệu thật đọc được ngay: Palantir đăng cùng một req dưới nhiều Lever id —
   suppression **đúng**, và giờ nói ra được nó bỏ cái nào.
 - `GET /stats` `by_day` khớp DB từng bucket; `/stats/outcomes` `repeats` không đổi.
+
+---
+
+## Phase deploy — VPS Việt Nam + Tailscale, same-origin, CI/CD (2026-08-17)
+
+**Đổi một quyết định đã chốt.** `CLAUDE.md` ghi "Chạy = local, tay hoặc cron nhẹ" và
+"bind localhost, không expose ra ngoài". Lý do đổi: muốn dashboard 24/7 mà máy đang chạy là
+**laptop** — thứ người ta mang đi, và mang đi thì JobPilot offline. Tinh thần cũ **vẫn giữ**:
+Tailscale không phải public, uvicorn vẫn bind `127.0.0.1`, chỉ khác chỗ đặt máy.
+
+Đã cân và **loại**: public + login thật (phải xây session auth + HTTPS + rate-limit, và phơi ra
+Internet một service giữ CV + Gmail app password + LLM key — nhiều việc hơn hẳn, rủi ro cao hơn
+hẳn, cùng một mức tiền). Đã cân và **loại**: Oracle Cloud free ARM — verify registry thấy
+`csmith/awesome-cv-builder` là **manifest đơn, `arch=amd64`**, layer 1.45 GB nén (~3.5 GB đĩa);
+chạy ARM phải tự build image TeXLive arm64 rồi verify lại font Awesome-CV.
+
+### Prefix `/api` là bắt buộc, không phải thẩm mỹ
+
+Định serve `web/dist` thẳng ở root, rồi phát hiện **route frontend trùng route API gần như
+hoàn toàn**: `/jobs`, `/jobs/:id`, `/cv`, `/cv/:scope`, `/applications`, `/runs`, `/settings`,
+`/models` là cả hai. F5 ở `/jobs` sẽ ra mảng JSON thay vì trang. Không có cách né: hoặc API
+xuống `/api`, hoặc app xuống `/app`. Chọn `/api` vì đó là quy ước và vì 746 test soi được nó.
+
+Blast radius đúng như dự đoán và **đo được**: 145 test đỏ ngay lần chạy đầu. Sửa bằng
+`conftest.api_client()` đặt `base_url` — httpx nối path tương đối vào path của `base_url` nên
+700+ assertion `client.get("/jobs")` không phải sửa chữ nào.
+
+**Bẫy đã dính:** `TestClient.websocket_connect` **không** đọc `base_url` — Starlette hardcode
+`urljoin("ws://testserver", url)`. Nên helper chỉ lo HTTP; test WS phải tự viết `/api/ws`.
+Nếu không biết chuyện này thì triệu chứng là "WS test đỏ một cách vô lý" trong khi HTTP xanh hết.
+
+Ba chỗ khác lộ ra vì cùng lý do: `/health` (thêm cả hai root), `slack/client.DEFAULT_BASE`
+(thiếu `/api` là nhận HTML rồi chết ở `json.decode`, không phải 404 dễ đọc), và comment trong
+`vite.config.ts` **nói dối** — nó ghi "proxy /api + /ws" mà trong file **không có block proxy
+nào**. Giờ có thật, nên dev cũng same-origin như bản deploy.
+
+### Token nằm trong bundle — ghi ra để không ai vô tình phơi nó
+
+`VITE_API_TOKEN` bị Vite thay **tĩnh** lúc build; grep `web/dist/assets/*.js` là thấy token
+nguyên vẹn. File tĩnh phải tải được *trước khi* kịp hỏi credential, mà chính nó chứa token ⇒
+**ai mở được trang thì đọc được token**. Đây chính là lý do chọn Tailscale: tầng mạng là auth
+thật, token chỉ chặn caller lạc cùng máy. Đã ghi vào `jobpilot/api/CLAUDE.md` + `DEPLOY.md §0`
+kèm câu cấm rõ ràng: **không `tailscale funnel`, không bind `0.0.0.0`**.
+
+Siết thêm (phòng thủ nhiều lớp, không thay Tailscale):
+- Token 8 ký tự → **43 ký tự**. Ngưỡng tối thiểu 20 chọn có lý do: `llm/redact.py` có sàn
+  **12 ký tự**, dưới đó token **không được scrub** khỏi log — token cũ rơi đúng vào lỗ đó.
+- `hmac.compare_digest` thay `!=`, dùng chung một hàm cho cả REST lẫn WS để hai đường không lệch.
+- Guard từ chối khởi động nếu token là placeholder/quá ngắn. Đặt ở **`lifespan`, không phải
+  `create_app`**: build app cũng là việc test suite làm, checkout chưa có `.env` vẫn phải chạy
+  được test — thứ nó không được phép làm là *lắng nghe*. Lỗi in ra kèm sẵn một token dùng được;
+  guard chỉ biết nói không thì người ta đi vòng.
+- **Token WS rời query string sang frame đầu tiên.** Query string nằm trong request line nên
+  access log ghi thẳng ra đĩa. Có test ghim đường `?token=` cũ **không còn dùng được** — để nó
+  chạy song song là vá mà vẫn rò. Socket `accept()` trước (không accept thì không đọc được
+  frame) nhưng chỉ `subscribe()` sau khi auth xong, nếu không mọi `job_updated` chảy sang socket
+  chưa chứng minh được nó là ai.
+
+### 3 gate email khoá khỏi HTTP
+
+`SettingsIn.apply` là `dict` tự do ⇒ một `PUT /settings` tắt được cả ba gate rồi bắt server gửi
+mail thật. Đó là đường **ngắn nhất** từ "token rò" tới "máy nói thay mình". Giờ
+`config.LOCKED_SETTINGS` chặn ở route, trả **403**.
+
+Chi tiết quan trọng: **chỉ chặn khi giá trị đổi, không chặn khi chỉ có mặt.** Trang Settings lưu
+nguyên cả section nên lần nào cũng gửi kèm ba field này; chặn cả no-op thì card không lưu nổi và
+ai cũng học cách đi vòng. `GET /settings` trả thêm `locked` để UI render xám — switch bấm được
+rồi mới báo lỗi lúc save dạy user rằng trang này không đáng tin.
+
+### Bug Linux chỉ lộ ra vì đổi OS đích
+
+`tailor/build.py` chạy `docker run` **không có `-u $UID:$GID`**, dù `README.md`/`CLAUDE.md` mang
+sẵn cả hai câu lệnh — chỉ câu Windows từng được nối dây. Trên Docker Desktop không sao (dịch
+ownership ở tầng mount); trên Linux container ghi `cv.pdf` bằng **root**, và build **lần sau**
+chết ở `pdf.unlink()` với EACCES. Đúng kiểu bug của repo này: lần đầu xanh, lần hai mới hỏng.
+
+### CI/CD
+
+`ruff` + `pytest` + `tsc --noEmit` + `vite build`; deploy là **job cùng workflow** với
+`needs: [backend, frontend]` nên không thể deploy code đỏ (workflow riêng thì phải bắc
+`workflow_run`, và bắc sai thì hỏng im lặng). Runner join tailnet bằng
+`tailscale/github-action` rồi ssh chạy `deploy/update.sh` — thay cho việc mở port 22 ra Internet.
+
+`tsc` chạy tách khỏi `vite build` vì **Vite transpile mà không type-check**: build xanh không
+chứng minh gì về types.
+
+**Cố ý CHƯA bật `black --check`:** cây code chưa bao giờ được format bằng black ở
+`line-length=100` — bật lên là đỏ **19 file** không ai đụng tới. Hai lối ra đều tệ: reformat cả
+repo (chôn diff của review kế tiếp) hoặc một step ai cũng học cách bỏ qua. Reformat ở commit
+riêng rồi mới bật. (`ruff` thì đã sạch — sửa luôn 1 lỗi `F401` có sẵn ở `ops.py`.)
+
+`update.sh` build lại bundle **trên host** vì token bị nướng vào bundle; bundle build ở CI mang
+token placeholder. Nó lấy `VITE_API_TOKEN` từ `JOBPILOT_API_TOKEN` trong `.env` để chỉ có **một**
+chỗ ghi token — giữ thêm `web/.env.local` trên server là bản sao thứ hai chờ lệch, cho ra
+dashboard 401 với chính backend của nó. Deploy xong **poll `/health`** rồi mới báo xanh:
+`systemctl restart` trả về ngay khi process được spawn, nên nó "thành công" kể cả khi app chết
+lúc startup — đúng thứ guard token làm khi `.env` sai.
+
+### Rủi ro chưa verify được (nói thẳng)
+
+**Crawl từ IP datacenter có thể bị Cloudflare chặn.** ITviec/TopCV/VietnamWorks đứng sau
+Cloudflare; IP datacenter bị challenge nhiều hơn IP dân dụng. Không ai kiểm được trước khi thuê
+máy thật. Chọn VPS **VN** để giảm rủi ro, và có đường lui rẻ: crawl chạy ở laptop, DB ở VPS, đổi
+đúng một biến `DATABASE_URL` qua tailnet (`DEPLOY.md §7`). Nguồn feed (WeWorkRemotely, Arbeitnow)
+và ATS (Greenhouse/Lever) **không** sau Cloudflare nên không ảnh hưởng.
+
+**Verify đã làm:** 746 test pass (734 baseline + 12 mới), `ruff` sạch, `tsc --noEmit` sạch,
+`vite build` ra bundle **không còn** `127.0.0.1:8000` hardcode.
+**Verify CHƯA làm** (cần máy thật, xem checklist `DEPLOY.md §4`): chạy trên VPS, mở qua 4G,
+build PDF hai lần liên tiếp trên Linux, tắt Tailscale để chắc URL chết.

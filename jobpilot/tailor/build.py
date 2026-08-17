@@ -17,6 +17,7 @@ default path renders the same command the image ships with.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import shutil
@@ -29,6 +30,23 @@ from jobpilot.config import get_config
 
 class BuildError(RuntimeError):
     """Raised when the LaTeX build fails or produces no PDF."""
+
+
+def _user_args() -> list[str]:
+    """``-u uid:gid`` on POSIX, nothing on Windows.
+
+    The container writes ``cv.pdf`` into the bind mount as whoever it runs as.
+    On Linux that is root, so the PDF lands owned by root inside a directory
+    owned by the service account — and the *next* build dies in ``pdf.unlink()``
+    with EACCES, leaving stale output behind. Docker Desktop on Windows and
+    macOS translates ownership at the mount layer, where passing a Linux uid
+    means nothing (and on Windows there is no ``os.getuid`` to pass), so this is
+    deliberately POSIX-only. README.md has carried both invocations all along;
+    only the Windows one was ever wired up.
+    """
+    if not hasattr(os, "getuid"):  # Windows
+        return []
+    return ["-u", f"{os.getuid()}:{os.getgid()}"]
 
 
 @dataclass
@@ -118,7 +136,12 @@ def build_cv(
     pdf.unlink(missing_ok=True)
 
     mount = f"{work_dir}:/work"
-    cmd = ["docker", "run", "--rm", "-v", mount, image, "/bin/sh", "-c", _script(entry)]
+    cmd = [
+        "docker", "run", "--rm",
+        *_user_args(),
+        "-v", mount,
+        image, "/bin/sh", "-c", _script(entry),
+    ]  # fmt: skip
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:  # pragma: no cover - env dependent

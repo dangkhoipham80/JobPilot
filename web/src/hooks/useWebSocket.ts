@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { wsUrl } from "@/lib/api";
+import { wsAuthFrame, wsUrl } from "@/lib/api";
 
 export interface WsMessage {
   type: string;
@@ -24,10 +24,11 @@ export function useWebSocket(onMessage?: (msg: WsMessage) => void) {
 
     const connect = () => {
       ws = new WebSocket(wsUrl());
-      ws.onopen = () => {
-        retry = 0;
-        setConnected(true);
-      };
+      // The socket is open but not yet trusted: authenticate first and let the
+      // server's `hello` be what flips the LIVE indicator. Reporting "connected"
+      // on `onopen` would light it up for a socket the backend is about to close
+      // for a bad token — and would reset the backoff on every rejected retry.
+      ws.onopen = () => ws?.send(wsAuthFrame());
       ws.onclose = () => {
         setConnected(false);
         if (closed) return;
@@ -37,7 +38,12 @@ export function useWebSocket(onMessage?: (msg: WsMessage) => void) {
       ws.onerror = () => ws?.close();
       ws.onmessage = (ev) => {
         try {
-          cbRef.current?.(JSON.parse(ev.data) as WsMessage);
+          const msg = JSON.parse(ev.data) as WsMessage;
+          if (msg.type === "hello") {
+            retry = 0;
+            setConnected(true);
+          }
+          cbRef.current?.(msg);
         } catch {
           /* ignore non-JSON frames */
         }

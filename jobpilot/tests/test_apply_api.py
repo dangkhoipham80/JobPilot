@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app
@@ -75,7 +76,7 @@ def client(session_factory, tmp_path, monkeypatch, apply_cfg):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_letter_engine] = lambda: None
-    c = TestClient(app)
+    c = api_client(app)
     yield c
     app.dependency_overrides.clear()
 

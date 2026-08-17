@@ -11,7 +11,8 @@ from __future__ import annotations
 import time
 
 import pytest
-from fastapi.testclient import TestClient
+
+from jobpilot.tests.conftest import api_client
 
 from jobpilot.api.deps import get_db
 from jobpilot.api.main import app as fastapi_app
@@ -124,9 +125,9 @@ def client(session_factory, worker_db, tmp_path, monkeypatch):
     fastapi_app.dependency_overrides[get_engine] = lambda: FixtureEngine(plan=PLAN)
     fastapi_app.dependency_overrides[get_letter_engine] = lambda: None
 
-    http = TestClient(fastapi_app)
+    http = api_client(fastapi_app)
     c = JobPilotClient(
-        base_url="http://testserver",
+        base_url="http://testserver/api",
         token=get_secrets().jobpilot_api_token,
         http_client=http,
     )
@@ -268,7 +269,7 @@ def test_client_404_for_unknown_job(client):
 
 
 def test_client_rejects_a_bad_token():
-    with TestClient(fastapi_app) as http:
+    with api_client(fastapi_app) as http:
         bad = JobPilotClient(base_url="http://testserver", token="wrong", http_client=http)
         with pytest.raises(ApiError) as exc:
             bad.jobs()

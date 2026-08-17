@@ -617,6 +617,10 @@ export interface Settings {
   };
   cv: { master_dir: string; out_dir: string; docker_image: string; theme: string };
   llm: LlmSettings;
+  /** Dotted paths the API refuses to change (config.LOCKED_SETTINGS) — the email
+   *  gates. Rendered read-only rather than left to fail on save. Server-supplied
+   *  and never sent back in a patch, hence optional. */
+  locked?: string[];
 }
 
 /** Which model runs which task. Empty string on a task = fall back to `provider`. */

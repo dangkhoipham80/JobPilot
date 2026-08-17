@@ -14,7 +14,9 @@ import httpx
 
 from jobpilot.config import get_secrets
 
-DEFAULT_BASE = "http://127.0.0.1:8000"
+#: Includes the ``/api`` prefix: the dashboard shares this origin, so the bare
+#: root serves HTML and only ``/api`` answers JSON.
+DEFAULT_BASE = "http://127.0.0.1:8000/api"
 
 
 class ApiError(RuntimeError):

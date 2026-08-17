@@ -1,0 +1,28 @@
+[Unit]
+Description=JobPilot scheduled crawl
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=jobpilot
+Group=jobpilot
+WorkingDirectory=/opt/jobpilot
+EnvironmentFile=/opt/jobpilot/.env
+
+# Runs the crawl in its own process rather than posting to /crawl. Both write to
+# the same Postgres, and the CLI path does not depend on the API being up — a
+# crawl that silently stops happening because the web service is restarting is
+# exactly the kind of failure nobody notices for a week.
+ExecStart=/opt/jobpilot/.venv/bin/python -m jobpilot.cli crawl
+
+# One crawl walks several boards with a 2-5s rate limit between requests, so it
+# is minutes, not seconds. Killing it mid-run is safe (persist is idempotent),
+# but there is no reason to.
+TimeoutStartSec=45min
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/jobpilot/out /opt/jobpilot/jobpilot
