@@ -30,8 +30,13 @@ jobs:
       - name: Install
         run: pip install -e '.[all,dev]'
 
+      # The version is pinned in pyproject's dev extra; `ruff --version` is
+      # echoed so a future red build caused by a bump is one glance to diagnose
+      # rather than a hunt through rule codes.
       - name: Lint
-        run: ruff check jobpilot
+        run: |
+          ruff --version
+          ruff check jobpilot
 
       # No `black --check` step yet, deliberately. The tree has never been
       # black-formatted at the configured line-length, so switching it on would

@@ -35,7 +35,16 @@ all = ["jobpilot[data,api,crawler,cv,tailor,openai,gemini,slack]"]
 # httpx: FastAPI TestClient + robots fetch; beautifulsoup4: crawler parser tests;
 # jinja2/pypdf: CV render + page-count tests.
 dev = [
-  "pytest>=8.0", "ruff>=0.4", "black>=24.0",
+  "pytest>=8.0",
+  # Linters are PINNED, unlike everything else here. `ruff>=0.4` floated to
+  # 0.16 in CI while this machine had 0.11, and the newer default rule set
+  # reported 241 findings in files nobody had touched — a red build caused by
+  # somebody else's release date, saying nothing about the change under review.
+  # A linter is a measuring instrument: if two machines disagree it is not
+  # measuring anything. Bump deliberately, in its own commit, with the new
+  # findings dealt with in that commit.
+  "ruff==0.11.8",
+  "black==23.11.0",
   "httpx>=0.27", "beautifulsoup4>=4.12", "jinja2>=3.1", "pypdf>=4.0",
   "pdfminer.six>=20231228",
 ]
