@@ -28,7 +28,10 @@ from jobpilot.slack.events import Notification, digest, notification_for
 log = logging.getLogger("jobpilot.slack")
 
 WEB_BASE = "http://localhost:5173"
-API_BASE = "http://127.0.0.1:8000"
+#: Carries the /api prefix. Without it the bare root serves the dashboard's
+#: HTML, so every call would decode-error instead of 404 — and `client.health()`
+#: would still pass, because /health is deliberately registered at both roots.
+API_BASE = "http://127.0.0.1:8000/api"
 
 
 class SlackNotConfigured(RuntimeError):
@@ -161,10 +164,16 @@ def mirror_events(
         log.warning("websockets not installed — Slack will not mirror live events")
         return
 
-    ws_url = cfg.api_base.replace("http", "ws", 1) + f"/ws?token={client.token}"
+    # api_base already carries the /api prefix, so the socket is a sibling of
+    # the REST routes rather than a path of its own.
+    ws_url = cfg.api_base.replace("http", "ws", 1) + "/ws"
     while True:
         try:
             with connect(ws_url) as ws:
+                # The token goes in the first frame, not the query string: a
+                # query string is part of the request line and is written to the
+                # server's access log verbatim.
+                ws.send(json.dumps({"type": "auth", "token": client.token}))
                 log.info("mirroring JobPilot events into Slack")
                 while True:
                     event = json.loads(ws.recv())

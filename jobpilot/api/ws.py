@@ -31,18 +31,13 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active: set[WebSocket] = set()
 
-    async def connect(self, ws: WebSocket) -> None:
-        """Accept and subscribe. Only for sockets that have already authenticated."""
-        await ws.accept()
-        self.active.add(ws)
-
     def subscribe(self, ws: WebSocket) -> None:
-        """Start broadcasting to an already-accepted socket.
+        """Start broadcasting to an already-accepted, already-authenticated socket.
 
-        Separate from ``connect`` because authentication needs the socket
-        accepted (you cannot read a frame otherwise) but must finish *before* it
-        joins the broadcast set — otherwise a caller with no token still
-        receives every job update while it is being asked for one.
+        Accepting and subscribing are deliberately two steps: authentication has
+        to read a frame, which requires an accepted socket, but must finish
+        *before* the socket joins the broadcast set — otherwise a caller with no
+        token receives every job update while it is still being asked for one.
         """
         self.active.add(ws)
 

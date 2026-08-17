@@ -94,12 +94,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now jobpilot-api jobpilot-crawl.timer jobpilot-backup.timer
 ```
 
-`update.sh` cần `systemctl restart` — cấp đúng một quyền đó, không cấp sudo trống:
+`update.sh` cần `systemctl restart` và `journalctl` — cấp đúng hai lệnh đó, không cấp sudo trống:
 
 ```bash
-echo 'jobpilot ALL=(root) NOPASSWD: /bin/systemctl restart jobpilot-api, /bin/journalctl -u jobpilot-api *' \
-  | sudo tee /etc/sudoers.d/jobpilot
+sudo tee /etc/sudoers.d/jobpilot <<'EOF'
+jobpilot ALL=(root) NOPASSWD: /usr/bin/systemctl restart jobpilot-api
+jobpilot ALL=(root) NOPASSWD: /usr/bin/journalctl -u jobpilot-api *
+EOF
+sudo visudo -c    # syntax sai là hỏng sudo của cả máy — check trước
 ```
+
+Hai chi tiết dễ sai:
+- **`/usr/bin/`, không phải `/bin/`.** Ubuntu 22.04+ dùng merged-usr, sudo resolve ra
+  `/usr/bin/journalctl`; rule ghi `/bin/...` sẽ không match.
+- **Trong sudoers mỗi `*` khớp *một* argument.** Rule `journalctl -u jobpilot-api *` mà lệnh
+  thật là `journalctl -u jobpilot-api -n 40 --no-pager` (ba argument) thì **không khớp** → sudo
+  từ chối. Dấu `*` cuối ở đây nằm cuối rule nên khớp phần còn lại; nếu bạn đổi lệnh trong
+  `update.sh` thì kiểm lại. Hỏng chỗ này chỉ lộ ra ở **error path** — đúng lúc service không
+  lên và bạn cần đọc log nhất, thì log không hiện.
 
 ## 3. Tailscale
 

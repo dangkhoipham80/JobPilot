@@ -398,10 +398,6 @@ LOCKED_SETTINGS: tuple[tuple[str, ...], ...] = (
 )
 
 
-class LockedSettingError(ValueError):
-    """A patch tried to change a setting that is file-only."""
-
-
 def _dig(data: object, path: tuple[str, ...]):
     """Value at ``path``, or ``KeyError`` if the patch doesn't set it."""
     for key in path:

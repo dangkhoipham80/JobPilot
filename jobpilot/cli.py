@@ -602,7 +602,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_serve.set_defaults(func=cmd_serve)
     p_slack = sub.add_parser("slack", help="run the Slack companion app (Phase 7)")
-    p_slack.add_argument("--api", default="http://127.0.0.1:8000", help="JobPilot API base URL")
+    p_slack.add_argument(
+        "--api",
+        default="http://127.0.0.1:8000/api",
+        help="JobPilot API base URL (must include the /api prefix)",
+    )
     p_slack.add_argument("--web", default="http://localhost:5173", help="dashboard base URL")
     p_slack.set_defaults(func=cmd_slack)
 
