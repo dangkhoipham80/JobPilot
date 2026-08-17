@@ -95,6 +95,23 @@ cv:
   docker_image: csmith/awesome-cv-builder
   theme: awesome-red          # default Awesome-CV color theme
 
+  # Which toolchain compiles the PDF: auto | docker | local
+  #
+  # `docker_image` above is amd64-only — there is no arm64 build of it — so an
+  # arm64 server cannot use Docker at all, while xelatex itself packages fine
+  # for arm64. Hence two backends.
+  #
+  #   auto    prefer docker when its CLI is present, else the local xelatex, so
+  #           a machine that has been building with Docker keeps doing so.
+  #   docker  the builder image. One pinned TeX Live for everybody.
+  #   local   xelatex from PATH. Needs TeX Live installed — see DEPLOY.md.
+  #
+  # `auto` does NOT fall back when Docker is present but broken. A stopped
+  # daemon is one command from fixed, and switching toolchains behind your back
+  # would mean the PDF you approved and the PDF that got emailed were produced
+  # by different software, with nothing said.
+  build_backend: auto
+
 # --------------------------------------------------------------------------- #
 # Which model runs which job (Phase 20)
 # --------------------------------------------------------------------------- #

@@ -236,6 +236,15 @@ class CvCfg(BaseModel):
     docker_image: str = "csmith/awesome-cv-builder"
     theme: str = "awesome-red"
 
+    #: Which toolchain compiles the PDF: ``auto``, ``docker`` or ``local``.
+    #:
+    #: Exists because ``docker_image`` above is **amd64-only**, so the arm64
+    #: server cannot run it at all, while xelatex itself packages fine for arm64.
+    #: ``auto`` prefers Docker when its CLI is present — the laptop keeps
+    #: building exactly as it always has — and uses the local engine otherwise.
+    #: Pin it explicitly on a machine that has both and you care which one ran.
+    build_backend: Literal["auto", "docker", "local"] = "auto"
+
 
 class Config(BaseModel):
     app: AppCfg = Field(default_factory=AppCfg)

@@ -1,12 +1,11 @@
 [Unit]
 Description=JobPilot API + dashboard
-# Docker is a hard dependency, not a nicety: the LaTeX build shells out to
-# `docker run`, and tailor/build.py raises BuildError with no fallback when the
-# socket is missing. Starting before dockerd means every CV build fails until
-# something restarts this.
-After=network-online.target postgresql.service docker.service
+# No dependency on docker.service, and that is deliberate: on this host the CV
+# is compiled by the xelatex in PATH (cv.build_backend), because the builder
+# image is amd64-only and this machine is arm64. Requiring a unit that does not
+# exist here would stop the API from starting at all.
+After=network-online.target postgresql.service
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=exec
@@ -14,6 +13,15 @@ User=jobpilot
 Group=jobpilot
 WorkingDirectory=/opt/jobpilot
 EnvironmentFile=/opt/jobpilot/.env
+
+# Set explicitly because xelatex needs somewhere to write its caches: fontconfig
+# indexes the bundled Roboto/FontAwesome TTFs into ~/.cache/fontconfig, and TeX
+# Live writes ~/.texlive*/texmf-var on first run. `adduser --system` frequently
+# leaves a home directory that does not exist or is not writable, and the
+# resulting failure is a LaTeX error about fonts rather than about permissions —
+# which sends you looking in entirely the wrong place.
+Environment=HOME=/opt/jobpilot
+Environment=TEXMFVAR=/opt/jobpilot/.texmf-var
 
 # --workers 1 is mandatory, not tuning. The task queue is a ThreadPoolExecutor
 # inside this process, so a second worker is a second queue with its own
@@ -37,7 +45,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/opt/jobpilot/out /opt/jobpilot/jobpilot
+ReadWritePaths=/opt/jobpilot/out /opt/jobpilot/jobpilot /opt/jobpilot/.cache /opt/jobpilot/.texmf-var
 
 [Install]
 WantedBy=multi-user.target

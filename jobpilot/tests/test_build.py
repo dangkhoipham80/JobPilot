@@ -17,10 +17,10 @@ def test_build_raises_when_entry_missing(tmp_path):
         build_cv(tmp_path, entry="nope.tex")
 
 
-def test_build_raises_when_docker_absent(tmp_path, monkeypatch):
+def test_build_raises_when_no_toolchain_at_all(tmp_path, monkeypatch):
     (tmp_path / "cv.tex").write_text("\\documentclass{article}", encoding="utf-8")
     monkeypatch.setattr(build_mod.shutil, "which", lambda _: None)
-    with pytest.raises(BuildError, match="docker not found"):
+    with pytest.raises(BuildError, match="neither `docker` nor `xelatex`"):
         build_cv(tmp_path, entry="cv.tex")
 
 
@@ -156,3 +156,104 @@ def test_docker_passes_no_uid_on_windows(monkeypatch):
 
     monkeypatch.delattr(build_mod.os, "getuid", raising=False)
     assert build_mod._user_args() == []
+
+
+# --------------------------------------------------------------------------- #
+# Backend selection (jobpilot/tailor/build.resolve_backend)
+# --------------------------------------------------------------------------- #
+def _only(*present):
+    """Fake a PATH holding exactly `present`."""
+    return lambda name: f"/usr/bin/{name}" if name in present else None
+
+
+def test_auto_prefers_docker_when_it_is_installed(monkeypatch):
+    """The machine that has been building CVs all along must keep using the
+    same toolchain — an upgrade is not the moment to change how PDFs are made."""
+    monkeypatch.setattr(build_mod.shutil, "which", _only("docker", "xelatex"))
+    assert build_mod.resolve_backend("auto") == "docker"
+
+
+def test_auto_falls_to_local_when_docker_is_absent(monkeypatch):
+    """The arm64 server: no Docker, because the builder image is amd64-only."""
+    monkeypatch.setattr(build_mod.shutil, "which", _only("xelatex"))
+    assert build_mod.resolve_backend("auto") == "local"
+
+
+def test_an_explicit_backend_is_never_second_guessed(monkeypatch):
+    monkeypatch.setattr(build_mod.shutil, "which", _only("docker", "xelatex"))
+    assert build_mod.resolve_backend("local") == "local"
+    assert build_mod.resolve_backend("docker") == "docker"
+
+
+def test_an_unknown_backend_is_refused(monkeypatch):
+    with pytest.raises(BuildError, match="expected one of"):
+        build_mod.resolve_backend("podman")
+
+
+def test_a_broken_docker_does_not_silently_become_a_local_build(tmp_path, monkeypatch):
+    """Docker installed but unusable is one command from fixed. Switching
+    toolchains behind the user's back would mean the PDF they approved and the
+    PDF that gets emailed were made by different software, with nothing said."""
+    (tmp_path / "cv.tex").write_text(r"\documentclass{article}", encoding="utf-8")
+    monkeypatch.setattr(build_mod.shutil, "which", _only("xelatex"))
+
+    calls = []
+    monkeypatch.setattr(build_mod, "_local_run", lambda *a, **k: calls.append(a))
+    with pytest.raises(BuildError, match="docker is not on PATH"):
+        build_cv(tmp_path, entry="cv.tex", backend="docker")
+    assert calls == [], "must not have quietly run the local engine instead"
+
+
+def test_local_backend_explains_itself_when_xelatex_is_missing(tmp_path, monkeypatch):
+    (tmp_path / "cv.tex").write_text(r"\documentclass{article}", encoding="utf-8")
+    monkeypatch.setattr(build_mod.shutil, "which", _only("docker"))
+    with pytest.raises(BuildError, match="xelatex is not on PATH"):
+        build_cv(tmp_path, entry="cv.tex", backend="local")
+
+
+def test_local_build_runs_xelatex_in_the_build_dir(tmp_path, monkeypatch):
+    """xelatex resolves awesome-cv.cls, fontawesome.sty and fonts/ relative to
+    its working directory, not to the .tex it was handed. Run it anywhere else
+    and the class is 'not found' in a directory that plainly contains it."""
+    (tmp_path / "cv.tex").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(build_mod.shutil, "which", _only("xelatex"))
+
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"], seen["cwd"] = cmd, kwargs.get("cwd")
+        out = [a for a in cmd if a.startswith("-output-directory=")][0].split("=", 1)[1]
+        from pathlib import Path as P
+
+        (P(out) / "cv.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+        (P(out) / "cv.log").write_text("Output written on cv.pdf (1 page, 10 bytes).")
+
+        class R:
+            returncode, stdout, stderr = 0, "", ""
+
+        return R()
+
+    monkeypatch.setattr(build_mod.subprocess, "run", fake_run)
+    result = build_cv(tmp_path, entry="cv.tex", backend="local")
+
+    assert seen["cwd"] == str(tmp_path.resolve())
+    assert "-interaction=nonstopmode" in seen["cmd"], "a prompt would hang the queue worker"
+    assert result.pdf == tmp_path / "cv.pdf"
+    # The log is carried back out of the temp dir; the Docker path throws its away.
+    assert (tmp_path / "cv.log").is_file()
+
+
+def test_a_failed_local_build_leaves_no_stale_pdf(tmp_path, monkeypatch):
+    """The worst outcome is reporting success with yesterday's PDF."""
+    (tmp_path / "cv.tex").write_text("x", encoding="utf-8")
+    stale = tmp_path / "cv.pdf"
+    stale.write_bytes(b"%PDF-old")
+    monkeypatch.setattr(build_mod.shutil, "which", _only("xelatex"))
+
+    class R:
+        returncode, stdout, stderr = 1, "", "! LaTeX Error"
+
+    monkeypatch.setattr(build_mod.subprocess, "run", lambda *a, **k: R())
+    with pytest.raises(BuildError, match="local backend"):
+        build_cv(tmp_path, entry="cv.tex", backend="local")
+    assert not stale.exists()
