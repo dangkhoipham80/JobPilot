@@ -762,3 +762,59 @@ kết quả cũ trong khi `python -c` cùng module trả kết quả mới ⇒ n
   Chi tiết: `.env.local` **thắng** biến môi trường `VITE_API_BASE` của shell — lần chụp đầu ra
   đúng dữ liệu DB thật trong khi tưởng đang xem demo. Sửa file rồi restart Vite mới đổi được.
 
+
+## Dedup của crawler — cửa sổ đo sai mốc (theo yêu cầu, không phải phase đánh số)
+
+Bốn triệu chứng, một nguyên nhân. `_refresh()` không đụng `crawled_at` (đúng), nhưng preload
+`seen_keys` lại lọc `WHERE crawled_at >= cutoff` — nên **cửa sổ dedup đếm từ lần ĐẦU thấy
+job, không phải lần gần nhất**. Tin vẫn đang sống trên board rớt khỏi cửa sổ của chính mình ở
+ngày 15, rồi bản của board khác chui vào thành row trùng.
+
+**Vì sao không cắt scope còn "sửa đúng cửa sổ"** (đã cân nhắc thật, không phải làm cho đủ):
+sửa mốc đo **một mình** làm suppression từ *hỏng 14 ngày* thành *hỏng vĩnh viễn*. Row nào còn
+được crawl lại thì key của nó nóng mãi ⇒ bản LinkedIn `needs_jd` tới trước sẽ chặn bản ITviec
+có JD đầy đủ **không giới hạn thời gian**, và Senior/Junior/Intern collapse thành mất im lặng
+vĩnh viễn. Ship mục 1 một mình là ship một regression, nên mục 2–3 đi kèm chứ không tách phase.
+
+- **`last_seen_at`** (migration 0010, backfill = `crawled_at`): bump mỗi `_refresh`. `crawled_at`
+  **không được bump** — `/stats` `by_day`, `order=crawled`, `crawled_after` đều đọc nó. Migration
+  cố ý đi 3 bước (nullable → UPDATE → NOT NULL): thêm thẳng NOT NULL sẽ nhét `now()` vào mọi row
+  cũ và khai mọi job từng thấy là "thấy hôm nay" — đúng cái lỗi cột này sinh ra để chặn.
+- **Level chỉ tách khi cả hai phía nói rõ.** Giữ nguyên ý định collapse (board bỏ chữ "Junior"
+  không phải job khác), nhưng `title_level` đi cạnh `dedup_key`. Đọc **title thôi** — `infer_level`
+  quét cả JD, mà một JD viết "we hire senior engineers" không được quyền quyết định hai tin là
+  hai tin.
+- **Trace thay cho im lặng**: `payload.dedup.suppressed` trên row sống sót (cap 10, **sống qua
+  re-crawl** — `_refresh` ghi đè cả payload nên phải carry sang, không thì trace chỉ tồn tại tới
+  lần crawl sau). Bản có JD thắng bản `needs_jd`; row cũ chỉ được **annotate**, không demote —
+  nó có thể đã shortlist/apply rồi.
+- **`dedup_days` vào `CrawlCfg` + `config.yaml`**; `run_crawl` đọc từ `cfg` (nó vốn đã nhận `cfg`)
+  nên cả `orchestrator` lẫn `cli` có ngay, không phải sửa hai chỗ. `0` = tắt hẳn lớp 2, và phải
+  tắt thật chứ không phải thu cửa sổ về 0 — row đụng trong **chính batch này** đóng dấu `now`
+  nên vẫn che nhau.
+
+**Một luật normalize, không phải ba.** `repeat_postings` gom theo `fold(company)+fold(title)`,
+`dedup_key` thì strip level + parens ⇒ **hai luật viết tay đã lệch nhau**. Giờ cả hai gọi
+`normalize_company` + `normalize_title(strip_level=)`, khác đúng một tham số. Trên corpus thật
+88 job, luật cũ và luật mới cho **kết quả y hệt** (88 group cả hai) — hợp nhất không làm xê dịch
+con số nào đang có, chỉ đóng chỗ nứt.
+
+**Bug tự lộ ra khi viết test ghim** (không có test thì không ai thấy): `"Sr. Backend Engineer"`
+normalize thành `sr. backend engineer` vì regex giữ dấu `.` cho `.net`/`node.js`. Dấu chấm
+**cuối token** là dấu tắt: nó vừa làm `"Sr."` không nhận ra là level, vừa tách hẳn key khỏi
+`"Senior Backend Engineer"` — tức là over-split có sẵn từ trước, nằm im trong một hàm ai cũng
+tưởng chỉ strip level.
+
+**Verify (không dừng ở test xanh):**
+- 733 test pass (713 baseline + 20 mới).
+- PostgreSQL 17 thật: `upgrade head` → backfill lệch **0/83 row**, `crawled_at` by_day y nguyên;
+  `downgrade -1` → cột + index biến mất, 83 row còn nguyên; `upgrade` lại sạch.
+- Replay A–E qua `persist_jobs` thật trong transaction rồi rollback (không đụng corpus): tin còn
+  sống chặn được bản board khác ở **ngày 19** (`crawled_at` 08-17 vs `last_seen_at` 09-05); tin
+  đã ngừng thấy thì hết chặn ở ngày 40; Senior/Junior/Intern ra **3 in / 2 dup**; ca LinkedIn ra
+  `superseded=1` với `status` giữ nguyên `DISCOVERED`.
+- Crawl thật 2 lần (8 nguồn): lần 1 `new=5 updated=7`, lần 2 **`new=0 updated=12`** — không row
+  mới nào. `crawled_at` by_day giữ đúng 4 bucket cũ, `last_seen_at` mới là cột nhúc nhích.
+- Trace trên dữ liệu thật đọc được ngay: Palantir đăng cùng một req dưới nhiều Lever id —
+  suppression **đúng**, và giờ nói ra được nó bỏ cái nào.
+- `GET /stats` `by_day` khớp DB từng bucket; `/stats/outcomes` `repeats` không đổi.

@@ -519,6 +519,13 @@ export interface CrawlSiteResult {
   inserted: number;
   updated: number;
   duplicates: number;
+  /**
+   * Of `inserted`: rows kept despite matching another board, because that
+   * board's copy had no usable JD. Optional — runs recorded before this
+   * existed carry no such key, and defaulting it to 0 would claim they had
+   * none rather than that they never counted.
+   */
+  superseded?: number;
   filtered: number;
   fresh: number;
 }

@@ -73,7 +73,18 @@ class Job(Base):
     apply_target: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Full normalized Job payload (JD markdown, skills, raw_html_ref, …).
     payload: Mapped[dict] = mapped_column(JSONType, default=dict)
+    # When this job was **first** discovered. Never bumped on re-crawl — the
+    # dashboard's by-day chart, the `crawled` sort and the `crawled_after`
+    # filter all read this, and bumping it would pile every job JobPilot has
+    # ever seen onto today, producing a chart that is wrong and looks right.
     crawled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    # When this job was **last** seen on its board. Bumped every re-crawl, which
+    # is what makes it the right clock for the cross-source dedup window: that
+    # window asks "is this role still going round", and measuring it from first
+    # sighting made a still-live posting fall out of its own window.
+    last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
     # The crawl that first discovered this job. Not updated on re-crawl: a job

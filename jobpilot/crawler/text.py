@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from urllib.parse import urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
@@ -10,24 +11,30 @@ from bs4.element import Tag
 
 _WS = re.compile(r"\s+")
 
-# Level/seniority words stripped when building a dedup title (so "Java Backend"
-# and "Junior Java Backend" collapse to the same cross-source key).
-_LEVEL_WORDS = frozenset(
-    {
-        "junior",
-        "senior",
-        "fresher",
-        "intern",
-        "internship",
-        "middle",
-        "mid",
-        "lead",
-        "principal",
-        "staff",
-        "sr",
-        "jr",
-    }
-)
+#: Seniority word -> the level it means. Words that differ only in how formal
+#: the board is ("Sr." / "Lead" / "Principal") collapse onto one level, matching
+#: ``normalize.infer_level`` — the two must agree or a job's ``level`` column
+#: would contradict the level its dedup key was split on.
+_LEVEL_ALIASES = {
+    "junior": "junior",
+    "jr": "junior",
+    "fresher": "fresher",
+    "intern": "intern",
+    "interns": "intern",
+    "internship": "intern",
+    "middle": "middle",
+    "mid": "middle",
+    "senior": "senior",
+    "sr": "senior",
+    "lead": "senior",
+    "principal": "senior",
+    "staff": "senior",
+}
+
+#: Derived, never written out a second time: a level word the stripper does not
+#: know is a level word that cannot be read back out by :func:`title_level`, and
+#: two lists that agree today drift the first time somebody adds "architect".
+_LEVEL_WORDS = frozenset(_LEVEL_ALIASES)
 
 
 def clean_text(s: str | None) -> str:
@@ -119,19 +126,77 @@ def html_to_markdown(html: str | None) -> str:
     return md
 
 
-def normalize_title(title: str | None) -> str:
-    """Canonicalize a job title for cross-source dedup.
+def fold(word: str | None) -> str:
+    """``"Công"`` → ``"cong"`` — accents stripped, lowercased.
 
-    Drops parentheticals, seniority words and punctuation; keeps tech tokens
-    (``+``/``#``/``.`` survive so "c++"/"c#"/".net" stay distinct).
+    Lives here rather than next to its first caller (mail matching in
+    ``apply/inbox``) because it is the bottom of every name-comparison in the
+    app: employers, job titles and city names all arrive spelled three ways.
+    ``inbox`` re-exports it, so ``from jobpilot.apply.inbox import fold`` still
+    reads naturally where the subject is mail.
     """
-    t = (title or "").lower()
+    decomposed = unicodedata.normalize("NFD", (word or "").lower())
+    # Vietnamese đ/Đ has no combining form, so NFD leaves it alone.
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d")
+
+
+def normalize_company(company: str | None) -> str:
+    """An employer name reduced to what two spellings of it have in common."""
+    return clean_text(fold(company))
+
+
+def normalize_title(title: str | None, *, strip_level: bool = True) -> str:
+    """Canonicalize a job title for grouping.
+
+    Drops parentheticals and punctuation; keeps tech tokens (``+``/``#``/``.``
+    survive so "c++"/"c#"/".net" stay distinct). Folded to ASCII first, or the
+    punctuation pass would shred a Vietnamese title into initials — "Lập trình
+    viên Java" became ``"l p tr nh vi n java"``, which matches no other spelling
+    of itself.
+
+    ``strip_level`` is the *only* thing that separates the two callers, and it
+    is a parameter rather than a second function on purpose. Cross-source dedup
+    strips the level (see :func:`dedup_key`); repeat-posting detection keeps it,
+    because an employer re-advertising the senior role is not re-advertising the
+    junior one. Two hand-written normalizers for the same string is how the
+    ``analytics`` grouping and this one silently drifted apart in the first
+    place.
+    """
+    t = fold(title)
     t = re.sub(r"\(.*?\)", " ", t)  # drop "(Java, Spring Boot)" etc.
     t = re.sub(r"[^a-z0-9+#. ]", " ", t)
-    tokens = [w for w in t.split() if w not in _LEVEL_WORDS]
-    return " ".join(tokens).strip()
+    # A *trailing* dot is abbreviation punctuation, never part of a tech token:
+    # ".net" wears its dot in front and "node.js" in the middle. Keeping it made
+    # "Sr. Backend Engineer" normalize to `sr. backend engineer` — a token the
+    # level list could not recognise, and a key that therefore did not match
+    # "Senior Backend Engineer" at the same company at all.
+    tokens = [w for w in (raw.rstrip(".") for raw in t.split()) if w]
+    return " ".join(w for w in tokens if not (strip_level and w in _LEVEL_WORDS)).strip()
+
+
+def title_level(title: str | None) -> str | None:
+    """The seniority stated *in the title*, or ``None`` when it says nothing.
+
+    Deliberately not ``normalize.infer_level``, which also reads the JD: a
+    description that mentions "we hire senior engineers" is evidence about the
+    company, not about this opening, and here a wrong level does not merely
+    mislabel a job — it decides whether two postings are the same posting. The
+    title is the one place a level word is never an accident.
+    """
+    for token in normalize_title(title, strip_level=False).split():
+        level = _LEVEL_ALIASES.get(token)
+        if level:
+            return level
+    return None
 
 
 def dedup_key(company: str | None, title: str | None) -> str:
-    """Cross-source dedup key: normalized ``company|title`` (PLAN §3.2)."""
-    return f"{clean_text(company).lower()}|{normalize_title(title)}"
+    """Cross-source dedup key: normalized ``company|title`` (PLAN §3.2).
+
+    Level-free, so "Java Backend" and "Junior Java Backend" share a key. The
+    level is *not* folded in here but carried beside it (``title_level``),
+    because two postings only count as different roles when **both** name a
+    level and the levels disagree — see ``persist._Index``.
+    """
+    return f"{normalize_company(company)}|{normalize_title(title)}"

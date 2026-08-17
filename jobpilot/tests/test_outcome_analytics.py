@@ -308,6 +308,38 @@ def test_accented_company_names_are_one_employer(session_factory):
         assert repeat_postings(db)["total_groups"] == 1
 
 
+def test_a_senior_and_a_junior_opening_are_not_one_ad_reposted(session_factory):
+    """The deliberate difference from ``crawler.text.dedup_key``.
+
+    Both grouping rules now come from the same pair of helpers, separated only
+    by ``strip_level``. Cross-source dedup strips the level, because a board
+    omitting "Junior" has not announced a different job; this does not, because
+    an employer hiring at three levels is not running one ad three times.
+    """
+    with session_factory() as db:
+        for i, title in enumerate(
+            ["Senior Java Backend", "Junior Java Backend", "Intern Java Backend"]
+        ):
+            _job(db, f"itviec:{i}", title=title)
+
+        assert repeat_postings(db)["total_groups"] == 0
+
+
+def test_a_parenthetical_suffix_does_not_hide_a_repost(session_factory):
+    """Grouping shares the crawler's normalisation, so "(Java)" is decoration.
+
+    These were three groups of one under the old hand-written ``fold``-only
+    rule, and three groups of one never reach the repeat threshold.
+    """
+    with session_factory() as db:
+        for i, title in enumerate(
+            ["Java Backend", "Java Backend (Spring Boot)", "Java  Backend!"]
+        ):
+            _job(db, f"itviec:{i}", title=title)
+
+        assert repeat_postings(db)["total_groups"] == 1
+
+
 def test_different_titles_at_one_company_are_not_a_repeat(session_factory):
     with session_factory() as db:
         for i, title in enumerate(["Java Backend", "React Frontend", "Data Engineer"]):

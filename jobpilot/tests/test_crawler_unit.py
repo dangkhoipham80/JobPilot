@@ -13,7 +13,13 @@ from jobpilot.crawler.normalize import (
 )
 from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.robots import RobotsPolicy
-from jobpilot.crawler.text import clean_text, dedup_key, html_to_markdown, normalize_title
+from jobpilot.crawler.text import (
+    clean_text,
+    dedup_key,
+    html_to_markdown,
+    normalize_title,
+    title_level,
+)
 
 NOW = datetime(2026, 7, 10, 12, 0, tzinfo=VN_TZ)
 
@@ -39,8 +45,53 @@ def test_normalize_title_drops_level_and_parens():
     assert normalize_title("Junior Java Backend") == "java backend"
 
 
+def test_normalize_title_keeps_the_level_when_asked_to():
+    """The one flag separating cross-source dedup from repeat detection.
+
+    ``analytics.repeat_postings`` passes ``strip_level=False``, because an
+    employer advertising a senior role and a junior one is doing two ordinary
+    things, not repeating itself.
+    """
+    assert normalize_title("Senior Java Backend", strip_level=False) == "senior java backend"
+
+
+def test_normalize_title_folds_accents_before_stripping_punctuation():
+    """Without folding first, the punctuation pass shreds a Vietnamese title.
+
+    "Lập trình viên Java" came out as ``"l p tr nh vi n java"`` — a string that
+    matches no other spelling of itself, including the same title written
+    without diacritics by the next board.
+    """
+    assert normalize_title("Lập trình viên Java") == "lap trinh vien java"
+    assert normalize_title("Lap trinh vien Java") == "lap trinh vien java"
+
+
+def test_normalize_title_keeps_tech_dots_but_drops_abbreviation_dots():
+    """``.net`` wears its dot in front and ``node.js`` in the middle; only a
+    *trailing* dot is punctuation. Keeping it left "Sr." unrecognisable as a
+    level word and forked its dedup key away from "Senior"."""
+    assert normalize_title(".NET Developer") == ".net developer"
+    assert normalize_title("Node.js Developer") == "node.js developer"
+    assert normalize_title("Sr. Java Backend") == "java backend"
+
+
+def test_title_level_reads_the_title_only_and_folds_house_style():
+    assert title_level("Senior Backend Engineer") == "senior"
+    # The same level `infer_level` reports, or a job's `level` column would
+    # contradict the key its posting was split on.
+    assert title_level("Sr. Backend Engineer") == "senior"
+    assert title_level("Lead Backend Engineer") == "senior"
+    assert title_level("Internship: Backend") == "intern"
+    # Says nothing about seniority — must match anything, not nothing.
+    assert title_level("Backend Engineer") is None
+
+
 def test_dedup_key_is_case_and_level_insensitive():
     assert dedup_key("ACME Corp", "Senior Java Dev") == dedup_key("acme corp", "Java Dev")
+    # Plurals and abbreviations are the same level word, or a board's house
+    # style would fork the key of a role it shares with another board.
+    assert dedup_key("ACME", "Java Dev Interns") == dedup_key("ACME", "Intern Java Dev")
+    assert dedup_key("ACME", "Sr. Java Dev") == dedup_key("ACME", "Senior Java Dev")
 
 
 # -- posted_at -------------------------------------------------------------- #

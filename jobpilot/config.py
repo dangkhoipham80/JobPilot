@@ -46,6 +46,11 @@ class CrawlCfg(BaseModel):
     fresh_hours: int = 48
     # A posting older than this is flagged (never hidden) as possibly filled.
     stale_days: int = 45
+    # How long one board's copy of a role keeps another board's copy out,
+    # counted from the last time the role was seen (not the first). 0 turns
+    # cross-source dedup off entirely, which is the honest way to say "show me
+    # every board's version" — see crawler/persist.py.
+    dedup_days: int = 14
     rate_limit_seconds: tuple[float, float] = (2.0, 5.0)
     match_score_min: float = 0.30
     stacks: list[str] = Field(default_factory=list)

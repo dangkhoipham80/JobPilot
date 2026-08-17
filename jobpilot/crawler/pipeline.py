@@ -79,12 +79,13 @@ def _crawl_site(
     stats.fetched = len(raws)
     stats.filtered = filtered
     log.info(
-        "[%s] fetched=%d inserted=%d updated=%d dup=%d filtered=%d fresh=%d",
+        "[%s] fetched=%d inserted=%d updated=%d dup=%d kept-for-jd=%d filtered=%d fresh=%d",
         scraper.source,
         stats.fetched,
         stats.inserted,
         stats.updated,
         stats.duplicates,
+        stats.superseded,
         stats.filtered,
         stats.fresh,
     )
@@ -98,7 +99,7 @@ def run_crawl(
     *,
     query: str | None = None,
     now: datetime | None = None,
-    dedup_days: int = 14,
+    dedup_days: int | None = None,
     record_run: bool = True,
     limit: int | None = None,
     on_progress: Callable[[str], None] | None = None,
@@ -109,9 +110,16 @@ def run_crawl(
 
     ``limit`` overrides ``cfg.crawl.jobs_per_site`` for this run only — useful
     for a one-off deep sweep without editing the config.
+
+    ``dedup_days`` likewise defaults to ``cfg.crawl.dedup_days``. It used to
+    default to a literal 14 that no caller passed and no config file mentioned,
+    so the cross-source dedup window was the one crawl rule that could not be
+    changed from the Settings page — or found by looking for it.
     """
     now = now or vn_now()
     query = query if query is not None else default_query(cfg)
+    if dedup_days is None:
+        dedup_days = cfg.crawl.dedup_days
 
     run: Run | None = None
     if record_run:

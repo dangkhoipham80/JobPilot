@@ -15,7 +15,7 @@ from email.utils import parsedate_to_datetime
 
 from jobpilot.config import Config
 from jobpilot.crawler.quality import Quality, flags_for, stack_coverage
-from jobpilot.crawler.text import clean_text, dedup_key, html_to_markdown
+from jobpilot.crawler.text import clean_text, dedup_key, html_to_markdown, title_level
 from jobpilot.crawler.types import RawJob
 from jobpilot.timeutil import VN_TZ, vn_now  # re-exported for callers/tests
 
@@ -190,6 +190,13 @@ class NormalizedJob:
     match_score: float
     fresh: bool
     dedup_key: str
+    #: Seniority as stated in the *title*, or ``None``. Travels beside
+    #: ``dedup_key`` (which strips it) so ``persist`` can tell "Senior Backend
+    #: Engineer" from "Intern Backend Engineer" without splitting the far more
+    #: common case where one board simply omits the word. Not ``level`` above:
+    #: that one also reads the JD, and a JD saying "we hire senior engineers"
+    #: must not be allowed to decide that two postings are different postings.
+    dedup_level: str | None
     payload: dict = field(default_factory=dict)
 
 
@@ -266,6 +273,7 @@ def normalize(raw: RawJob, cfg: Config, now: datetime | None = None) -> Normaliz
         match_score=score,
         fresh=fresh,
         dedup_key=dedup_key(raw.company, raw.title),
+        dedup_level=title_level(raw.title),
         payload=payload,
     )
 
