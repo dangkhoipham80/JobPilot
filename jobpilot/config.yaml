@@ -16,6 +16,13 @@ crawl:
   # Postings older than this are *flagged* as possibly filled — never hidden.
   # ATS boards legitimately carry open evergreen reqs for weeks, so be generous.
   stale_days: 45
+  # Cross-source dedup: how long one board's copy of a role keeps another
+  # board's copy out. Counted from the last time the role was *seen*, so a
+  # posting that is still live never lets a second copy in behind it. Levels
+  # named on both sides ("Senior" vs "Intern") are always separate roles, and a
+  # copy that carries a real JD is kept even when a JD-less one got there first.
+  # Set to 0 to keep every board's version. See crawler/persist.py.
+  dedup_days: 14
   rate_limit_seconds: [2.0, 5.0]   # polite delay range between requests
   match_score_min: 0.30       # min match to surface a job on the dashboard
   # Stack alerts — crawler filters jobs to these (Java backend focus for now).

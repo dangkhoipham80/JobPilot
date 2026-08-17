@@ -59,6 +59,10 @@ class JobOut(BaseModel):
     apply_channel: str | None
     apply_target: str | None
     crawled_at: datetime | None
+    # Last time a crawl found this posting still listed. Distinct from
+    # `crawled_at` (first sighting) — a job first seen weeks ago and still on
+    # the board reads very differently from one nobody has seen since.
+    last_seen_at: datetime | None = None
     # Which crawl discovered this job (null for hand-added ones).
     run_id: int | None = None
     # Why the score is what it is, and whether the posting looks worth

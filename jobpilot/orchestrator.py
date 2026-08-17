@@ -460,6 +460,7 @@ def crawl_body(
                     "inserted": site.stats.inserted,
                     "updated": site.stats.updated,
                     "duplicates": site.stats.duplicates,
+                    "superseded": site.stats.superseded,
                     "filtered": site.stats.filtered,
                     "fresh": site.stats.fresh,
                 }
@@ -475,6 +476,7 @@ def crawl_body(
                     "inserted": t.inserted,
                     "updated": t.updated,
                     "duplicates": t.duplicates,
+                    "superseded": t.superseded,
                     "fresh": t.fresh,
                     "filtered": t.filtered,
                 },

@@ -80,6 +80,39 @@ location nằm **cùng một dòng** ngăn bằng `·`, và dòng social proof (
 thấy ngoài alert. Link LinkedIn cho ra id ổn định nên dán lại cùng link sẽ *update*
 chứ không tạo bản trùng.
 
+## Dedup — hai lớp, và cái bẫy "cửa sổ đo sai mốc"
+
+Lớp 1 = PK `<source>:<native_id>`. Lớp 2 = cross-source `(company, title)` trong
+`crawl.dedup_days` (mặc định 14, chỉnh được ở Settings; `0` = tắt hẳn lớp 2).
+
+- **Cửa sổ đếm từ `last_seen_at`, KHÔNG phải `crawled_at`.** `crawled_at` là lần **đầu**
+  thấy và **không bao giờ được bump** — `/stats` `by_day`, sort `order=crawled` và filter
+  `crawled_after` đều đọc nó, bump là dồn mọi job từng thấy vào hôm nay (sai mà trông rất
+  hợp lý). `last_seen_at` bump mỗi lần `_refresh`. Trước khi có nó, tin **vẫn đang sống**
+  rớt khỏi cửa sổ của chính mình ở ngày 15 rồi bản của board khác chui vào.
+- **Ranh giới với `repeat_postings` (Phase 20)**: giờ tin đăng lại chỉ vào DB khi bản cũ đã
+  **thôi được nhìn thấy** đủ `dedup_days`. Đăng lại *trong khi* bản cũ còn listing → bị coi
+  là trùng (trước cũng vậy nếu <14 ngày). Repost nhanh hơn `dedup_days` sau khi gỡ tin thì
+  **không còn thành row riêng** — bằng chứng vẫn nằm ở `payload.dedup.suppressed` (có
+  timestamp), `repeat_postings` chưa đọc chỗ đó.
+- **Level chỉ tách khi CẢ HAI phía nói rõ.** `dedup_key` vẫn strip level (board bỏ chữ
+  "Junior" không có nghĩa là job khác), nhưng `title_level` đi kèm bên cạnh: Senior/Junior/
+  Intern cùng title cùng công ty = 3 job. `title_level` đọc **title thôi**, không dùng
+  `infer_level` (nó quét cả JD, mà "we hire senior engineers" trong JD không được quyền
+  quyết định hai tin là hai tin).
+- **Không bỏ job im lặng.** Tin bị skip được ghi lên row sống sót
+  (`payload.dedup.suppressed`, cap 10, sống qua re-crawl) + log có `extra=`. Bản **có JD**
+  thắng bản `needs_jd` kể cả khi bản rỗng vào trước (ca LinkedIn alert): row mới được
+  giữ, hai bên link nhau bằng `supersedes`/`superseded_by`, row cũ **chỉ được annotate** —
+  nó có thể đã shortlist/apply rồi, dedup không có quyền bỏ phiếu. Đếm ở `stats.superseded`
+  (là **sub-count của `inserted`**, không phải bucket thứ tư).
+- **Một luật normalize duy nhất** ở `text.py`: `normalize_company` + `normalize_title(strip_level=)`.
+  `dedup_key` dùng `strip_level=True`, `analytics.repeat_postings` dùng `False`. Trước đây là
+  hai bộ luật viết tay và **đã lệch nhau**. Thêm kiểu so sánh mới = thêm tham số, **đừng viết
+  hàm normalize thứ ba**. `fold` cũng ở đây, `apply/inbox` re-export.
+- **Dấu chấm cuối token là dấu tắt, không phải tech token**: `.net` mang dấu ở đầu, `node.js`
+  ở giữa. Giữ nó lại làm `"Sr."` vừa không nhận ra là level, vừa tách hẳn key khỏi `"Senior"`.
+
 ## Nợ kỹ thuật + bẫy đã trả giá
 
 - **Nguồn đang chạy**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev còn chưa có scraper (disabled trong config). Trang Runs chỉ cho chọn nguồn `enabled && ready` — `ready` = có scraper đăng ký trong `registry.SCRAPERS`, vì bật trong Settings không có nghĩa là đã implement. Cần `pip install -e '.[crawler]' && playwright install chromium` để crawl (2 nguồn tier-2 **không cần** Playwright).

@@ -44,8 +44,8 @@ from datetime import datetime
 from statistics import median
 
 from jobpilot.apply.followup import SENT_RESULTS
-from jobpilot.apply.inbox import fold
 from jobpilot.apply.outcome import ANSWERED_BY, INTERVIEW, OFFER
+from jobpilot.crawler.text import normalize_company, normalize_title
 from jobpilot.timeutil import VN_TZ
 
 #: Below this many *sent applications*, a bucket reports counts and no rate.
@@ -296,9 +296,18 @@ def time_to_first_reply(rows: list[dict]) -> dict:
 def repeat_postings(db, *, limit: int = REPEAT_LIMIT) -> dict:
     """Ads that keep coming back, grouped by company + title.
 
-    Grouped on the **folded** company and title (``inbox.fold``) so that
-    ``"Công ty TNHH X"`` and ``"CONG TY TNHH X"`` are one employer rather than
-    two — the same normalisation the market facets needed for city names.
+    Grouped with ``crawler.text.normalize_company`` / ``normalize_title`` — the
+    same pair the crawler's cross-source dedup key is built from, so that
+    ``"Công ty TNHH X"`` and ``"CONG TY TNHH X"`` are one employer, and
+    ``"Backend Engineer (Java)"`` is the same ad as ``"Backend Engineer"``.
+
+    **``strip_level=False`` is the one deliberate difference from
+    ``text.dedup_key``.** Dedup asks "have I already got this opening from
+    another board", where a level word is usually just a board's house style.
+    This asks "is this employer running the same ad over and over", and an
+    employer hiring a senior and a junior is doing two ordinary things, not
+    repeating itself. Same rule, one flag — previously these were two separate
+    hand-written normalizers that had already drifted apart.
 
     Dedup by ``id`` already collapses the *same* ad re-crawled; what reaches
     here is genuinely distinct postings, which is why a repeat is interesting at
@@ -312,7 +321,7 @@ def repeat_postings(db, *, limit: int = REPEAT_LIMIT) -> dict:
 
     groups: dict[tuple[str, str], list[tuple]] = defaultdict(list)
     for job_id, company, title, source, posted_at in jobs:
-        key = (fold(company or ""), fold(title or ""))
+        key = (normalize_company(company), normalize_title(title, strip_level=False))
         if not key[0] or not key[1]:
             # No company or no title is not a repeat of anything.
             continue

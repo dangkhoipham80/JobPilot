@@ -214,6 +214,12 @@ function TaskRow({ task }: { task: Task }) {
               <th className="font-medium tabular-nums">new</th>
               <th className="font-medium tabular-nums">updated</th>
               <th className="font-medium tabular-nums">dup</th>
+              <th
+                className="font-medium tabular-nums"
+                title="kept despite matching another board, because that board's copy had no JD"
+              >
+                kept
+              </th>
               <th className="font-medium tabular-nums">fresh</th>
             </tr>
           </thead>
@@ -226,10 +232,13 @@ function TaskRow({ task }: { task: Task }) {
                     <td className="tabular-nums">{site.inserted}</td>
                     <td className="tabular-nums">{site.updated}</td>
                     <td className="tabular-nums">{site.duplicates}</td>
+                    {/* Runs from before this column existed show "—", not "0":
+                        they did not report zero, they did not report. */}
+                    <td className="tabular-nums">{site.superseded ?? "—"}</td>
                     <td className="tabular-nums">{site.fresh}</td>
                   </>
                 ) : (
-                  <td colSpan={4} className="truncate py-0.5" title={site.error ?? ""}>
+                  <td colSpan={5} className="truncate py-0.5" title={site.error ?? ""}>
                     {site.error}
                   </td>
                 )}

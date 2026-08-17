@@ -192,7 +192,8 @@ def cmd_crawl(args: argparse.Namespace) -> int:
             if not site.ok
             else (
                 f"fetched={s.fetched} new={s.inserted} upd={s.updated} "
-                f"dup={s.duplicates} filtered={s.filtered} fresh={s.fresh}"
+                f"dup={s.duplicates} kept-for-jd={s.superseded} "
+                f"filtered={s.filtered} fresh={s.fresh}"
             )
         )
         print(f"  [{status}] {site.source:14s} {detail}")
@@ -317,7 +318,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 if not site["ok"]
                 else (
                     f"fetched={site['fetched']} new={site['inserted']} "
-                    f"upd={site['updated']} dup={site['duplicates']} fresh={site['fresh']}"
+                    f"upd={site['updated']} dup={site['duplicates']} "
+                    f"kept-for-jd={site.get('superseded', 0)} fresh={site['fresh']}"
                 )
             )
             print(f"  [{status}] {site['source']:14s} {detail}")

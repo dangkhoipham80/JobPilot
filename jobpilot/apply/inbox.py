@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -48,7 +47,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jobpilot.apply.outcome import ALL_OUTCOMES
 from jobpilot.crawler.mailbox import MailMessage
-from jobpilot.crawler.text import html_to_markdown
+# `fold` is re-exported, not redefined: employer names are folded the same way
+# here (name vs mail domain) and in crawler/text (name vs name), and two copies
+# of that rule would disagree the first time either is tuned.
+from jobpilot.crawler.text import fold, html_to_markdown
 
 # --------------------------------------------------------------------------- #
 # Matching
@@ -152,20 +154,6 @@ def registrable(domain: str) -> str:
     if len(parts) >= 3 and len(parts[-2]) <= 3 and len(parts[-1]) <= 3:
         return parts[-3]
     return parts[-2]
-
-
-def fold(word: str) -> str:
-    """``"Công"`` → ``"cong"`` — accents stripped, lowercased.
-
-    Domains cannot carry Vietnamese diacritics, so a company name has to be
-    folded before it can be compared to one. It is also what makes the noise
-    list work at all: without this, "Công ty TNHH …" keeps `công` as if it were
-    the distinctive part of the name.
-    """
-    decomposed = unicodedata.normalize("NFD", (word or "").lower())
-    # Vietnamese đ/Đ has no combining form, so NFD leaves it alone.
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return stripped.replace("đ", "d")
 
 
 def company_tokens(company: str | None) -> set[str]:
