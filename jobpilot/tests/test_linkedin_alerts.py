@@ -457,3 +457,17 @@ def test_a_title_that_merely_resembles_the_tail_is_left_alone(scraper):
     )
     # And it never returns an empty title, even if the whole thing matches.
     assert _strip_card_tail("Axon · Ha Noi", "Axon", "Ha Noi") == "Axon · Ha Noi"
+
+
+def test_a_trailing_badge_does_not_hide_the_tail():
+    """Real titles end "... (On-site) Easy Apply". The first version matched the
+    company/location line only when nothing followed it, which was 2 of 7 rows
+    in the database -- the other 5 all carried a badge."""
+    from jobpilot.crawler.linkedin import _strip_card_tail
+
+    assert _strip_card_tail(
+        "Java Software Engineer (3+ years, AWS, Spring Boot) KMS Technology, Inc. "
+        "· Ho Chi Minh City, Vietnam (Hybrid) Easy Apply",
+        "KMS Technology, Inc.",
+        "Ho Chi Minh City, Vietnam (Hybrid)",
+    ) == "Java Software Engineer (3+ years, AWS, Spring Boot)"

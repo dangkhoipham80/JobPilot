@@ -69,6 +69,17 @@ _SECTION_HEADING = re.compile(
 )
 
 
+# Badges LinkedIn appends *inside* the same link, after the location: "… (On-site)
+# Easy Apply". They are the reason a whole-card title does not simply end with
+# the company/location line, and why the first version of _strip_card_tail
+# matched 2 of 7 real rows.
+_TRAILING_BADGE = re.compile(
+    r"(?:\s+(?:easy apply|promoted|new|viewed|actively recruiting"
+    r"|be an early applicant|\d+ (?:school|company) alumni|\d+ connections?))+$",
+    re.I,
+)
+
+
 def _strip_card_tail(title: str, company: str, location: str | None) -> str:
     """Remove the company/location line when the link swallowed the whole card.
 
@@ -88,10 +99,19 @@ def _strip_card_tail(title: str, company: str, location: str | None) -> str:
     that keeps a few extra words is a great deal better than one truncated by a
     guess.
     """
-    tail = f"{company} · {location}" if location else company
-    for candidate in (tail, f"{company}·{location}" if location else ""):
-        if candidate and title.endswith(candidate):
-            return title[: -len(candidate)].strip(" ·-–—") or title
+    # Badges are dropped first: "… Ho Chi Minh City (On-site) Easy Apply" does
+    # not end with the company/location line until "Easy Apply" is gone.
+    stripped = _TRAILING_BADGE.sub("", title).strip()
+
+    # Only the full "company · location" line counts as a tail. Matching the
+    # bare company name was tried and mangles a job legitimately called
+    # "Backend Engineer at Axon" into "Backend Engineer at" -- the separator is
+    # what makes it the card's own line rather than words the title may share.
+    if not company or not location:
+        return title
+    for candidate in (f"{company} · {location}", f"{company}·{location}"):
+        if stripped.endswith(candidate):
+            return stripped[: -len(candidate)].strip(" ·-–—") or title
     return title
 
 
