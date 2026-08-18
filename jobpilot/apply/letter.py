@@ -27,7 +27,13 @@ from jobpilot.llm.base import Completion, LlmError, StructuredClient
 from jobpilot.llm.usage import call_log
 from jobpilot.store.models import Job
 from jobpilot.tailor.engine import TailorError
-from jobpilot.tailor.guard import GuardrailViolation, PlanReport, unknown_terms, vocabulary
+from jobpilot.tailor.guard import (
+    GuardrailViolation,
+    PlanReport,
+    terms_in,
+    unknown_terms,
+    vocabulary,
+)
 from jobpilot.tailor.schema import TailorPlan
 
 MAX_WORDS = 300  # SKILL.md §2 step 4
@@ -76,14 +82,17 @@ class CoverLetter(BaseModel):
 # Guardrail
 # --------------------------------------------------------------------------- #
 def _tokens(*values: str | None) -> set[str]:
-    """Proper nouns the letter must be able to name: the company, the location."""
-    out: set[str] = set()
-    for value in values:
-        for word in (value or "").replace("/", " ").split():
-            cleaned = word.strip(".,()-").lower()
-            if cleaned:
-                out.add(cleaned)
-    return out
+    """Proper nouns the letter must be able to name: the company, the location.
+
+    Delegates to the guard's own tokenizer. Splitting on whitespace here looked
+    equivalent and was not: it yielded ``r&d`` for "Panasonic R&D Center Vietnam"
+    while the checker looks for ``r`` and ``d`` (``_TOKEN_RE`` has no ``&``). The
+    company name was therefore in the vocabulary under a spelling that could
+    never match, and every letter to a company with an ampersand in its name was
+    rejected for "claiming experience with R, D" — both real language names —
+    for doing nothing but addressing the employer.
+    """
+    return terms_in(*values)
 
 
 def check_letter(
