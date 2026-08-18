@@ -20,7 +20,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from jobpilot import __version__
-from jobpilot.api.routes import analytics, apply, cv, inbox, jobs, ops, review, stats
+from jobpilot.api.routes import (
+    analytics,
+    apply,
+    backups,
+    cv,
+    inbox,
+    jobs,
+    ops,
+    review,
+    stats,
+)
 from jobpilot.api.security import check_api_token
 from jobpilot.api.static import mount_spa
 from jobpilot.api.ws import manager, websocket_endpoint
@@ -84,6 +94,7 @@ def create_app(serve_spa: bool = True) -> FastAPI:
         analytics.router,
         cv.router,
         inbox.router,
+        backups.router,
         ops.router,
     ):
         app.include_router(router, prefix=API_PREFIX)

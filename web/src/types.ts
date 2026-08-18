@@ -623,6 +623,28 @@ export interface Settings {
   locked?: string[];
 }
 
+export interface BackupFile {
+  name: string;
+  size: number;
+  /** UTC ISO. The filename is stamped in local time, so always render this
+   *  through the browser's locale rather than slicing the string. */
+  created_at: string;
+  kind: "database" | "cv";
+}
+
+export interface BackupStatus {
+  directory: string;
+  exists: boolean;
+  keep_days: number;
+  /** rclone remote, e.g. "gdrive:JobPilotBackups". Empty = this machine only. */
+  remote: string;
+  remote_keep_days: number;
+  total_bytes: number;
+  /** Ready-to-paste pg_restore command, password masked. */
+  restore_hint: string;
+  items: BackupFile[];
+}
+
 /** Which model runs which task. Empty string on a task = fall back to `provider`. */
 export interface LlmSettings {
   provider: string;

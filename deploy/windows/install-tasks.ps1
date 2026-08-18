@@ -21,8 +21,7 @@ param(
     [string]  $RepoDir    = '',
     [string[]]$CrawlTimes = @('08:30', '18:30'),
     [string]  $BackupTime = '03:00',
-    [int]     $Port       = 8000,
-    [string]  $BackupDir  = "$env:USERPROFILE\JobPilotBackups"
+    [int]     $Port       = 8000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,8 +103,12 @@ Register-JobPilotTask -Name 'JobPilot Crawl' `
 # --------------------------------------------------------------------------- #
 # 3. Backup
 # --------------------------------------------------------------------------- #
-$backupAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptDir\backup.ps1`" -BackupDir `"$BackupDir`"" `
+# Destination, retention and the rclone remote all come from `backup:` in
+# config.yaml / config.local.yaml, so the scheduled task, the CLI and the
+# dashboard button cannot be pointed at three different places by three
+# different callers.
+$backupAction = New-ScheduledTaskAction -Execute 'wscript.exe' `
+    -Argument "`"$ScriptDir\hidden.vbs`" `"$ScriptDir\run-backup.cmd`"" `
     -WorkingDirectory $RepoDir
 
 Register-JobPilotTask -Name 'JobPilot Backup' `
@@ -113,11 +116,11 @@ Register-JobPilotTask -Name 'JobPilot Backup' `
     -Triggers (New-ScheduledTaskTrigger -Daily -At $BackupTime) `
     -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
                                             -ExecutionTimeLimit (New-TimeSpan -Minutes 30)) `
-    -Description "pg_dump + CV export into $BackupDir"
+    -Description 'pg_dump + CV export. Destination and retention come from `backup:` in config.yaml.'
 
 Write-Output ''
 Write-Output 'Done. Check with:  Get-ScheduledTask JobPilot*'
-Write-Output "Backups land in:   $BackupDir"
+Write-Output 'Backups land where `backup.dir` in config.yaml says.'
 Write-Output ''
 Write-Output 'The data now lives on exactly one laptop, so verify a restore at least once:'
 Write-Output '  pg_restore --list <a .dump file>     # should list tables, not error'

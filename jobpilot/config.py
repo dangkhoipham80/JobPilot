@@ -237,6 +237,25 @@ class CvCfg(BaseModel):
     theme: str = "awesome-red"
 
 
+class BackupCfg(BaseModel):
+    """Where backups go and how long they live (``jobpilot/backup.py``)."""
+
+    #: Outside the repo on purpose: it holds personal data, and a backup living
+    #: inside the thing it backs up survives fewer accidents than it looks.
+    dir: str = "~/JobPilotBackups"
+    keep_days: int = 30
+
+    #: An rclone remote, e.g. ``gdrive:JobPilotBackups``. Empty = local only.
+    remote: str = ""
+
+    #: Deliberately longer than ``keep_days``. The off-machine copy exists for
+    #: the case where this machine is gone, so it must not be governed by the
+    #: pruning pass that runs here — a bug in local retention would otherwise
+    #: delete the surviving copies too. Different lifetimes are what make it a
+    #: second copy rather than a mirror of one failure.
+    remote_keep_days: int = 90
+
+
 class Config(BaseModel):
     app: AppCfg = Field(default_factory=AppCfg)
     crawl: CrawlCfg = Field(default_factory=CrawlCfg)
@@ -244,6 +263,7 @@ class Config(BaseModel):
     ats: AtsCfg = Field(default_factory=AtsCfg)
     apply: ApplyCfg = Field(default_factory=ApplyCfg)
     cv: CvCfg = Field(default_factory=CvCfg)
+    backup: BackupCfg = Field(default_factory=BackupCfg)
     llm: LlmCfg = Field(default_factory=LlmCfg)
 
     def enabled_sources(self) -> list[SourceCfg]:

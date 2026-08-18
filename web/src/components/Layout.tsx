@@ -5,6 +5,7 @@ import {
   Briefcase,
   BookOpen,
   Cpu,
+  DatabaseBackup,
   TrendingUp,
   FileText,
   LayoutDashboard,
@@ -25,6 +26,7 @@ const NAV = [
   { to: "/runs", label: "Runs", icon: Activity, end: false },
   { to: "/market", label: "Market", icon: TrendingUp, end: false },
   { to: "/models", label: "Models", icon: Cpu, end: false },
+  { to: "/backup", label: "Backup", icon: DatabaseBackup, end: false },
   { to: "/settings", label: "Settings", icon: Settings2, end: false },
   { to: "/guide", label: "Guide", icon: BookOpen, end: false },
 ];

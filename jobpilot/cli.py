@@ -122,19 +122,10 @@ def cmd_cv(args: argparse.Namespace) -> int:
 
         if args.cv_command == "export":
             try:
-                doc = store.get_document(db, args.scope)
+                store.export_document(db, args.file, args.scope)
             except store.ScopeNotFound as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1
-            payload = doc.model_dump(mode="json")
-            payload = {
-                "_comment": "Exported from the JobPilot database. Contains personal data — "
-                "keep it out of git (*.local.json is gitignored).",
-                **payload,
-            }
-            Path(args.file).write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
             print(f"Exported {args.scope} to {args.file}")
             return 0
 
@@ -465,6 +456,42 @@ def _rate(value: float | None, attempts: int) -> str:
     return f"n={attempts}" if value is None else f"{value:.0%}"
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    """Dump the database and export the CV. Same code the dashboard button runs."""
+    from jobpilot.backup import BackupError, list_backups, restore_hint, run_backup
+
+    if args.list:
+        files = list_backups(args.dir)
+        if not files:
+            print("no backups yet")
+            return 0
+        for f in files:
+            # .astimezone() because the timestamp is stored UTC but the name is
+            # stamped in local time; printing the two side by side unconverted
+            # shows one instant as two different clock readings on one line.
+            when = f.created.astimezone()
+            print(f"{when:%Y-%m-%d %H:%M}  {f.size/1024:8.1f} KB  {f.name}")
+        hint = restore_hint(args.dir)
+        if hint:
+            print(f"\nrestore the newest with:\n  {hint}")
+        return 0
+
+    try:
+        result = run_backup(args.dir, progress=lambda m: print(f"  {m}...") if args.verbose else None)
+    except BackupError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"{result.dump.name} + {result.cv.name}  ({result.size/1024:.1f} KB)")
+    if result.mirrored_to:
+        print(f"mirrored to {result.mirrored_to}")
+    for note in result.notes:
+        print(f"NOTE: {note}")
+    if result.pruned:
+        print(f"pruned {len(result.pruned)} file(s) past the retention window")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn
@@ -589,6 +616,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_llm_bench.add_argument("--provider", default="", help="override the configured provider")
     p_llm_bench.add_argument("--model", default="", help="override the model id")
     p_llm.set_defaults(func=cmd_llm)
+
+    p_backup = sub.add_parser("backup", help="pg_dump + CV export, with retention")
+    p_backup.add_argument("--dir", default=None, help="destination (default: backup.dir in config)")
+    p_backup.add_argument("--list", action="store_true", help="show existing backups instead")
+    p_backup.add_argument("-v", "--verbose", action="store_true", help="print each step")
+    p_backup.set_defaults(func=cmd_backup)
 
     p_serve = sub.add_parser("serve", help="run FastAPI backend (Phase 2)")
     p_serve.add_argument("--host", default="127.0.0.1", help="bind host (localhost only)")

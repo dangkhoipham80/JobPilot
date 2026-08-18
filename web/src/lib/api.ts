@@ -6,6 +6,7 @@ import type {
   InboxSettings,
   InboxSuggestion,
   ApplySettings,
+  BackupStatus,
   OutcomeType,
   CvCompileResult,
   CvDocument,
@@ -198,6 +199,11 @@ export const api = {
   task: (id: string) => req<Task>(`/tasks/${id}`),
   runs: (kind?: string, page: PageQuery = {}) =>
     req<Page<RunRecord>>(`/runs${qs({ kind, ...page })}`),
+  /* Backups (deploy/). Listing is cheap; making one is not, so it returns a
+     task like crawling does — a dump plus an upload outlives a request. */
+  backups: () => req<BackupStatus>("/backups"),
+  startBackup: () => req<Task>("/backups", { method: "POST" }),
+
   settings: () => req<Settings>("/settings"),
   saveSettings: (patch: Partial<Settings>) =>
     req<Settings>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
