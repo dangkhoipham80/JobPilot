@@ -1,8 +1,58 @@
-# Deploy JobPilot lên VPS (Tailscale-only)
+# Deploy JobPilot (Tailscale-only)
 
-> Đích: JobPilot chạy 24/7 trên một VPS Linux, truy cập từ điện thoại/laptop
-> **chỉ qua Tailscale**. Không mở port công khai, không domain, không Cloudflare.
-> Ngân sách ~100k VNĐ/tháng.
+> Truy cập từ điện thoại/laptop **chỉ qua Tailscale**. Không mở port công khai,
+> không domain, không Cloudflare.
+
+**Đang chạy thật: phương án A (laptop Windows).** Phần VPS bên dưới là phương án
+thay thế, chưa dựng.
+
+| | A. Laptop Windows *(đang dùng)* | B. VPS Linux |
+|---|---|---|
+| Chi phí | **0đ** (~25k điện/tháng) | ~100k/tháng |
+| Uptime | khi laptop bật | 24/7 |
+| IP dùng để crawl | **dân dụng VN** — ít bị Cloudflare challenge nhất | datacenter |
+| Cài đặt | §A bên dưới | §1–§6 |
+
+Chọn A vì laptop đã được set **không bao giờ ngủ**, nên nó gần như là server 24/7
+sẵn rồi; và crawl từ IP nhà là thứ VPS không mua được bằng tiền. Khi nào laptop
+tắt/mang đi thường xuyên tới mức khó chịu thì chuyển sang B — chi phí chuyển thấp
+vì state nằm hết trong Postgres: `pg_dump` → restore → đổi `DATABASE_URL`.
+
+---
+
+## A. Laptop Windows (phương án đang chạy)
+
+```powershell
+# 1. Tailscale (một lần)
+winget install --id Tailscale.Tailscale -e
+tailscale up
+tailscale serve --bg 8000        # HTTPS -> 127.0.0.1:8000
+
+# 2. Ba scheduled task — CẦN PowerShell Administrator
+powershell -ExecutionPolicy Bypass -File deploy\windows\install-tasks.ps1
+```
+
+Tạo ra: **JobPilot API** (chạy lúc đăng nhập, tự restart), **JobPilot Crawl**
+(08:30 & 18:30, chạy bù nếu máy tắt), **JobPilot Backup** (03:00 hằng đêm).
+
+Ba cái bẫy đã trả giá, đừng gỡ ra:
+
+- **`tailscale serve` cần HTTPS bật ở tailnet.** Chưa bật thì lệnh **treo im, không
+  báo gì**. Bật ở https://login.tailscale.com/admin/dns → *HTTPS Certificates*.
+  Kiểm bằng `tailscale status --json` — `CertDomains: None` là chưa bật.
+- **API chạy qua `run-api.cmd`, không gọi thẳng python.** Gọi thẳng thì task chết
+  với đúng một dòng `0x1` và không để lại log nào; nguyên nhân thật là môi trường
+  thiếu `%SystemRoot%` khiến `import asyncio` chết trong Winsock
+  (`WinError 10106`) — thông báo không nhắc tới Python lẫn biến thiếu. Wrapper
+  vừa dựng lại môi trường vừa ghi `logs/api.log`.
+- **`hidden.vbs`** để không có cửa sổ console nằm trên màn hình suốt phiên làm việc
+  (đóng theo phản xạ là tắt dashboard). Tuỳ chọn `-Hidden` của Task Scheduler ẩn
+  *task* trong UI chứ không ẩn cửa sổ.
+
+Backup nằm ở `%USERPROFILE%\JobPilotBackups`. **Dữ liệu giờ chỉ nằm trên một cái
+laptop**, nên phải verify restore ít nhất một lần — xem §9.
+
+---
 
 ## 0. Mô hình bảo mật — đọc trước, đừng bỏ qua
 

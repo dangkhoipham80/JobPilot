@@ -45,6 +45,25 @@ def read_document(path: Path) -> CvDocument:
     return CvDocument.model_validate({k: v for k, v in data.items() if not k.startswith("_")})
 
 
+def export_document(db: Session, path: Path | str, scope: str = MASTER_SCOPE) -> Path:
+    """Write a CV from the database to JSON, the counterpart of ``read_document``.
+
+    Shared by ``jobpilot cv export`` and the backup job rather than written out
+    twice: the two would agree today and disagree the first time the envelope
+    gains a field, and the copy that quietly stopped matching is the one you
+    would be restoring from.
+    """
+    payload = {
+        "_comment": "Exported from the JobPilot database. Contains personal data — "
+        "keep it out of git (*.local.json is gitignored).",
+        **get_document(db, scope).model_dump(mode="json"),
+    }
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
 def _scoped(scope: str):
     kind, job_id = resolve_scope(scope)
     stmt = select(CvVersion).where(CvVersion.scope == kind)

@@ -928,3 +928,99 @@ và ATS (Greenhouse/Lever) **không** sau Cloudflare nên không ảnh hưởng.
 `vite build` ra bundle **không còn** `127.0.0.1:8000` hardcode.
 **Verify CHƯA làm** (cần máy thật, xem checklist `DEPLOY.md §4`): chạy trên VPS, mở qua 4G,
 build PDF hai lần liên tiếp trên Linux, tắt Tailscale để chắc URL chết.
+
+---
+
+## Phase deploy-2 — Chạy thật trên laptop Windows + trang Backup (2026-08-18)
+
+**VPS không thành.** Oracle free tier ARM hết capacity ở `ap-singapore-1` — mà đó là AD *duy nhất*
+của region, và home region thì **khoá vĩnh viễn**. Thử retry bằng Resource Manager stack: 4 lần
+FAILED rồi đụng `429 TooManyRequests` của cả tenant.
+
+Chốt lại: **chạy trên chính laptop**. Nó đã được set *không bao giờ ngủ* nên gần như là server 24/7
+sẵn; và crawl từ **IP dân dụng VN** là thứ không VPS nào mua được — đúng thứ Cloudflare khó chịu
+nhất với IP datacenter. Oracle chỉ còn thêm được **một ô**: dashboard sống khi laptop tắt. Đánh đổi
+không đáng, đã dừng săn.
+
+### Tailscale — hai chỗ mất thời gian
+
+- **`tailscale serve` treo im, không báo gì** khi tailnet chưa bật HTTPS. Dấu hiệu duy nhất:
+  `tailscale status --json` → `CertDomains: None`. Bật ở admin console → *Audience* (giao diện mới
+  đổi tên thành **Google Auth Platform**-style, nút publish không còn ở màn hình consent cũ).
+  Chẩn đoán được là nhờ thử `serve --http=80` — chạy ngay lập tức, nên biết vấn đề là **cert**
+  chứ không phải serve.
+- **`cmd.exe` không expand `~`.** `ssh-keygen -f ~/.ssh/x` báo `No such file or directory` mà không
+  hề nói lý do. Dùng `%USERPROFILE%`.
+
+### Task Scheduler — ba vòng mới đúng, và bài học đắt nhất phiên
+
+**Vòng 1: `pythonw` trực tiếp → task chết với đúng `0x1`, không log.** Nghi phạm đầu tiên
+(`pythonw`, `--workers 1`) **đều vô tội** — cả ba biến thể chạy ngon từ shell. Tái hiện bằng
+`Start-Process -UseNewEnvironment` mới ra nguyên nhân thật: `import asyncio` chết trong Winsock
+(`WinError 10106`) vì thiếu `%SystemRoot%`. Thông báo không nhắc tới Python lẫn biến thiếu.
+⇒ Bọc `.cmd`: vừa chuẩn hoá env, vừa **ghi log** — thứ thiếu nghiêm trọng hơn cả bug.
+
+**Vòng 2: `hidden.vbs` không chờ.** `shell.Run(cmd, 0, False)` khiến task "xong" tức thì. Ba thứ
+âm thầm không hoạt động: `RestartCount` không bao giờ kích hoạt (API chết là nằm chết, dù setting
+nói ngược lại), `Stop-ScheduledTask` không có gì để dừng, và task backup báo `0x0` kể cả khi hỏng.
+
+**Vòng 3: thử S4U rồi phải quay lại.** S4U cho "chạy nền, không cửa sổ, không lưu mật khẩu" —
+và làm server **không quản lý được**: nó ở logon session khác nên `taskkill` trả *Access is denied*,
+còn `Get-CimInstance` trả `CommandLine` **rỗng**. Hệ quả: mọi phép đếm process khớp 0 và báo
+"không có server nào chạy" trong khi nó đang phục vụ.
+
+> **Bài học lớn nhất:** `Stop-ScheduledTask` giết lớp vỏ và **bỏ lại `python` mồ côi giữ cổng**.
+> Lệnh `Start` kế tiếp không bind được rồi chết — nhìn bên ngoài **y hệt một lần restart thành công**.
+> Vì thế tôi đã **hai lần "verify" deploy trên chính code cũ**. Chỉ lộ ra khi kiểm *response có
+> field mới không* thay vì tin "task chạy + health OK".
+> ⇒ `deploy/windows/restart-api.ps1`: dừng theo **chủ sở hữu cổng** (không theo tên tiến trình hay
+> command line — cả hai đều nói dối ở đây), chờ cổng giải phóng thật, rồi poll `/health`.
+
+### Backup — một implementation, ba lối vào
+
+Luật backup từng nằm trong PowerShell, nên dashboard chỉ có hai đường: gọi `.ps1` (Linux vô dụng)
+hoặc đẻ bản sao thứ hai. **Bản sao luật backup thì thứ trôi trước tiên là phần *verify*** — nên ngày
+phát hiện đúng là ngày cần tới nó. Giờ tất cả nằm ở `jobpilot/backup.py`; CLI, scheduled task và
+nút bấm cùng gọi vào đó.
+
+**rclone chứ không phải thư mục sync**: thư mục sync đẩy lệnh dọn local lên cloud trong vài giây,
+biến bản remote thành *bản sao lỗi lầm của máy này* thay vì bản sao độc lập của dữ liệu. Local giữ
+30 ngày, remote 90 — **cố ý khác nhau**.
+
+Ba lỗi của bản đầu, đều tìm ra khi **dùng thật**:
+- **Retention chỉ theo ngày.** Bấm nút 5 lần một buổi chiều = 10 file đều trong cửa sổ 30 ngày ⇒
+  không xoá gì. Đo trên bản sao thư mục thật: theo ngày xoá **0/14**, thêm `keep_last=3` xoá **8**.
+  Đếm **riêng từng loại**, để một lần chạy hỏng nửa chừng (có dump, không có CV) không đẩy file
+  loại kia ra ngoài.
+- **Không có lịch sử.** Task bị evict sau 50 cái, nên không trả lời được câu duy nhất ai cũng hỏi:
+  *"đêm qua nó có chạy không?"*. Quan trọng nhất ở ca file **không** nói được: một lần chạy hỏng
+  **trước khi kịp ghi file** không để lại dấu vết, nhìn y hệt lần chưa từng khởi động.
+- **Restart chưa bao giờ hoạt động** (ở trên).
+
+### Review gate bắt được 2 lỗi nữa
+
+- **Mật khẩu DB rò khi `pg_dump` timeout.** `subprocess.TimeoutExpired` lưu toàn bộ argv và render
+  nó trong `str()` ⇒ DSN kèm mật khẩu chảy vào `Run.stats["error"]` → **lưu xuống DB** → **hiện lên
+  dashboard**. Tôi đã viết hẳn comment cẩn thận cho nhánh `returncode != 0` rồi **bỏ sót nhánh
+  timeout**. Chi tiết đắt: `raise ... from None` **chỉ ẩn cách hiển thị**, `__context__` vẫn trỏ tới
+  exception gốc nên traceback vẫn render mật khẩu — phải `raise` **ngoài** khối `except`. Chính test
+  ghim mới lôi ra chuyện này sau khi tưởng đã sửa xong.
+- **Scheduled task không ghi Run row.** `run-backup.cmd` gọi CLI → `run_backup()`, mà chỉ
+  `backup_body()` mới ghi Run. ⇒ "Recent runs" **luôn trống** sau backup đêm, trong khi dòng chữ
+  trên trang khẳng định *"trống nghĩa là job không chạy"*. **Một tính năng giám sát báo ngược sự
+  thật còn tệ hơn không có.**
+
+**Verify (chạy thật, không dừng ở test xanh):** 770 test pass; backup chạy từ **cả ba đường**
+(CLI, nút bấm, lịch) và `rclone lsl` xác nhận file trên Drive **byte-identical** với local; restore
+dump vào DB nháp ra đúng `jobs=88`, `cv_versions=12` rồi xoá; dashboard/deep-link/token/WebSocket
+đều qua URL Tailscale; và **tắt Tailscale trên điện thoại thì URL chết** — bài kiểm duy nhất chứng
+minh mô hình bảo mật đúng.
+
+**Luồng thật lần đầu:** tailor job Panasonic → **`attempts: 2`** (guardrail **loại kế hoạch đầu**,
+bắt làm lại) → PDF 1 trang, `pdfminer` đọc được 2733 ký tự. Hai kỹ năng JD đòi mà CV không có
+(`CBOR`, chữ ký số) được đánh `MISSING` với `evidence` rỗng, và grep chính text PDF xác nhận
+**không xuất hiện** — match 0.79 chứ không phải 1.0 vì nó không tự nâng điểm bằng cách bịa.
+Dừng ở **REVIEW**: bấm Approve là quyết định của user (nguyên tắc 2), không bấm hộ.
+
+**Nợ mới:** parser LinkedIn alert ăn nhầm dòng *"Jobs similar to …"* thành job — 2/88 row có title
+và company rác, làm bẩn analytics (`crawler/mailbox.py`).

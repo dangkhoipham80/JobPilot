@@ -623,6 +623,43 @@ export interface Settings {
   locked?: string[];
 }
 
+export interface BackupFile {
+  name: string;
+  size: number;
+  /** UTC ISO. The filename is stamped in local time, so always render this
+   *  through the browser's locale rather than slicing the string. */
+  created_at: string;
+  kind: "database" | "cv";
+}
+
+export interface BackupRun {
+  id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  ok: boolean;
+  error: string | null;
+  mirrored_to: string | null;
+  pruned: number;
+}
+
+export interface BackupStatus {
+  directory: string;
+  exists: boolean;
+  keep_days: number;
+  /** Hard cap on file count. Age alone never prunes same-day files. */
+  keep_last: number;
+  /** Recent runs. Files alone can't distinguish "failed before writing" from
+   *  "never started" — both leave nothing behind. */
+  runs: BackupRun[];
+  /** rclone remote, e.g. "gdrive:JobPilotBackups". Empty = this machine only. */
+  remote: string;
+  remote_keep_days: number;
+  total_bytes: number;
+  /** Ready-to-paste pg_restore command, password masked. */
+  restore_hint: string;
+  items: BackupFile[];
+}
+
 /** Which model runs which task. Empty string on a task = fall back to `provider`. */
 export interface LlmSettings {
   provider: string;

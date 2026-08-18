@@ -6,6 +6,7 @@ import { Applications } from "@/pages/Applications";
 import { CvReview } from "@/pages/CvReview";
 import { CvStudio } from "@/pages/CvStudio";
 import { Runs } from "@/pages/Runs";
+import { Backup } from "@/pages/Backup";
 import { Settings } from "@/pages/Settings";
 import { Models } from "@/pages/Models";
 import { Market } from "@/pages/Market";
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/guide" element={<Guide version={version} />} />
           <Route path="/market" element={<Market version={version} />} />
           <Route path="/models" element={<Models version={version} />} />
+          <Route path="/backup" element={<Backup version={version} />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </Layout>
