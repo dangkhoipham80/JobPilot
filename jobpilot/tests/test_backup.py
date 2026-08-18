@@ -64,17 +64,34 @@ def test_zero_retention_prunes_nothing(tmp_path):
 
 def test_an_empty_dump_is_a_failure_not_a_success(tmp_path, monkeypatch):
     """The worst outcome is a job reporting success having written nothing --
-    that is precisely what stops you checking."""
+    that is precisely what stops you checking.
+
+    The CV export is stubbed as well as pg_dump. Without that this reached a
+    real session_scope() and needed a live Postgres: it passed here and failed
+    in CI, which is a test that proves whichever machine it happens to run on.
+    """
     monkeypatch.setattr(backup_mod, "find_pg_dump", lambda: "pg_dump")
     monkeypatch.setattr(
         backup_mod, "get_secrets",
         lambda: type("S", (), {"database_url": "postgresql://u:p@h/db"})(),
     )
-    # pg_dump "succeeds" but writes nothing, the shape a full disk produces.
+    # pg_dump "succeeds" but writes nothing -- the shape a full disk produces.
     monkeypatch.setattr(
         backup_mod.subprocess, "run",
         lambda *a, **k: type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
     )
+
+    import contextlib
+
+    import jobpilot.cv.store as cv_store
+    import jobpilot.store.db as store_db
+
+    monkeypatch.setattr(store_db, "session_scope", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(
+        cv_store, "export_document",
+        lambda db, path, scope="master": Path(path).write_text("{}", encoding="utf-8"),
+    )
+
     with pytest.raises(BackupError, match="empty file"):
         backup_mod.run_backup(tmp_path)
 
