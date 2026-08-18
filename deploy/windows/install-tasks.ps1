@@ -41,12 +41,15 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $RepoDir) { $RepoDir = (Resolve-Path (Join-Path $ScriptDir '..\..')).Path }
 $RepoDir = (Resolve-Path $RepoDir).Path
 
-# The interpreter that has jobpilot installed, not whatever python the task
-# scheduler would find first.
+# Reported, not used as the task's Execute. All three tasks go through a .cmd
+# wrapper that calls a bare `python`, so they resolve the interpreter the same
+# way at run time. Registering one task with a full path and the others with
+# PATH is how a machine ends up crawling with one interpreter and serving with
+# another -- which surfaces as a package that is both installed and missing.
 $python = (Get-Command python.exe -ErrorAction Stop).Source
 
 Write-Output "repo:    $RepoDir"
-Write-Output "python:  $python"
+Write-Output "python:  $python  (tasks resolve it via PATH at run time)"
 
 # Interactive, deliberately, after trying the alternative.
 #
@@ -115,7 +118,9 @@ $crawlSettings = New-ScheduledTaskSettingsSet `
 $crawlTriggers = $CrawlTimes | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
 
 Register-JobPilotTask -Name 'JobPilot Crawl' `
-    -Action (New-ScheduledTaskAction -Execute $python -Argument '-m jobpilot.cli crawl' -WorkingDirectory $RepoDir) `
+    -Action (New-ScheduledTaskAction -Execute 'wscript.exe' `
+                -Argument "`"$ScriptDir\hidden.vbs`" `"$ScriptDir\run-crawl.cmd`"" `
+                -WorkingDirectory $RepoDir) `
     -Triggers $crawlTriggers `
     -Settings $crawlSettings `
     -Description "Crawl the enabled job boards ($($CrawlTimes -join ', ')). Runs here, not on a server, so it uses a Vietnamese residential IP."

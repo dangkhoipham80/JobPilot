@@ -476,19 +476,36 @@ def cmd_backup(args: argparse.Namespace) -> int:
             print(f"\nrestore the newest with:\n  {hint}")
         return 0
 
+    # backup_body, not run_backup: it is the one that also writes the Run row.
+    # The scheduled task runs this command, so calling run_backup here left the
+    # dashboard's "Recent runs" empty after every nightly backup — while the
+    # page told the reader that an empty list means the job never fired. A
+    # monitoring feature reporting the exact opposite of the truth is worse than
+    # not having one.
+    #
+    # --dir is honoured by running the plain function, which skips the Run row;
+    # that is for ad-hoc dumps to a scratch directory, not for the schedule.
+    from jobpilot.backup import backup_body
+
+    step = (lambda m: print(f"  {m}...")) if args.verbose else None
     try:
-        result = run_backup(args.dir, progress=lambda m: print(f"  {m}...") if args.verbose else None)
+        if args.dir:
+            r = run_backup(args.dir, progress=step)
+            result = {"dump": r.dump.name, "cv": r.cv.name, "size": r.size,
+                      "mirrored_to": r.mirrored_to, "pruned": len(r.pruned), "notes": r.notes}
+        else:
+            result = backup_body(step or (lambda _m: None))
     except BackupError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    print(f"{result.dump.name} + {result.cv.name}  ({result.size/1024:.1f} KB)")
-    if result.mirrored_to:
-        print(f"mirrored to {result.mirrored_to}")
-    for note in result.notes:
+    print(f"{result['dump']} + {result['cv']}  ({result['size']/1024:.1f} KB)")
+    if result["mirrored_to"]:
+        print(f"mirrored to {result['mirrored_to']}")
+    for note in result.get("notes", []):
         print(f"NOTE: {note}")
-    if result.pruned:
-        print(f"pruned {len(result.pruned)} file(s) past the retention window")
+    if result["pruned"]:
+        print(f"pruned {result['pruned']} file(s) past the retention window")
     return 0
 
 

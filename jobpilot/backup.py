@@ -167,12 +167,18 @@ def _mirror(dump: Path, cv: Path, remote: str, keep_days: int, notes: list[str])
         )
 
     if keep_days > 0:
-        subprocess.run(
+        # Checked, because a silent failure here means the remote grows without
+        # bound while every backup still reports success — the shape of problem
+        # you find out about from a quota email months later. Not fatal though:
+        # the copy is already uploaded, which is the part that matters.
+        pruned = subprocess.run(
             [exe, "delete", remote, "--min-age", f"{keep_days}d"],
             capture_output=True,
             text=True,
             timeout=600,
         )
+        if pruned.returncode != 0:
+            notes.append(f"remote retention failed on {remote}: {pruned.stderr[-200:].strip()}")
     return True
 
 
@@ -210,15 +216,28 @@ def run_backup(
     step("dumping the database (this is the slow part)")
     pg_dump = find_pg_dump()
     url = libpq_url(get_secrets().database_url)
-    proc = subprocess.run(
-        [pg_dump, "-Fc", url, "-f", str(dump)],
-        capture_output=True,
-        text=True,
-        timeout=1800,
-    )
+    # ``TimeoutExpired`` stores the whole argv and renders it in ``str()``, so
+    # letting it propagate would put the DSN — password included — into the Run
+    # row's error field, into the database, and onto the dashboard.
+    #
+    # The raise happens *outside* the except block on purpose. ``from None``
+    # only suppresses how the chain is *displayed*; ``__context__`` still points
+    # at the original, and a traceback renders the whole chain. Leaving the
+    # block first is what actually drops it.
+    timed_out: float | None = None
+    try:
+        proc = subprocess.run(
+            [pg_dump, "-Fc", url, "-f", str(dump)],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+    except subprocess.TimeoutExpired as exc:
+        timed_out = exc.timeout
+    if timed_out is not None:
+        raise BackupError(f"pg_dump timed out after {timed_out:.0f}s")
     if proc.returncode != 0:
-        # The URL carries the password, so the message is built from stderr only
-        # -- which pg_dump writes without it.
+        # Built from stderr only, which pg_dump writes without the DSN.
         raise BackupError(f"pg_dump failed: {proc.stderr[-500:]}")
 
     step("exporting the Master CV")

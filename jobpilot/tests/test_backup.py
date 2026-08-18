@@ -109,3 +109,45 @@ def test_the_two_kinds_are_capped_independently(tmp_path):
     backup_mod._prune(tmp_path, keep_days=0, keep_last=2)
     assert len(list(tmp_path.glob("cv-*.json"))) == 1, "the only CV must survive"
     assert len(list(tmp_path.glob("jobpilot-*.dump"))) == 2
+
+
+def test_a_pg_dump_timeout_never_leaks_the_password(tmp_path, monkeypatch):
+    """subprocess.TimeoutExpired renders the whole argv in str(), and the argv
+    holds the DSN. Letting it propagate wrote the password into the Run row's
+    error field, into the database, and onto the dashboard."""
+    secret = "hunter2SuperSecret"
+    monkeypatch.setattr(backup_mod, "find_pg_dump", lambda: "pg_dump")
+    monkeypatch.setattr(
+        backup_mod, "get_secrets",
+        lambda: type("S", (), {"database_url": f"postgresql://u:{secret}@h/db"})(),
+    )
+
+    def timeout(*a, **k):
+        import subprocess as sp
+
+        raise sp.TimeoutExpired(a[0] if a else k.get("args"), 1800)
+
+    monkeypatch.setattr(backup_mod.subprocess, "run", timeout)
+
+    with pytest.raises(BackupError) as exc:
+        backup_mod.run_backup(tmp_path)
+
+    # The message, and the whole exception chain a traceback would render.
+    chain, err = [], exc.value
+    while err:
+        chain.append(str(err))
+        err = err.__cause__ or err.__context__
+    assert secret not in " ".join(chain), "the password reached the error message"
+    assert "timed out" in str(exc.value)
+
+
+def test_the_cli_records_a_run_like_the_button_does():
+    """The scheduled task runs the CLI. Recording the Run row only in the API
+    path left "Recent runs" empty after every nightly backup, while the page
+    told the reader an empty list means the job never fired."""
+    import inspect
+
+    from jobpilot.cli import cmd_backup
+
+    src = inspect.getsource(cmd_backup)
+    assert "backup_body" in src, "the CLI must go through the path that writes the Run row"
