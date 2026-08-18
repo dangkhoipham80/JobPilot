@@ -371,3 +371,53 @@ def test_patch_404_and_empty(client):
     assert client.patch("/jobs/nope:1", headers=AUTH, json={"title": "x"}).status_code == 404
     created = client.post("/jobs", headers=AUTH, json={"title": "T", "company": "C"}).json()
     assert client.patch(f"/jobs/{created['id']}", headers=AUTH, json={}).status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Section headings (found on a real alert, after it reached the database)
+# --------------------------------------------------------------------------- #
+SIMILAR_SECTION = """
+<html><body>
+  <a href="https://www.linkedin.com/comm/jobs/view/4428641132/">
+    Jobs similar to Java Engineer - Everyday Banking at NAB Innovation Centre Vietnam
+  </a>
+  <table><tr>
+    <td><a href="https://www.linkedin.com/comm/jobs/view/4428641133/"><strong>Java Developer</strong></a></td>
+  </tr><tr><td>DXC Technology Vietnam &middot; Ha Noi, Vietnam</td></tr></table>
+</body></html>
+"""
+
+
+def test_a_section_heading_is_not_a_job(scraper):
+    """LinkedIn links its section headings to a job URL, so the parser read
+    "Jobs similar to Java Engineer ... at NAB Innovation Centre Vietnam" as a job
+    whose company was "Jobs similar to". One of those reached the database,
+    survived shortlisting, and was still there at apply time."""
+    hits = scraper.parse_search(SIMILAR_SECTION)
+    assert [h.native_id for h in hits] == ["4428641133"]
+    assert not any("similar to" in (h.title or "").lower() for h in hits)
+    assert not any("similar to" in (h.company or "").lower() for h in hits)
+
+
+def test_the_heading_does_not_steal_the_id_from_a_real_card(scraper):
+    """The heading and a genuine card can carry the same job id. Skipping the
+    heading must not leave the card holding a title taken from the heading."""
+    same_id = """
+    <html><body>
+      <a href="https://www.linkedin.com/comm/jobs/view/4012345678/">Jobs similar to Backend Engineer at ACME</a>
+      <table><tr>
+        <td><a href="https://www.linkedin.com/comm/jobs/view/4012345678/"><strong>Backend Engineer</strong></a></td>
+      </tr><tr><td>ACME Corp &middot; Ha Noi, Vietnam</td></tr></table>
+    </body></html>
+    """
+    hits = scraper.parse_search(same_id)
+    assert len(hits) == 1
+    assert hits[0].title == "Backend Engineer"
+    assert hits[0].company == "ACME Corp"
+
+
+def test_ordinary_cards_are_untouched_by_the_heading_filter(scraper):
+    """The filter is anchored at the start of the title, so a job legitimately
+    called something like "Senior Engineer, Similar Systems" still parses."""
+    hits = scraper.parse_search(ALERT_EMAIL)
+    assert len(hits) == 3

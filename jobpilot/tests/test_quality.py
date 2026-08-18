@@ -185,3 +185,106 @@ def test_the_orm_row_exposes_quality_so_both_routes_get_it(session_factory):
     )
     assert job.quality == {"matched": ["Java"], "missing": [], "flags": ["stale"]}
     assert Job(id="y", source="s", url="u", title="t", company="c", payload={}).quality is None
+
+
+# --------------------------------------------------------------------------- #
+# "not seen lately" (found the expensive way: a job expired 16 days before the
+# apply, and every signal needed to say so was already in the database)
+# --------------------------------------------------------------------------- #
+from datetime import datetime, timezone  # noqa: E402
+
+from jobpilot.crawler.quality import (  # noqa: E402
+    UNSEEN_PASSES,
+    missed_passes,
+    unseen_flag,
+)
+
+_T0 = datetime(2026, 8, 2, tzinfo=timezone.utc)
+
+
+def _passes(*days: int) -> list[datetime]:
+    return sorted((_T0 + timedelta(days=d) for d in days), reverse=True)
+
+
+def test_a_posting_seen_on_the_latest_pass_is_not_flagged():
+    assert unseen_flag(_passes(0, 6, 15), last_seen=_T0 + timedelta(days=15)) == []
+
+
+def test_one_missed_pass_is_not_enough():
+    """A live posting falls out of view as soon as jobs_per_site newer ones
+    arrive, so a single miss says nothing."""
+    assert missed_passes(_passes(0, 6), last_seen=_T0) == 1
+    assert unseen_flag(_passes(0, 6), last_seen=_T0) == []
+
+
+def test_two_missed_passes_are_worth_saying():
+    """The real case: crawled 2 Aug, the source crawled again on the 8th and the
+    17th, and it never came back."""
+    assert missed_passes(_passes(0, 6, 15), last_seen=_T0) == 2
+    assert unseen_flag(_passes(0, 6, 15), last_seen=_T0) == ["not_seen"]
+    assert UNSEEN_PASSES == 2
+
+
+def test_never_having_looked_again_is_not_evidence():
+    """If the source has not been crawled since, the posting's absence means
+    nothing — the same distinction as undated vs stale."""
+    assert unseen_flag(_passes(0), last_seen=_T0) == []
+    assert unseen_flag([], last_seen=_T0) == []
+
+
+def test_an_unseen_last_seen_at_is_not_flagged():
+    assert unseen_flag(_passes(0, 6, 15), last_seen=None) == []
+
+
+def test_the_wording_admits_both_explanations():
+    """Naming it "gone" would claim more than the data supports; naming it only
+    "unseen" would hide why anyone should care."""
+    text = describe("not_seen").lower()
+    assert "taken down" in text and "sample" in text
+
+
+def test_crawl_passes_ignores_a_pass_that_came_back_empty(session_factory):
+    """A crawl that errored or was blocked proves nothing about whether a
+    posting is still listed. Counting it would flag live jobs every time a
+    source had a bad day."""
+    from jobpilot.crawler.quality import crawl_passes
+    from jobpilot.store.models import Run
+    from jobpilot.timeutil import vn_now
+
+    now = vn_now()
+    with session_factory() as db:
+        db.add_all([
+            Run(kind="crawl", started_at=now - timedelta(days=3),
+                stats={"sites": {"itviec": {"ok": True, "fetched": 10}}}),
+            Run(kind="crawl", started_at=now - timedelta(days=2),
+                stats={"sites": {"itviec": {"ok": False, "error": "blocked", "fetched": 0}}}),
+            Run(kind="crawl", started_at=now - timedelta(days=1),
+                stats={"sites": {"itviec": {"ok": True, "fetched": 0}}}),
+        ])
+        db.commit()
+        passes = crawl_passes(db, ["itviec"]).get("itviec", [])
+
+    assert len(passes) == 1, "only the pass that actually fetched something counts"
+
+
+def test_crawl_passes_does_not_come_from_last_seen_at(session_factory):
+    """last_seen_at is overwritten on every sighting, so a pass survives there
+    only if it left a job nobody ever saw again. On real data the 8 August pass
+    fetched ten ITviec jobs, updated four, and had disappeared from those
+    timestamps by the 17th -- while being exactly the pass the signal needed."""
+    from jobpilot.crawler.quality import crawl_passes
+    from jobpilot.store.models import Job, Run
+    from jobpilot.timeutil import vn_now
+
+    now = vn_now()
+    with session_factory() as db:
+        db.add(Run(kind="crawl", started_at=now - timedelta(days=5),
+                   stats={"sites": {"itviec": {"ok": True, "fetched": 10}}}))
+        # Every job's sighting was later overwritten, so last_seen_at carries no
+        # trace of that pass at all.
+        db.add(Job(id="itviec:x", source="itviec", title="T", company="C",
+                   crawled_at=now, last_seen_at=now))
+        db.commit()
+        passes = crawl_passes(db, ["itviec"]).get("itviec", [])
+
+    assert len(passes) == 1, "the pass must still be visible via runs"

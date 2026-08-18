@@ -52,6 +52,22 @@ _NOISE = re.compile(
 # non-breaking spaces around it.
 _COMPANY_LOCATION_SEP = re.compile(r"\s*[·•]\s*")
 
+# Section headings, which LinkedIn also links to a job URL. Verified on a real
+# alert: "Jobs similar to Java Engineer - Everyday Banking at NAB Innovation
+# Centre Vietnam" linked to /jobs/view/<id> and was read as a job whose title
+# was the whole heading and whose company was "Jobs similar to".
+#
+# Skipped rather than unwrapped. The heading names a job the user already saw --
+# it is the *reason* the section exists — and the section's own cards are the
+# real content. Trying to parse a title and company back out of the sentence
+# would mean guessing where one ends and the other begins, on a line whose
+# wording LinkedIn is free to change; being absent is a better answer than being
+# confidently wrong about who the employer is.
+_SECTION_HEADING = re.compile(
+    r"^(jobs? similar to|more jobs (for|like)|because you|based on your|recommended for you)\b",
+    re.I,
+)
+
 
 def job_url(job_id: str) -> str:
     """The canonical, tracker-free URL for a job id."""
@@ -85,6 +101,12 @@ class LinkedInAlertsScraper(BaseScraper):
                 continue
             job_id = match.group(1)
             title = clean_text(anchor.get_text(" ", strip=True))
+            # A section heading links to a job too, but its text is a sentence
+            # about the section rather than a job title. Dropped before anything
+            # reads it as one — and before it can claim the id, which the card
+            # further down the email uses properly.
+            if _SECTION_HEADING.match(title):
+                continue
             # Every card links twice (logo image + title). The image anchor has
             # no text, so prefer whichever occurrence actually names the job.
             if job_id in hits and not title:
