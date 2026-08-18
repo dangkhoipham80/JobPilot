@@ -77,3 +77,35 @@ def test_an_empty_dump_is_a_failure_not_a_success(tmp_path, monkeypatch):
     )
     with pytest.raises(BackupError, match="empty file"):
         backup_mod.run_backup(tmp_path)
+
+
+def test_count_cap_prunes_even_when_nothing_is_old(tmp_path):
+    """The hole age-only retention leaves: five presses of the dashboard button
+    in one afternoon are ten files all inside the window, so nothing is ever
+    removed and the directory grows without bound."""
+    import os
+    from datetime import datetime, timedelta, timezone
+
+    for i in range(6):
+        p = tmp_path / f"jobpilot-2026081{i}-000000.dump"
+        p.write_bytes(b"x")
+        when = (datetime.now(tz=timezone.utc) - timedelta(minutes=i)).timestamp()
+        os.utime(p, (when, when))
+
+    removed = backup_mod._prune(tmp_path, keep_days=30, keep_last=3)
+    assert len(removed) == 3
+    assert len(list(tmp_path.glob("jobpilot-*.dump"))) == 3
+    # The three that survive are the newest three.
+    assert "jobpilot-20260810-000000.dump" not in removed
+
+
+def test_the_two_kinds_are_capped_independently(tmp_path):
+    """A half-finished run leaves a dump with no CV beside it. Counting them
+    together would let that orphan push a good CV out of the window."""
+    for i in range(4):
+        (tmp_path / f"jobpilot-2026081{i}-000000.dump").write_bytes(b"x")
+    (tmp_path / "cv-20260810-000000.json").write_text("{}")
+
+    backup_mod._prune(tmp_path, keep_days=0, keep_last=2)
+    assert len(list(tmp_path.glob("cv-*.json"))) == 1, "the only CV must survive"
+    assert len(list(tmp_path.glob("jobpilot-*.dump"))) == 2

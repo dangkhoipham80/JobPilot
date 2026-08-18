@@ -48,13 +48,29 @@ $python = (Get-Command python.exe -ErrorAction Stop).Source
 Write-Output "repo:    $RepoDir"
 Write-Output "python:  $python"
 
+# Interactive, deliberately, after trying the alternative.
+#
+# S4U ("Service For User") looked better -- background, no window, no stored
+# password -- and made the server *unmanageable*: it runs in a different logon
+# session, so from an ordinary shell `taskkill` answers "Access is denied" and
+# Get-CimInstance returns a blank CommandLine, which makes process lookups
+# quietly match nothing. Restarting the API would have needed Administrator
+# every time.
+#
+# Interactive keeps the server in this user's session, where restart-api.ps1 can
+# stop it by port without elevation. hidden.vbs supplies the missing piece --
+# no console window -- and waits for the command, so the task stays Running for
+# the server's lifetime and RestartCount still fires if it crashes.
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType Interactive -RunLevel Limited
+
 function Register-JobPilotTask {
     param($Name, $Action, $Triggers, $Settings, $Description)
     # Unregister first: Register-ScheduledTask -Force still fails on some
     # settings changes, and a half-updated task is worse than a missing one.
     Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
     Register-ScheduledTask -TaskName $Name -Action $Action -Trigger $Triggers `
-        -Settings $Settings -Description $Description | Out-Null
+        -Settings $Settings -Principal $principal -Description $Description | Out-Null
     Write-Output "  registered: $Name"
 }
 
@@ -65,8 +81,12 @@ function Register-JobPilotTask {
 # first attempt at this proved the hard way: the task died with a bare "0x1" and
 # no log to say why, and the cause turned out to be a stripped environment where
 # `import asyncio` failed in Winsock for want of %SystemRoot%. The wrapper fixes
-# both. hidden.vbs then runs it without leaving a console window on screen for
-# the rest of the session.
+# both. hidden.vbs keeps the console window off the screen; it waits for the
+# command, so this task stays Running rather than reporting success instantly.
+#
+# Stopping it is deploy\windows\restart-api.ps1, NOT Stop-ScheduledTask: the
+# scheduler kills the shim and leaves the server orphaned holding the port,
+# which makes the next start fail to bind and look like a successful restart.
 $apiAction = New-ScheduledTaskAction -Execute 'wscript.exe' `
     -Argument "`"$ScriptDir\hidden.vbs`" `"$ScriptDir\run-api.cmd`" $Port" `
     -WorkingDirectory $RepoDir

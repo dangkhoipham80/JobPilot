@@ -632,10 +632,25 @@ export interface BackupFile {
   kind: "database" | "cv";
 }
 
+export interface BackupRun {
+  id: number;
+  started_at: string | null;
+  finished_at: string | null;
+  ok: boolean;
+  error: string | null;
+  mirrored_to: string | null;
+  pruned: number;
+}
+
 export interface BackupStatus {
   directory: string;
   exists: boolean;
   keep_days: number;
+  /** Hard cap on file count. Age alone never prunes same-day files. */
+  keep_last: number;
+  /** Recent runs. Files alone can't distinguish "failed before writing" from
+   *  "never started" — both leave nothing behind. */
+  runs: BackupRun[];
   /** rclone remote, e.g. "gdrive:JobPilotBackups". Empty = this machine only. */
   remote: string;
   remote_keep_days: number;

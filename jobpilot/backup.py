@@ -106,14 +106,28 @@ def list_backups(directory: Path | str | None = None) -> list[BackupFile]:
     return sorted(out, key=lambda f: f.created, reverse=True)
 
 
-def _prune(directory: Path, keep_days: int) -> list[str]:
-    if keep_days <= 0:
-        return []
-    cutoff = datetime.now(tz=timezone.utc).timestamp() - keep_days * 86400
-    removed = []
+def _prune(directory: Path, keep_days: int, keep_last: int = 0) -> list[str]:
+    """Delete old backups by age *and* by count, whichever bites first.
+
+    Age alone leaves a hole: pressing the dashboard button five times in an
+    afternoon writes ten files all comfortably inside the age window, so nothing
+    is pruned and the directory grows forever. Count alone is no good either —
+    one backup a month would keep the last fourteen for over a year.
+
+    Each kind is counted separately, so a run that failed halfway (a dump with
+    no CV beside it) cannot push the other kind out of the window.
+    """
+    removed: list[str] = []
+    cutoff = (
+        datetime.now(tz=timezone.utc).timestamp() - keep_days * 86400 if keep_days > 0 else None
+    )
+
     for pattern in (DUMP_GLOB, CV_GLOB):
-        for path in directory.glob(pattern):
-            if path.stat().st_mtime < cutoff:
+        files = sorted(directory.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        for index, path in enumerate(files):
+            too_old = cutoff is not None and path.stat().st_mtime < cutoff
+            too_many = keep_last > 0 and index >= keep_last
+            if too_old or too_many:
                 path.unlink()
                 removed.append(path.name)
     return removed
@@ -166,6 +180,7 @@ def run_backup(
     directory: Path | str | None = None,
     *,
     keep_days: int | None = None,
+    keep_last: int | None = None,
     remote: str | None = None,
     remote_keep_days: int | None = None,
     progress=None,
@@ -178,6 +193,7 @@ def run_backup(
     cfg = get_config().backup
     directory = Path(directory or cfg.dir).expanduser()
     keep_days = cfg.keep_days if keep_days is None else keep_days
+    keep_last = cfg.keep_last if keep_last is None else keep_last
     remote = cfg.remote if remote is None else remote
     remote_keep_days = cfg.remote_keep_days if remote_keep_days is None else remote_keep_days
 
@@ -191,7 +207,7 @@ def run_backup(
     cv_out = directory / f"cv-{stamp}.json"
     notes: list[str] = []
 
-    step("dumping the database")
+    step("dumping the database (this is the slow part)")
     pg_dump = find_pg_dump()
     url = libpq_url(get_secrets().database_url)
     proc = subprocess.run(
@@ -212,7 +228,7 @@ def run_backup(
     with session_scope() as db:
         cv_store.export_document(db, cv_out)
 
-    step("verifying")
+    step("verifying the files are not empty")
     # A backup job that reports success while writing a zero-byte file is worse
     # than no backup job at all, because it stops you checking.
     for path in (dump, cv_out):
@@ -221,12 +237,13 @@ def run_backup(
 
     mirrored = None
     if remote:
-        step(f"uploading to {remote}")
+        step(f"uploading {(dump.stat().st_size + cv_out.stat().st_size) // 1024} KB to {remote}")
         if _mirror(dump, cv_out, remote, remote_keep_days, notes):
             mirrored = remote
 
     step("pruning old backups")
-    pruned = _prune(directory, keep_days)
+    pruned = _prune(directory, keep_days, keep_last)
+    step(f"done — {len(pruned)} old file(s) removed" if pruned else "done — nothing to prune")
 
     return BackupResult(
         dump=dump,
@@ -239,16 +256,48 @@ def run_backup(
 
 
 def backup_body(progress):
-    """Task body for the queue, so the dashboard button and the CLI agree."""
-    result = run_backup(progress=progress)
-    return {
+    """Task body for the queue, so the dashboard button and the CLI agree.
+
+    Records a ``Run`` row like crawl and apply do. Tasks are evicted after the
+    most recent fifty, so without this there is no way to answer "did last
+    night's backup happen?" — which is the only question anyone asks about a
+    backup until the day they need one.
+    """
+    from jobpilot.store.db import session_scope
+    from jobpilot.store.models import Run
+    from jobpilot.timeutil import vn_now
+
+    with session_scope() as db:
+        run = Run(kind="backup", started_at=vn_now(), stats={})
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    try:
+        result = run_backup(progress=progress)
+    except Exception as exc:
+        with session_scope() as db:
+            row = db.get(Run, run_id)
+            row.finished_at = vn_now()
+            row.stats = {"ok": False, "error": str(exc)}
+            db.commit()
+        raise
+
+    stats = {
+        "ok": True,
         "dump": result.dump.name,
         "cv": result.cv.name,
         "size": result.size,
         "mirrored_to": result.mirrored_to,
-        "pruned": result.pruned,
-        "notes": result.notes,
+        "pruned": len(result.pruned),
     }
+    with session_scope() as db:
+        row = db.get(Run, run_id)
+        row.finished_at = vn_now()
+        row.stats = stats
+        db.commit()
+
+    return {**stats, "pruned_names": result.pruned, "notes": result.notes}
 
 
 def restore_hint(directory: Path | str | None = None) -> str:

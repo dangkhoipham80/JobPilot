@@ -245,6 +245,14 @@ class BackupCfg(BaseModel):
     dir: str = "~/JobPilotBackups"
     keep_days: int = 30
 
+    #: Hard cap on how many backups are kept, regardless of age.
+    #:
+    #: Age alone is not enough: pressing the dashboard button five times in an
+    #: afternoon writes ten files that are all within the age window, so nothing
+    #: is ever pruned and the directory grows without bound. Whichever limit
+    #: bites first wins.
+    keep_last: int = 14
+
     #: An rclone remote, e.g. ``gdrive:JobPilotBackups``. Empty = local only.
     remote: str = ""
 

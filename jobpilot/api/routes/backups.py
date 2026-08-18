@@ -13,12 +13,15 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from jobpilot.api.deps import require_token
+from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.schemas import TaskOut
 from jobpilot.backup import backup_body, list_backups, restore_hint
 from jobpilot.config import get_config
 from jobpilot.orchestrator import TaskBusy, queue
+from jobpilot.store.models import Run
 
 router = APIRouter(prefix="/backups", tags=["backups"], dependencies=[Depends(require_token)])
 
@@ -29,16 +32,38 @@ BACKUP_LOCK = "__backup__"
 
 
 @router.get("")
-def read_backups() -> dict:
-    """Everything in the backup directory, newest first, plus how to restore it."""
+def read_backups(db: Session = Depends(get_db)) -> dict:
+    """Everything in the backup directory, newest first, plus how to restore it.
+
+    Carries the last few ``Run`` rows too. The files alone cannot answer "did
+    last night's job run?" — a run that failed before writing anything leaves no
+    file, and looks exactly like a run that never started.
+    """
     cfg = get_config().backup
     directory = Path(cfg.dir).expanduser()
     files = list_backups(directory)
+
+    runs = db.scalars(
+        select(Run).where(Run.kind == "backup").order_by(Run.id.desc()).limit(10)
+    ).all()
 
     return {
         "directory": str(directory),
         "exists": directory.is_dir(),
         "keep_days": cfg.keep_days,
+        "keep_last": cfg.keep_last,
+        "runs": [
+            {
+                "id": r.id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "ok": bool((r.stats or {}).get("ok")),
+                "error": (r.stats or {}).get("error"),
+                "mirrored_to": (r.stats or {}).get("mirrored_to"),
+                "pruned": (r.stats or {}).get("pruned", 0),
+            }
+            for r in runs
+        ],
         "remote": cfg.remote,
         "remote_keep_days": cfg.remote_keep_days,
         "total_bytes": sum(f.size for f in files),

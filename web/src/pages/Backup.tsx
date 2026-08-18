@@ -106,7 +106,9 @@ export function Backup({ version }: { version: number }) {
           </div>
 
           <p className="text-xs text-ink-muted">
-            Kept <span className="font-mono text-ink">{data.keep_days}d</span> here
+            Kept <span className="font-mono text-ink">{data.keep_days}d</span> or the last{" "}
+            <span className="font-mono text-ink">{data.keep_last}</span> of each kind here,
+            whichever bites first — age alone never prunes files made on the same day
             {data.remote && (
               <>
                 {" "}
@@ -136,6 +138,48 @@ export function Backup({ version }: { version: number }) {
           </CardBody>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent runs</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {data.runs.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              Nothing has run yet. The nightly job records itself here, so an empty list after a
+              night means it didn't fire.
+            </p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {data.runs.map((r) => (
+                <li key={r.id} className="flex items-center gap-3 py-2">
+                  {r.ok ? (
+                    <ShieldCheck size={14} className="shrink-0 text-good" />
+                  ) : (
+                    <AlertTriangle size={14} className="shrink-0 text-critical" />
+                  )}
+                  <span className="shrink-0 text-xs text-ink-muted">
+                    {r.started_at ? new Date(r.started_at).toLocaleString() : "-"}
+                  </span>
+                  <span className="truncate text-xs">
+                    {r.ok ? (
+                      <>
+                        {r.mirrored_to ? `uploaded to ${r.mirrored_to}` : "local only"}
+                        {r.pruned > 0 && ` · pruned ${r.pruned}`}
+                      </>
+                    ) : (
+                      <span className="text-critical">{r.error ?? "failed"}</span>
+                    )}
+                  </span>
+                  <span className="ml-auto shrink-0 text-xs text-ink-muted">
+                    {duration(r.started_at, r.finished_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -261,6 +305,15 @@ function Stat({
       </div>
     </div>
   );
+}
+
+/** How long a run took. A backup that suddenly takes ten times as long is
+ *  usually the upload struggling, and that is worth being able to see. */
+function duration(from: string | null, to: string | null): string {
+  if (!from || !to) return "";
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  if (ms < 1000) return "<1s";
+  return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`;
 }
 
 function humanSize(bytes: number): string {
