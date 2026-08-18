@@ -67,3 +67,6 @@ out/**/*.out
 *.swp
 .DS_Store
 Thumbs.db
+
+# Runtime logs from the Windows scheduled task (deploy/windows/run-api.cmd)
+logs/
