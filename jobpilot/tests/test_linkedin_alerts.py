@@ -421,3 +421,39 @@ def test_ordinary_cards_are_untouched_by_the_heading_filter(scraper):
     called something like "Senior Engineer, Similar Systems" still parses."""
     hits = scraper.parse_search(ALERT_EMAIL)
     assert len(hits) == 3
+
+
+WHOLE_CARD_LINK = """
+<html><body>
+  <table><tr><td>
+    <a href="https://www.linkedin.com/comm/jobs/view/4012345690/">
+      Backend Software Engineer Axon &middot; Ho Chi Minh City (On-site)
+    </a>
+    <table><tr><td>Axon &middot; Ho Chi Minh City (On-site)</td></tr></table>
+  </td></tr></table>
+</body></html>
+"""
+
+
+def test_a_link_wrapping_the_whole_card_still_yields_three_fields(scraper):
+    """Some layouts wrap the entire card in the <a>, so get_text() returns
+    title, employer and city run together with no delimiter between the first
+    two. On a real crawl this was 8 of 47 LinkedIn jobs, each stored with the
+    employer buried in the title, the title as the company, and the company in
+    the location."""
+    hit = scraper.parse_search(WHOLE_CARD_LINK)[0]
+    assert hit.title == "Backend Software Engineer"
+    assert hit.company == "Axon"
+    assert hit.location == "Ho Chi Minh City (On-site)"
+
+
+def test_a_title_that_merely_resembles_the_tail_is_left_alone(scraper):
+    """The tail is stripped only when it matches exactly. Truncating a title on
+    a guess is worse than leaving a few extra words on it."""
+    from jobpilot.crawler.linkedin import _strip_card_tail
+
+    assert _strip_card_tail("Backend Engineer at Axon", "Axon", "Ha Noi") == (
+        "Backend Engineer at Axon"
+    )
+    # And it never returns an empty title, even if the whole thing matches.
+    assert _strip_card_tail("Axon · Ha Noi", "Axon", "Ha Noi") == "Axon · Ha Noi"

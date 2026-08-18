@@ -69,6 +69,32 @@ _SECTION_HEADING = re.compile(
 )
 
 
+def _strip_card_tail(title: str, company: str, location: str | None) -> str:
+    """Remove the company/location line when the link swallowed the whole card.
+
+    In some layouts the ``<a>`` wraps the entire card rather than just the job
+    title, so ``get_text()`` returns "Backend Software Engineer Axon · Ho Chi
+    Minh City (On-site)" — title, employer and city run together with no
+    delimiter between the first two. Nothing in that string says where the title
+    ends.
+
+    The card answers it anyway: the company/location line is also present on its
+    own, so whatever the title ends with that equals that line is not part of the
+    title. On a real crawl this was 8 of 47 LinkedIn jobs, each stored with the
+    employer's name buried in the title, the *title* as the company, and the real
+    company pushed into the location.
+
+    Returns the title untouched when the tail does not match, because a title
+    that keeps a few extra words is a great deal better than one truncated by a
+    guess.
+    """
+    tail = f"{company} · {location}" if location else company
+    for candidate in (tail, f"{company}·{location}" if location else ""):
+        if candidate and title.endswith(candidate):
+            return title[: -len(candidate)].strip(" ·-–—") or title
+    return title
+
+
 def job_url(job_id: str) -> str:
     """The canonical, tracker-free URL for a job id."""
     return f"https://www.linkedin.com/jobs/view/{job_id}/"
@@ -116,6 +142,7 @@ class LinkedInAlertsScraper(BaseScraper):
                 continue
 
             company, location = self._company_and_location(anchor, title)
+            title = _strip_card_tail(title, company, location)
             hits[job_id] = SearchHit(
                 native_id=job_id,
                 url=job_url(job_id),
