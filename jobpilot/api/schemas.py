@@ -81,15 +81,30 @@ class JobDetailOut(JobOut):
     needs_jd: bool = False
 
     @classmethod
-    def from_job(cls, job: Job) -> "JobDetailOut":
+    def from_job(cls, job: Job, passes: list | None = None) -> "JobDetailOut":
         payload: dict[str, Any] = job.payload or {}
-        return cls(
+        out = cls(
             **JobOut.model_validate(job).model_dump(),
             skills=payload.get("skills", []) or [],
             description_md=payload.get("description_md", "") or "",
             is_fresh=bool(payload.get("is_fresh", False)),
             needs_jd=bool(payload.get("needs_jd", False)),
         )
+        # `not_seen` is attached here rather than stored beside the crawl-time
+        # flags: those are a snapshot of one moment and never change, while this
+        # one changes every time the source is crawled again — freezing it would
+        # make it wrong by the next crawl. ``passes`` is that source's crawl
+        # timestamps; without them the question goes unanswered, which is the
+        # honest result when nobody has looked since.
+        if passes:
+            from jobpilot.crawler.quality import unseen_flag
+
+            extra = unseen_flag(passes, job.last_seen_at)
+            if extra:
+                quality = dict(out.quality or {})
+                quality["flags"] = [*(quality.get("flags") or []), *extra]
+                out.quality = quality
+        return out
 
 
 class StatsOut(BaseModel):

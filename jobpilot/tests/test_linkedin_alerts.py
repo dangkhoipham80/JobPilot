@@ -371,3 +371,103 @@ def test_patch_404_and_empty(client):
     assert client.patch("/jobs/nope:1", headers=AUTH, json={"title": "x"}).status_code == 404
     created = client.post("/jobs", headers=AUTH, json={"title": "T", "company": "C"}).json()
     assert client.patch(f"/jobs/{created['id']}", headers=AUTH, json={}).status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Section headings (found on a real alert, after it reached the database)
+# --------------------------------------------------------------------------- #
+SIMILAR_SECTION = """
+<html><body>
+  <a href="https://www.linkedin.com/comm/jobs/view/4428641132/">
+    Jobs similar to Java Engineer - Everyday Banking at NAB Innovation Centre Vietnam
+  </a>
+  <table><tr>
+    <td><a href="https://www.linkedin.com/comm/jobs/view/4428641133/"><strong>Java Developer</strong></a></td>
+  </tr><tr><td>DXC Technology Vietnam &middot; Ha Noi, Vietnam</td></tr></table>
+</body></html>
+"""
+
+
+def test_a_section_heading_is_not_a_job(scraper):
+    """LinkedIn links its section headings to a job URL, so the parser read
+    "Jobs similar to Java Engineer ... at NAB Innovation Centre Vietnam" as a job
+    whose company was "Jobs similar to". One of those reached the database,
+    survived shortlisting, and was still there at apply time."""
+    hits = scraper.parse_search(SIMILAR_SECTION)
+    assert [h.native_id for h in hits] == ["4428641133"]
+    assert not any("similar to" in (h.title or "").lower() for h in hits)
+    assert not any("similar to" in (h.company or "").lower() for h in hits)
+
+
+def test_the_heading_does_not_steal_the_id_from_a_real_card(scraper):
+    """The heading and a genuine card can carry the same job id. Skipping the
+    heading must not leave the card holding a title taken from the heading."""
+    same_id = """
+    <html><body>
+      <a href="https://www.linkedin.com/comm/jobs/view/4012345678/">Jobs similar to Backend Engineer at ACME</a>
+      <table><tr>
+        <td><a href="https://www.linkedin.com/comm/jobs/view/4012345678/"><strong>Backend Engineer</strong></a></td>
+      </tr><tr><td>ACME Corp &middot; Ha Noi, Vietnam</td></tr></table>
+    </body></html>
+    """
+    hits = scraper.parse_search(same_id)
+    assert len(hits) == 1
+    assert hits[0].title == "Backend Engineer"
+    assert hits[0].company == "ACME Corp"
+
+
+def test_ordinary_cards_are_untouched_by_the_heading_filter(scraper):
+    """The filter is anchored at the start of the title, so a job legitimately
+    called something like "Senior Engineer, Similar Systems" still parses."""
+    hits = scraper.parse_search(ALERT_EMAIL)
+    assert len(hits) == 3
+
+
+WHOLE_CARD_LINK = """
+<html><body>
+  <table><tr><td>
+    <a href="https://www.linkedin.com/comm/jobs/view/4012345690/">
+      Backend Software Engineer Axon &middot; Ho Chi Minh City (On-site)
+    </a>
+    <table><tr><td>Axon &middot; Ho Chi Minh City (On-site)</td></tr></table>
+  </td></tr></table>
+</body></html>
+"""
+
+
+def test_a_link_wrapping_the_whole_card_still_yields_three_fields(scraper):
+    """Some layouts wrap the entire card in the <a>, so get_text() returns
+    title, employer and city run together with no delimiter between the first
+    two. On a real crawl this was 8 of 47 LinkedIn jobs, each stored with the
+    employer buried in the title, the title as the company, and the company in
+    the location."""
+    hit = scraper.parse_search(WHOLE_CARD_LINK)[0]
+    assert hit.title == "Backend Software Engineer"
+    assert hit.company == "Axon"
+    assert hit.location == "Ho Chi Minh City (On-site)"
+
+
+def test_a_title_that_merely_resembles_the_tail_is_left_alone(scraper):
+    """The tail is stripped only when it matches exactly. Truncating a title on
+    a guess is worse than leaving a few extra words on it."""
+    from jobpilot.crawler.linkedin import _strip_card_tail
+
+    assert _strip_card_tail("Backend Engineer at Axon", "Axon", "Ha Noi") == (
+        "Backend Engineer at Axon"
+    )
+    # And it never returns an empty title, even if the whole thing matches.
+    assert _strip_card_tail("Axon · Ha Noi", "Axon", "Ha Noi") == "Axon · Ha Noi"
+
+
+def test_a_trailing_badge_does_not_hide_the_tail():
+    """Real titles end "... (On-site) Easy Apply". The first version matched the
+    company/location line only when nothing followed it, which was 2 of 7 rows
+    in the database -- the other 5 all carried a badge."""
+    from jobpilot.crawler.linkedin import _strip_card_tail
+
+    assert _strip_card_tail(
+        "Java Software Engineer (3+ years, AWS, Spring Boot) KMS Technology, Inc. "
+        "· Ho Chi Minh City, Vietnam (Hybrid) Easy Apply",
+        "KMS Technology, Inc.",
+        "Ho Chi Minh City, Vietnam (Hybrid)",
+    ) == "Java Software Engineer (3+ years, AWS, Spring Boot)"

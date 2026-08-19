@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.paging import LimitParam, OffsetParam, page_list, page_query
 from jobpilot.api.schemas import JobDetailOut, JobIn, JobOut, JobPatch, Page
+from jobpilot.crawler.quality import crawl_passes
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
 from jobpilot.store.models import Job, JobStatus
@@ -168,7 +169,11 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailOut:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
-    return JobDetailOut.from_job(job)
+    # Detail view only. This is the page read before spending an LLM call and
+    # half an hour on a posting, so it is where "nobody has seen this lately"
+    # earns a query; the list would pay for it on every row.
+    passes = crawl_passes(db, [job.source]).get(job.source, [])
+    return JobDetailOut.from_job(job, passes)
 
 
 async def _transition(job_id: str, target: JobStatus, db: Session) -> JobDetailOut:

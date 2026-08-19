@@ -52,6 +52,68 @@ _NOISE = re.compile(
 # non-breaking spaces around it.
 _COMPANY_LOCATION_SEP = re.compile(r"\s*[·•]\s*")
 
+# Section headings, which LinkedIn also links to a job URL. Verified on a real
+# alert: "Jobs similar to Java Engineer - Everyday Banking at NAB Innovation
+# Centre Vietnam" linked to /jobs/view/<id> and was read as a job whose title
+# was the whole heading and whose company was "Jobs similar to".
+#
+# Skipped rather than unwrapped. The heading names a job the user already saw --
+# it is the *reason* the section exists — and the section's own cards are the
+# real content. Trying to parse a title and company back out of the sentence
+# would mean guessing where one ends and the other begins, on a line whose
+# wording LinkedIn is free to change; being absent is a better answer than being
+# confidently wrong about who the employer is.
+_SECTION_HEADING = re.compile(
+    r"^(jobs? similar to|more jobs (for|like)|because you|based on your|recommended for you)\b",
+    re.I,
+)
+
+
+# Badges LinkedIn appends *inside* the same link, after the location: "… (On-site)
+# Easy Apply". They are the reason a whole-card title does not simply end with
+# the company/location line, and why the first version of _strip_card_tail
+# matched 2 of 7 real rows.
+_TRAILING_BADGE = re.compile(
+    r"(?:\s+(?:easy apply|promoted|new|viewed|actively recruiting"
+    r"|be an early applicant|\d+ (?:school|company) alumni|\d+ connections?))+$",
+    re.I,
+)
+
+
+def _strip_card_tail(title: str, company: str, location: str | None) -> str:
+    """Remove the company/location line when the link swallowed the whole card.
+
+    In some layouts the ``<a>`` wraps the entire card rather than just the job
+    title, so ``get_text()`` returns "Backend Software Engineer Axon · Ho Chi
+    Minh City (On-site)" — title, employer and city run together with no
+    delimiter between the first two. Nothing in that string says where the title
+    ends.
+
+    The card answers it anyway: the company/location line is also present on its
+    own, so whatever the title ends with that equals that line is not part of the
+    title. On a real crawl this was 8 of 47 LinkedIn jobs, each stored with the
+    employer's name buried in the title, the *title* as the company, and the real
+    company pushed into the location.
+
+    Returns the title untouched when the tail does not match, because a title
+    that keeps a few extra words is a great deal better than one truncated by a
+    guess.
+    """
+    # Badges are dropped first: "… Ho Chi Minh City (On-site) Easy Apply" does
+    # not end with the company/location line until "Easy Apply" is gone.
+    stripped = _TRAILING_BADGE.sub("", title).strip()
+
+    # Only the full "company · location" line counts as a tail. Matching the
+    # bare company name was tried and mangles a job legitimately called
+    # "Backend Engineer at Axon" into "Backend Engineer at" -- the separator is
+    # what makes it the card's own line rather than words the title may share.
+    if not company or not location:
+        return title
+    for candidate in (f"{company} · {location}", f"{company}·{location}"):
+        if stripped.endswith(candidate):
+            return stripped[: -len(candidate)].strip(" ·-–—") or title
+    return title
+
 
 def job_url(job_id: str) -> str:
     """The canonical, tracker-free URL for a job id."""
@@ -85,6 +147,12 @@ class LinkedInAlertsScraper(BaseScraper):
                 continue
             job_id = match.group(1)
             title = clean_text(anchor.get_text(" ", strip=True))
+            # A section heading links to a job too, but its text is a sentence
+            # about the section rather than a job title. Dropped before anything
+            # reads it as one — and before it can claim the id, which the card
+            # further down the email uses properly.
+            if _SECTION_HEADING.match(title):
+                continue
             # Every card links twice (logo image + title). The image anchor has
             # no text, so prefer whichever occurrence actually names the job.
             if job_id in hits and not title:
@@ -94,6 +162,7 @@ class LinkedInAlertsScraper(BaseScraper):
                 continue
 
             company, location = self._company_and_location(anchor, title)
+            title = _strip_card_tail(title, company, location)
             hits[job_id] = SearchHit(
                 native_id=job_id,
                 url=job_url(job_id),
