@@ -314,3 +314,26 @@ def test_the_qualifier_is_only_forgiven_in_front_of_something_known():
     # And a bare vendor name claims something of its own -- the HTTP server.
     assert unknown_terms("I have experience with Apache.", vocab) == ["Apache"]
     assert "S3" in unknown_terms("I use Amazon S3 daily.", vocab)
+
+
+def test_a_qualifier_needs_a_distinctive_word_after_it():
+    """The first version of this fix opened a real hole. Allowing any vocabulary
+    word after the qualifier meant a CV saying "database" or "cloud" -- which
+    says nothing about a vendor -- let "Oracle Database", "Google Cloud" and even
+    "Microsoft Java" through on a CV naming none of them. That trades a false
+    positive, which costs a retry, for a false negative, which puts a fabricated
+    product on a letter to an employer."""
+    from jobpilot.tailor.guard import unknown_terms
+
+    vocab = {"kafka", "database", "cloud", "java"}
+    assert unknown_terms("Experience with Oracle Database.", vocab) == ["Oracle"]
+    assert unknown_terms("Built on Google Cloud.", vocab) == ["Google"]
+    # And the case the fix exists for still works, because Kafka is distinctive.
+    assert unknown_terms("Eager to learn Apache Kafka.", vocab) == []
+
+
+def test_multi_word_vendors_are_not_split_into_qualifiers():
+    """"Red Hat" as two tokens would let "Hat" qualify anything that follows."""
+    from jobpilot.tailor.guard import _QUALIFIERS
+
+    assert "hat" not in _QUALIFIERS and "red" not in _QUALIFIERS

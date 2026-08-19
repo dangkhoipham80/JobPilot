@@ -68,8 +68,18 @@ _HAS_TECH_PUNCT = re.compile(r"[0-9+#]")
 # absent, and a bare "experience with Apache" is still caught, because in
 # neither case does a known product follow. Only the qualifier is forgiven, and
 # only when the distinctive half has already been checked and passed.
+#
+# The qualified word must also be *distinctive*. Allowing any vocabulary word
+# opened a real hole, because a CV saying "database" or "cloud" is saying
+# nothing about a vendor: "Oracle Database", "Google Cloud" and even "Microsoft
+# Java" all passed on a CV that named none of them. Requiring the next token to
+# be absent from _ALLOWED_TERMS — the generic-English list — is what closes it,
+# since that is exactly where words like database, cloud and platform live.
+#
+# Multi-word vendors ("Red Hat") are deliberately absent: they would have to be
+# matched as a phrase, and split into tokens they let "Hat" qualify anything.
 _QUALIFIERS = frozenset(
-    "apache google amazon aws microsoft azure oracle red hat cloudera elastic "
+    "apache google amazon aws microsoft azure oracle cloudera elastic "
     "jetbrains atlassian hashicorp".split()
 )
 
@@ -175,7 +185,7 @@ def unknown_terms(text: str, vocab: set[str]) -> list[str]:
             if lowered in vocab or lowered in _ALLOWED_TERMS or lowered in seen:
                 continue
             nxt = tokens[i + 1].lower() if i + 1 < len(tokens) else ""
-            if lowered in _QUALIFIERS and nxt in vocab:
+            if lowered in _QUALIFIERS and nxt in vocab and nxt not in _ALLOWED_TERMS:
                 continue
             if _is_tech_looking(token, at_sentence_start=i == 0):
                 seen.add(lowered)
