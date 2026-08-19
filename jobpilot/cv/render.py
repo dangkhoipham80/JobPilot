@@ -10,6 +10,8 @@ untouched.
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -20,6 +22,8 @@ from jobpilot.cv.schema import CvDocument
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_TEMPLATE = "awesome_cv"
 SECTION_DIR = "resume"
+#: Per-template manifest, read by :func:`describe_template`.
+MANIFEST_FILE = "template.json"
 #: Entry file for the cover letter, next to ``cv.tex`` in the same build dir.
 LETTER_FILE = "cover_letter.tex"
 
@@ -46,10 +50,61 @@ def _techlist(items: list[str]) -> str:
     return ", ".join(rf"\textbf{{{escape_tex(i)}}}" for i in items)
 
 
-def template_env(template: str) -> Environment:
-    root = TEMPLATES_DIR / template
-    if not root.is_dir():
+@dataclass(frozen=True)
+class TemplateInfo:
+    """One template on disk: its id (= directory name) plus its manifest."""
+
+    id: str
+    name: str
+    description: str = ""
+    #: Repo-root files/dirs this template needs copied next to the generated
+    #: cv.tex. Empty for a template that needs nothing but its own output.
+    assets: tuple[str, ...] = ()
+
+
+def template_dir(template: str) -> Path:
+    """Resolve a template id to its directory, rejecting anything unknown.
+
+    Membership is checked against the ids actually on disk rather than by
+    probing ``TEMPLATES_DIR / template``: ``doc.template`` is a free-form string
+    that arrives from a JSON body, and joining user text onto a path is the
+    shape of bug ``check_override`` already exists to prevent.
+    """
+    if template not in _template_ids():
         raise RenderError(f"unknown CV template: {template!r}")
+    return TEMPLATES_DIR / template
+
+
+def _template_ids() -> list[str]:
+    if not TEMPLATES_DIR.is_dir():
+        return []
+    return sorted(p.name for p in TEMPLATES_DIR.iterdir() if p.is_dir())
+
+
+def _describe(template: str, root: Path) -> TemplateInfo:
+    """Build the info for an id already known to be on disk."""
+    raw: dict = {}
+    manifest = root / MANIFEST_FILE
+    if manifest.is_file():
+        try:
+            raw = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RenderError(f"template {template!r} has an unreadable {MANIFEST_FILE}: {exc}") from exc
+    return TemplateInfo(
+        id=template,
+        name=str(raw.get("name") or template),
+        description=str(raw.get("description") or ""),
+        assets=tuple(str(a) for a in raw.get("assets") or ()),
+    )
+
+
+def describe_template(template: str) -> TemplateInfo:
+    """Read ``template.json``. A template with no manifest still works."""
+    return _describe(template, template_dir(template))
+
+
+def template_env(template: str) -> Environment:
+    root = template_dir(template)
     env = Environment(
         loader=FileSystemLoader(str(root)),
         block_start_string="<%",
@@ -70,11 +125,13 @@ def template_env(template: str) -> Environment:
     return env
 
 
-def list_templates() -> list[str]:
-    """Template ids available on disk (for ``GET /cv/templates``)."""
-    if not TEMPLATES_DIR.is_dir():
-        return []
-    return sorted(p.name for p in TEMPLATES_DIR.iterdir() if p.is_dir())
+def list_templates() -> list[TemplateInfo]:
+    """Templates available on disk, described (for ``GET /cv/templates``).
+
+    Scans the directory once rather than re-validating each id through
+    ``template_dir`` — these ids came *from* the listing.
+    """
+    return [_describe(t, TEMPLATES_DIR / t) for t in _template_ids()]
 
 
 def render_letter(doc: CvDocument, context: dict) -> str:

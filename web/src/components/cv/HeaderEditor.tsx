@@ -1,5 +1,6 @@
 import { Card, CardBody, CardHeader, CardTitle, Input } from "@/components/ui";
 import { Field, TextField } from "@/components/cv/fields";
+import { cn } from "@/lib/utils";
 import type { CvHeader, CvTheme } from "@/types";
 
 // Awesome-CV's built-in accent colours, plus whatever hex the user types.
@@ -14,17 +15,28 @@ const THEME_COLORS = [
   "awesome-darknight",
 ];
 
+/**
+ * Templates that render the document in one colour, so `theme.color` reaches
+ * nothing. Listing them here is a small duplication of what the template knows,
+ * and the alternative — a colour picker that quietly does nothing — is the same
+ * failure as an edit that never reaches the PDF (see `tex_override`).
+ */
+const MONOCHROME_TEMPLATES = new Set(["plain"]);
+
 export function HeaderEditor({
   header,
   theme,
+  template,
   onHeader,
   onTheme,
 }: {
   header: CvHeader;
   theme: CvTheme;
+  template: string;
   onHeader: (h: CvHeader) => void;
   onTheme: (t: CvTheme) => void;
 }) {
+  const monochrome = MONOCHROME_TEMPLATES.has(template);
   const set = <K extends keyof CvHeader>(key: K, value: CvHeader[K]) =>
     onHeader({ ...header, [key]: value });
   const opt = (key: keyof CvHeader) => (v: string) => set(key, (v || null) as never);
@@ -90,8 +102,12 @@ export function HeaderEditor({
           </div>
         </Field>
 
-        <Field label="Accent colour" hint="Awesome-CV name or #hex" className="col-span-2">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <Field
+          label="Accent colour"
+          hint={monochrome ? `not used by the ${template} template` : "Awesome-CV name or #hex"}
+          className="col-span-2"
+        >
+          <div className={cn("flex flex-wrap items-center gap-1.5", monochrome && "opacity-50")}>
             {THEME_COLORS.map((c) => (
               <button
                 key={c}

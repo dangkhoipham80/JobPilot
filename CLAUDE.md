@@ -22,6 +22,7 @@ Hai lớp:
 | File | Nội dung |
 |---|---|
 | `jobpilot/crawler/CLAUDE.md` | thêm site mới, robots, nguồn tier-2 đã loại, LinkedIn alerts, bẫy selector/fetch |
+| `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX |
 | `jobpilot/llm/CLAUDE.md` | chọn provider/model theo việc, schema từng provider, đo chi phí, scrub key |
 | `jobpilot/api/CLAUDE.md` | hợp đồng phân trang `Page{items,total,…}`, `ORDER BY` unique, cap 200 |
 | `jobpilot/apply/CLAUDE.md` | outcome (`current` vs `reached`), inbox sync, cover letter PDF |
@@ -178,6 +179,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | 21 | Trang **/market**: nghiên cứu thị trường từ corpus đã crawl + trích lương/skill/city | `analytics/`, `crawler/salary.py`, `skills.py` |
 | 20c | Trang **/models**: chọn model theo việc, dashboard giá + credit đã dùng/còn, scrub key | `web/src/pages/Models.tsx`, `llm/redact.py` |
 | deploy | FastAPI serve `web/dist` **same-origin** (API xuống `/api`), siết token + khoá gate email, systemd/timer + backup, CI/CD | `api/static.py`, `api/security.py`, `deploy/`, `.github/workflows/ci.yml`, `DEPLOY.md` |
+| cv-A | Template thứ hai **`plain`** (ATS-first, bỏ `.cls`) + picker trong Studio; template tự khai `template.json` | `cv/templates/plain/`, `cv/render.py`, `web/src/components/cv/TemplatePicker.tsx` |
 
 746 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
@@ -205,7 +207,8 @@ Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `ll
 
 - **Crawler**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev chưa có scraper. Cần `pip install -e '.[crawler]' && playwright install chromium` (2 nguồn tier-2 **không cần** Playwright). Chi tiết + bẫy: `jobpilot/crawler/CLAUDE.md`.
 - **Raw LaTeX đã có** (bẫy preview ở `PHASES.md`): `cv_versions.meta.tex_override` đè cách JSON *serialize*, không thay JSON. **Một chiều** — không gì parse `.tex` về JSON — nên khi nó còn hiệu lực thì sửa field **không tới được PDF**, UI phải nói ra. Lưu document không xoá nó; `rollback` mang nó theo.
-- **CV Studio còn thiếu**: HTML live preview, theme gallery. Diff 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới = thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
+- **CV Studio còn thiếu**: HTML live preview, theme gallery. Template thì **đã có 2** (`awesome_cv`,
+  `plain`) và thêm cái nữa = thêm một thư mục — luật + bẫy ở `jobpilot/cv/CLAUDE.md`. Diff 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới = thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
 - **Cần `pip install -e '.[cv]'`** cho `pypdf`, nếu không page count trả `None` (badge "1 trang" biến mất, không còn cảnh báo CV tràn 2 trang). Build PDF vẫn chạy bình thường — chỉ mất phần đếm trang.
 - **Queue vẫn 1 worker**: tailor xếp sau một crawl đang chạy sẽ đứng `queued` vài phút. Đúng nghĩa "queued", nhưng nếu thấy vướng thì nâng `max_workers` — task body đã mở session riêng nên an toàn về mặt DB.
 - **Slack đã verify thật** (2026-08-08): cần đúng **một** scope `chat:write`, Socket Mode +

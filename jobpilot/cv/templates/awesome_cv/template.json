@@ -1,0 +1,5 @@
+{
+  "name": "Awesome-CV",
+  "description": "The styled default: accent colour, section highlights, FontAwesome contact icons. Best for a human reader or an email attachment.",
+  "assets": ["awesome-cv.cls", "fontawesome.sty", "fonts"]
+}

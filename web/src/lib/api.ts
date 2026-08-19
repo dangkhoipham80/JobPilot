@@ -11,6 +11,7 @@ import type {
   CvCompileResult,
   CvDocument,
   CvDocumentResponse,
+  CvTemplate,
   CvTex,
   CvVersion,
   CvVersionDetail,
@@ -104,6 +105,8 @@ export const api = {
 
   /* CV Studio (Phase 4.5) */
   cv: (scope: string) => req<CvDocumentResponse>(cvPath(scope)),
+  // Whatever templates ship in the image — a fixed, tiny set, so no paging.
+  cvTemplates: () => req<{ templates: CvTemplate[] }>("/cv/templates"),
   saveCv: (scope: string, document: CvDocument) =>
     req<CvDocumentResponse>(cvPath(scope), { method: "PUT", body: JSON.stringify(document) }),
   compileCv: (scope: string) => req<CvCompileResult>(`${cvPath(scope)}/compile`, { method: "POST" }),

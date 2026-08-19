@@ -16,6 +16,7 @@ from jobpilot.api.paging import LimitParam, OffsetParam, page_list
 from jobpilot.api.schemas import (
     CvCompileOut,
     CvDocumentOut,
+    CvTemplatesOut,
     CvTexIn,
     CvTexOut,
     CvVersionDetailOut,
@@ -43,9 +44,9 @@ def _load(db: Session, scope: str) -> CvDocument:
 
 
 # Static path first so it isn't swallowed by /{scope}.
-@router.get("/templates")
-def templates() -> dict:
-    return {"templates": list_templates()}
+@router.get("/templates", response_model=CvTemplatesOut)
+def templates() -> CvTemplatesOut:
+    return CvTemplatesOut(templates=list_templates())
 
 
 @router.get("/{scope}", response_model=CvDocumentOut)

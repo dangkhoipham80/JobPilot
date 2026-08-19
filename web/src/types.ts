@@ -230,6 +230,13 @@ export interface CvDocument {
   sections: CvSection[];
 }
 
+/** One entry of `GET /cv/templates` — a look the Studio can switch to. */
+export interface CvTemplate {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface CvDocumentResponse {
   scope: string;
   version: number;
