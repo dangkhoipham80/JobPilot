@@ -164,3 +164,64 @@ def test_the_guard_still_catches_a_real_invention():
         "Kubernetes",
         "Kafka",
     ]
+
+
+def test_a_gapless_plan_tells_the_model_to_leave_the_note_empty():
+    """With no gaps, anything in learning_note is a violation by construction --
+    it may only name a MISSING requirement, and there are none. Saying nothing
+    in the prompt left the general rule competing with the model's instinct to
+    sound modest, and the model won three applies in a row."""
+    from jobpilot.apply.letter import letter_prompt
+    from jobpilot.store.models import Job
+    from jobpilot.tailor.schema import Requirement, TailorPlan
+
+    plan = TailorPlan(
+        summary="s",
+        match_score=0.9,
+        requirements=[Requirement(text="Java", kind="must_have", status="HAVE", evidence="CV")],
+    )
+    job = Job(id="x:1", source="x", title="T", company="C")
+    prompt = letter_prompt(job, plan)
+    assert "MUST be an empty string" in prompt
+    assert "REQUIREMENTS THE CANDIDATE DOES NOT HAVE" not in prompt
+
+
+def test_a_plan_with_gaps_still_lists_them():
+    from jobpilot.apply.letter import letter_prompt
+    from jobpilot.store.models import Job
+    from jobpilot.tailor.schema import Requirement, TailorPlan
+
+    plan = TailorPlan(
+        summary="s",
+        match_score=0.5,
+        requirements=[
+            Requirement(text="Java", kind="must_have", status="HAVE", evidence="CV"),
+            Requirement(text="Kubernetes", kind="nice_to_have", status="MISSING", evidence=""),
+        ],
+    )
+    prompt = letter_prompt(Job(id="x:1", source="x", title="T", company="C"), plan)
+    assert "Kubernetes" in prompt
+    assert "MUST be an empty string" not in prompt
+
+
+def test_a_gapless_job_is_asked_for_a_schema_without_the_note():
+    """Prompting was tried first and lost three applies running: the model kept
+    writing a learning_note for a plan whose requirements were all HAVE, so
+    anything it wrote was a violation by construction. The field is now absent
+    from the schema — unrepresentable rather than merely forbidden."""
+    from jobpilot.apply.letter import CoverLetter
+
+    gapless = CoverLetter.schema_for(has_gaps=False)
+    assert "learning_note" not in gapless.model_json_schema()["properties"]
+    assert "learning_note" in CoverLetter.schema_for(has_gaps=True).model_json_schema()["properties"]
+
+
+def test_the_gapless_letter_converts_back_to_one_type():
+    """Everything downstream -- the checker, body(), the PDF template -- must
+    keep seeing a single class."""
+    from jobpilot.apply.letter import CoverLetter, _GaplessCoverLetter
+
+    letter = _GaplessCoverLetter(greeting="Dear team,", paragraphs=["I build things."]).to_letter()
+    assert isinstance(letter, CoverLetter)
+    assert letter.learning_note == ""
+    assert "I build things." in letter.body()

@@ -57,6 +57,25 @@ class CoverLetter(BaseModel):
     )
     closing: str = Field(default="Best regards,", description='e.g. "Best regards,"')
 
+    @classmethod
+    def schema_for(cls, has_gaps: bool) -> type[BaseModel]:
+        """The schema to ask the model for, given whether this job has gaps.
+
+        With no MISSING requirement, *anything* in ``learning_note`` is a
+        violation by construction — the field may only name a gap, and there is
+        none. Telling the model that in the prompt was not enough: it kept
+        writing one anyway, and three applies in a row died on a note naming
+        Apache, then NoSQL, after the retry as well.
+
+        So the field is removed from the schema instead of argued about. This is
+        the same move as the index-based tailor plan: make the wrong answer
+        unrepresentable rather than detectable, because a rule the model can
+        physically not break needs no enforcement.
+        """
+        if has_gaps:
+            return cls
+        return _GaplessCoverLetter
+
     def body(self) -> str:
         """The letter as plain text — this is what an email actually carries."""
         parts = [self.greeting, "", *self._flow(), "", self.closing]
@@ -76,6 +95,35 @@ class CoverLetter(BaseModel):
 
     def word_count(self) -> int:
         return len(self.body().split())
+
+
+class _GaplessCoverLetter(BaseModel):
+    """A letter for a job the CV already covers — with no ``learning_note`` field.
+
+    A separate model rather than ``CoverLetter`` with the field excluded:
+    ``exclude`` only affects serialization, so the model would still be shown
+    the field in the JSON schema and would still fill it in. It has to be
+    genuinely absent from the schema to be unrepresentable.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    greeting: str = Field(description='e.g. "Dear Hiring Team at ACME Corp,"')
+    paragraphs: list[str] = Field(
+        default_factory=list,
+        description="Two or three short paragraphs. Every claim must be backed by "
+        "the Master CV — name only technologies that already appear on it.",
+    )
+    closing: str = Field(default="Best regards,", description='e.g. "Best regards,"')
+
+    def to_letter(self) -> CoverLetter:
+        """Back to the one type the rest of the pipeline knows."""
+        return CoverLetter(
+            greeting=self.greeting,
+            paragraphs=self.paragraphs,
+            learning_note="",
+            closing=self.closing,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -177,6 +225,20 @@ def letter_prompt(job: Job, plan: TailorPlan | None) -> str:
                 "",
                 "Only these may appear in learning_note, and only as something to learn.",
             ]
+        else:
+            # Said out loud, because saying nothing here loses. The general rule
+            # ("leave it empty if there is no important gap") competes with the
+            # model's instinct to sound humble, and the model kept winning: three
+            # applies in a row failed on a learning_note naming Apache, then
+            # NoSQL, for a plan whose requirements were all HAVE. There was
+            # nothing it could legitimately name, so anything it wrote was a
+            # violation — and the prompt never told it so.
+            parts += [
+                "",
+                "The candidate meets every requirement listed above. There is no gap to "
+                "acknowledge, so `learning_note` MUST be an empty string. Do not invent a "
+                "weakness to sound modest.",
+            ]
     return "\n".join(parts)
 
 
@@ -215,9 +277,9 @@ class ModelLetterEngine:
 
     client: StructuredClient
 
-    def _ask(self, system: str, messages: list[dict]) -> Completion[CoverLetter]:
+    def _ask(self, system: str, messages: list[dict], schema) -> Completion:
         try:
-            return self.client.structured(system=system, messages=messages, schema=CoverLetter)
+            return self.client.structured(system=system, messages=messages, schema=schema)
         except LlmError as exc:
             raise TailorError(str(exc)) from exc
 
@@ -226,9 +288,19 @@ class ModelLetterEngine:
 
         system = f"{LETTER_RULES}\n\n{render_master(master)}"
         messages: list[dict] = [{"role": "user", "content": letter_prompt(job, plan)}]
+        # No gaps means learning_note has nothing it may legitimately name, so
+        # the field is left out of the schema entirely rather than argued about
+        # in the prompt — which was tried, and lost three times running.
+        schema = CoverLetter.schema_for(has_gaps=bool(plan and plan.gaps()))
+
+        def ask() -> CoverLetter:
+            # The gapless schema returns its own type; normalise straight away so
+            # the checker, the retry and the PDF all see one class.
+            answer = usage.add_from(self._ask(system, messages, schema))
+            return answer.to_letter() if isinstance(answer, _GaplessCoverLetter) else answer
 
         with call_log("letter", job_id=job.id) as usage:
-            letter = usage.add_from(self._ask(system, messages))
+            letter = ask()
             report = check_letter(letter, master, job, plan)
             if report.ok:
                 usage.succeeded()
@@ -243,7 +315,7 @@ class ModelLetterEngine:
                     + "\n\nRewrite it within the rules.",
                 },
             ]
-            retried = usage.add_from(self._ask(system, messages))
+            retried = ask()
             second = check_letter(retried, master, job, plan)
             if not second.ok:
                 raise GuardrailViolation(
