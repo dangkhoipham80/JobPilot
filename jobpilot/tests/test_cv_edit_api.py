@@ -9,7 +9,7 @@ from jobpilot.api.deps import get_db
 from jobpilot.api.routes.cv import get_edit_engine
 from jobpilot.cv import store as cv_store
 from jobpilot.cv.sample import sample_document
-from jobpilot.tailor.edit import FixtureEditEngine, MasterEditPlan, NewEntry, empty_plan
+from jobpilot.tailor.edit import FixtureEditEngine, NewEntry, empty_plan
 from jobpilot.config import get_secrets
 from jobpilot.tests.conftest import api_client
 
