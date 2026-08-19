@@ -47,6 +47,38 @@ list. `template.json`:
   không có glyph tiếng Việt và chỗ thiếu glyph là một **khoảng trắng im lặng** trong PDF, không
   phải lỗi build. Verify bằng cách đọc lại text layer (`pypdf`), đừng nhìn số trang rồi kết luận.
 
+### Sửa Master CV bằng câu lệnh — guardrail ở đây NGƯỢC với tailor
+
+`POST /api/cv/master/edit` (chỉ master; scope tailored trả 400 và chỉ sang
+`/jobs/{id}/edit`). Code: `tailor/edit.py` + `tailor/edit_guard.py`.
+
+- **Tailor hỏi "cái này đã có trên CV chưa?"; edit hỏi "dữ kiện này có phải do USER nói
+  không?"** Đảo ngược này là cả tính năng: dữ kiện mới **là mục đích** (project vừa làm xong
+  chưa thể có trên CV), nhưng người được quyền đưa vào là **user**, không phải model. Đừng
+  "sửa" bằng cách nới `vocabulary(master)` — nó cấp phép cho *từ*, không phải cho *lời khai*.
+- **Instruction là GIẤY PHÉP, `source_quote` là TRÍCH DẪN.** Op thêm mới (`new_bullets`,
+  `new_entries`) **bắt buộc** có quote và quote phải xuất hiện thật trong instruction
+  (`textnorm.quote_appears_in`, dùng chung với inbox — **đừng viết bản thứ hai**). Đã thử cấp
+  phép *chỉ* theo nội dung quote: **sai trong thực tế** — dữ kiện của một entry nằm rải khắp
+  câu, nên quote vào mệnh đề "a crawler built with FastAPI" thì chính **tên project** bị chặn.
+- **Chữ số được kiểm riêng.** `guard.unknown_terms` chỉ thấy token *trông như công nghệ*, mà
+  `_TOKEN_RE` bắt buộc bắt đầu bằng chữ cái ⇒ "increased throughput by 40%" và "led a team of
+  12 engineers" **không có gì để nó nhìn**. Chịu được ở tailor (schema không cho viết câu đó),
+  **không chịu được ở đây**. Nên mọi cụm chữ số trong text mới phải có trong master hoặc trong
+  instruction. Metric bịa là thứ đắt nhất có thể xuất hiện trên CV.
+- **Rủi ro CÒN LẠI, nói thẳng:** guard là *lexical*. Nó chặn được tên công nghệ lạ và con số
+  lạ, **không** chặn được câu văn xuôi bịa quanh những từ đã được cấp phép ("built a scalable
+  crawler handling millions of listings" — không token nào lạ). Hai lớp đỡ còn lại là **diff
+  bắt buộc xem trước khi chấp nhận** và `note`. Đừng quảng cáo guard này mạnh hơn thực tế.
+- **Master CV là corpus mà mọi lần tailor sau đối chiếu.** Một câu bịa lọt vào đây sẽ được
+  "rửa" thành *đã có trên CV* cho mọi job về sau. Đó là lý do đường này phải **chặt hơn**
+  tailor, không phải lỏng hơn.
+- **Không giới hạn số vòng** (`edit_max_rounds` là của *một job*, không phải của Master CV).
+- **Test dùng task queue thì BẮT BUỘC fixture `worker_db`.** Task body mở session riêng bằng
+  `session_scope()` ⇒ override `get_db` của FastAPI **không tới được nó**, và nó ghi thẳng vào
+  `DATABASE_URL` thật. Đã xảy ra: một test ghi hẳn một version bịa vào Master CV thật, và task
+  vẫn báo **done**. Hỏng *im lặng*, đúng loại tệ nhất.
+
 ### `doc.template` là chuỗi tự do đi vào một đường dẫn
 
 `template_dir()` check id theo **danh sách thật trên đĩa** rồi mới join path — cùng lý do

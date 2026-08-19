@@ -189,6 +189,11 @@ class CvVersionOut(BaseModel):
 class CvVersionDetailOut(CvVersionOut):
     document: CvDocument
     tex: str
+    #: Why this version exists. For an agent edit it carries the instruction, the
+    #: plan (including each op's `source_quote`) and the diff — the provenance a
+    #: human has to be able to read, since the guard only proves the quote was
+    #: real, not that it meant what the model took it to mean.
+    meta: dict = Field(default_factory=dict)
 
 
 class CvVersionDiffOut(BaseModel):

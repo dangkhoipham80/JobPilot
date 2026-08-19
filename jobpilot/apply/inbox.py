@@ -51,6 +51,7 @@ from jobpilot.crawler.mailbox import MailMessage
 # here (name vs mail domain) and in crawler/text (name vs name), and two copies
 # of that rule would disagree the first time either is tuned.
 from jobpilot.crawler.text import fold, html_to_markdown
+from jobpilot.textnorm import quote_appears_in
 
 # --------------------------------------------------------------------------- #
 # Matching
@@ -318,13 +319,9 @@ def check_verdict(verdict: MailVerdict, mail: MailMessage) -> list[str]:
     quote = verdict.quote.strip()
     if verdict.verdict in PROPOSABLE and not quote:
         problems.append("no supporting quote")
-    if quote and _normalize(quote) not in _normalize(readable_body(mail)):
+    if quote and not quote_appears_in(quote, readable_body(mail)):
         problems.append("the quote does not appear in the message")
     return problems
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "")).strip().lower()
 
 
 def readable_body(mail: MailMessage) -> str:

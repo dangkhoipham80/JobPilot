@@ -555,6 +555,12 @@ export interface TaskResult {
   pages?: number | null;
   match_score?: number;
   gaps?: number;
+  /* cv_edit — `note` is what the agent refused to guess at, and is the reason
+     a "done" edit can still be a partial one. */
+  scope?: string;
+  ops?: number;
+  note?: string;
+  changed?: boolean;
   /* apply — `result` is the field that matters: a finished task can still mean
      nothing was sent (dry_run), or that it's now your turn (awaiting_user). */
   channel?: ApplyChannel;
