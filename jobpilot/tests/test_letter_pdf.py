@@ -138,3 +138,29 @@ def test_a_job_with_no_location_still_renders():
 def test_a_job_with_no_title_gets_a_generic_subject(title):
     ctx = letter_context(LETTER, sample_document(), _job(title=title))
     assert ctx["subject"] == "Application"
+
+
+def test_naming_a_company_with_an_ampersand_is_not_a_claim():
+    """"Panasonic R&D Center" was rejected for claiming experience with R and D,
+    which are both real language names. The company name WAS in the vocabulary --
+    as `r&d`, because it was split on whitespace while the checker splits on a
+    regex without `&`. Two tokenizers, one vocabulary, and a letter that could
+    never be written to any company with an ampersand in its name."""
+    from jobpilot.apply.letter import _tokens
+    from jobpilot.tailor.guard import unknown_terms
+
+    vocab = _tokens("Panasonic Vietnam Group - Panasonic R&D Center Vietnam (PRDCV)", "Ha Noi")
+    assert {"r", "d"} <= vocab, "must be split the way the checker splits"
+    assert unknown_terms("Excited to join Panasonic R&D Center Vietnam.", vocab) == []
+
+
+def test_the_guard_still_catches_a_real_invention():
+    """The fix widens the company vocabulary, not the check itself."""
+    from jobpilot.apply.letter import _tokens
+    from jobpilot.tailor.guard import unknown_terms
+
+    vocab = _tokens("Panasonic R&D Center", "Ha Noi")
+    assert unknown_terms("I have five years of Kubernetes and Kafka.", vocab) == [
+        "Kubernetes",
+        "Kafka",
+    ]

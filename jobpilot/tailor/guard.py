@@ -66,6 +66,27 @@ def _clean(token: str) -> str:
     return token.rstrip("._-")
 
 
+def terms_in(*values: str | None) -> set[str]:
+    """Lowercased tokens of ``values``, split exactly the way the checker splits.
+
+    Anything assembling a vocabulary for :func:`unknown_terms` must come through
+    here rather than ``str.split()``. The two disagree, and the disagreement
+    stays invisible until it isn't: ``_TOKEN_RE`` does not include ``&``, so
+    "Panasonic R&D Center" splits to ``r`` and ``d`` here but to ``r&d`` on
+    whitespace. A vocabulary built the second way *contains* the employer's name
+    under a spelling the checker never produces, and the letter is then rejected
+    for "claiming experience with R, D" — both real language names — when all it
+    did was address the company by its own name. One tokenizer, both sides.
+    """
+    out: set[str] = set()
+    for value in values:
+        for raw in _TOKEN_RE.findall(value or ""):
+            token = _clean(raw)
+            if token:
+                out.add(token.lower())
+    return out
+
+
 @dataclass
 class PlanReport:
     """Outcome of checking a plan; ``ok`` means it is safe to apply."""
