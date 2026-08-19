@@ -1024,3 +1024,10 @@ Dừng ở **REVIEW**: bấm Approve là quyết định của user (nguyên t�
 
 **Nợ mới:** parser LinkedIn alert ăn nhầm dòng *"Jobs similar to …"* thành job — 2/88 row có title
 và company rác, làm bẩn analytics (`crawler/mailbox.py`).
+
+**Giới hạn còn lại của qualifier (reviewer nêu, cố ý chưa làm):** vendor nhiều chữ như
+`Red Hat` không xử lý được bằng set token — tách ra thì `Hat` sẽ bảo lãnh mọi thứ đứng sau nó.
+Nên CV có `OpenShift` mà thư viết `Red Hat OpenShift` vẫn bị chặn, đúng loại false positive mà
+bản vá này sửa cho `Apache Kafka`. Muốn làm phải match theo **cụm**, không phải theo token —
+để lại backlog thay vì nới bằng cách dễ, vì mỗi lần nới guardrail này là một lần mở đường cho
+lời khai man tới nhà tuyển dụng.

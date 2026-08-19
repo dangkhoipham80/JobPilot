@@ -59,6 +59,30 @@ _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+#._-]*")
 _INTERNAL_CAPS = re.compile(r"[a-z][A-Z]")
 _HAS_TECH_PUNCT = re.compile(r"[0-9+#]")
 
+# Vendor and foundation names that qualify a product rather than being a claim of
+# their own — but ONLY when the word they qualify is already on the CV.
+#
+# A CV saying "Kafka" made "Apache Kafka" — the product's own full name — a
+# rejected claim, twice, while the bare "Kafka" passed. The conditional is what
+# keeps this from being a hole: "Apache Spark" is still caught when Spark is
+# absent, and a bare "experience with Apache" is still caught, because in
+# neither case does a known product follow. Only the qualifier is forgiven, and
+# only when the distinctive half has already been checked and passed.
+#
+# The qualified word must also be *distinctive*. Allowing any vocabulary word
+# opened a real hole, because a CV saying "database" or "cloud" is saying
+# nothing about a vendor: "Oracle Database", "Google Cloud" and even "Microsoft
+# Java" all passed on a CV that named none of them. Requiring the next token to
+# be absent from _ALLOWED_TERMS — the generic-English list — is what closes it,
+# since that is exactly where words like database, cloud and platform live.
+#
+# Multi-word vendors ("Red Hat") are deliberately absent: they would have to be
+# matched as a phrase, and split into tokens they let "Hat" qualify anything.
+_QUALIFIERS = frozenset(
+    "apache google amazon aws microsoft azure oracle cloudera elastic "
+    "jetbrains atlassian hashicorp".split()
+)
+
 
 def _clean(token: str) -> str:
     """Drop trailing punctuation the token regex swallows (sentence-final ``Boot.``)
@@ -153,12 +177,15 @@ def unknown_terms(text: str, vocab: set[str]) -> list[str]:
     unknown: list[str] = []
     seen: set[str] = set()
     for sentence in re.split(r"(?<=[.!?])\s+", text or ""):
-        for i, m in enumerate(_TOKEN_RE.finditer(sentence)):
-            token = _clean(m.group())
+        tokens = [_clean(m.group()) for m in _TOKEN_RE.finditer(sentence)]
+        for i, token in enumerate(tokens):
             if not token:
                 continue
             lowered = token.lower()
             if lowered in vocab or lowered in _ALLOWED_TERMS or lowered in seen:
+                continue
+            nxt = tokens[i + 1].lower() if i + 1 < len(tokens) else ""
+            if lowered in _QUALIFIERS and nxt in vocab and nxt not in _ALLOWED_TERMS:
                 continue
             if _is_tech_looking(token, at_sentence_start=i == 0):
                 seen.add(lowered)
