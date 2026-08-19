@@ -134,6 +134,26 @@ class CvDocumentOut(BaseModel):
     tex_override: bool = False
 
 
+class CvTemplateOut(BaseModel):
+    """One entry of ``GET /cv/templates`` — enough for the Studio's picker.
+
+    ``assets`` is deliberately not exposed: which files a template copies into
+    the build dir is a build detail, and the picker is a place to choose a look.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str = ""
+
+
+class CvTemplatesOut(BaseModel):
+    """Not a ``Page`` — the set is whatever ships in the image, never paged."""
+
+    templates: list[CvTemplateOut]
+
+
 class CvTexOut(BaseModel):
     """The LaTeX project behind a scope, for the raw editor.
 

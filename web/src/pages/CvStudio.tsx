@@ -13,6 +13,7 @@ import { HeaderEditor } from "@/components/cv/HeaderEditor";
 import { PdfPreview } from "@/components/cv/PdfPreview";
 import { RawLatexEditor } from "@/components/cv/RawLatexEditor";
 import { SectionEditor } from "@/components/cv/SectionEditor";
+import { TemplatePicker } from "@/components/cv/TemplatePicker";
 import { VersionHistory } from "@/components/cv/VersionHistory";
 import { DiffPanel } from "@/components/review/DiffPanel";
 import type { AtsReport, CvDocument, CvSection, CvSectionType, CvVersionDiff } from "@/types";
@@ -54,6 +55,10 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
     setDraft(data.document);
     setSavedVersion(data.version);
   }, [data]);
+
+  // The installed set never changes while the page is open, so this is fetched
+  // once per mount rather than tied to scope/version.
+  const templates = useApi(() => api.cvTemplates(), []);
 
   const versionPaging = usePaging("cv-versions");
   const versions = useApi(
@@ -187,9 +192,16 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
           ) : (
             <>
               <MarkupLegend />
+              <TemplatePicker
+                templates={templates.data?.templates ?? null}
+                error={templates.error}
+                value={draft.template}
+                onChange={(template) => setDraft({ ...draft, template })}
+              />
               <HeaderEditor
                 header={draft.header}
                 theme={draft.theme}
+                template={draft.template}
                 onHeader={(header) => setDraft({ ...draft, header })}
                 onTheme={(theme) => setDraft({ ...draft, theme })}
               />

@@ -1,0 +1,14 @@
+\section{<< s.title|tex >>}
+<# An empty itemize is a LaTeX error ("perhaps a missing \item"), and an empty
+   section is a real state: a fresh DB seeds a blank CV (CLAUDE.md rule 3).
+   Each \item line ends on a variable, never on a block tag -- trim_blocks eats
+   the newline after a tag, which would run every item onto one line. #>
+<% if s.items %>
+\begin{itemize}
+<% for it in s.items %>
+<% set lead = ('\\textbf{' ~ it.label|tex ~ '}: ') if it.label else '' %>
+<% set when = ('\\hfill ' ~ it.date|tex) if it.date else '' %>
+  \item << lead >><< it.text|tex >><< when >>
+<% endfor %>
+\end{itemize}
+<% endif %>

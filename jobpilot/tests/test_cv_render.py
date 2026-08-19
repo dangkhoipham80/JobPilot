@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 from jobpilot.cv.latex import escape_tex, tex
-from jobpilot.cv.render import RenderError, list_templates, render_document, render_tex_snapshot
+from jobpilot.cv.compile import template_assets
+from jobpilot.cv.render import (
+    RenderError,
+    list_templates,
+    render_document,
+    render_tex_snapshot,
+    template_dir,
+)
 from jobpilot.cv.schema import (
     BulletItem,
     BulletsSection,
@@ -185,8 +192,75 @@ def test_unknown_template_rejected():
         render_document(_doc(template="does_not_exist"))
 
 
-def test_awesome_cv_template_is_listed():
-    assert "awesome_cv" in list_templates()
+def test_both_shipped_templates_are_listed():
+    assert {"awesome_cv", "plain"} <= {t.id for t in list_templates()}
+
+
+def test_a_template_declares_the_assets_it_needs():
+    """`plain` builds on stock `article`, so it must not drag the .cls along."""
+    assert template_assets("awesome_cv") == ("awesome-cv.cls", "fontawesome.sty", "fonts")
+    assert template_assets("plain") == ("fonts",)
+
+
+def test_a_template_id_may_not_walk_out_of_the_templates_dir():
+    """``doc.template`` is free-form text off a JSON body before it is a path."""
+    for escape in ("../../etc", "..", "awesome_cv/../plain"):
+        with pytest.raises(RenderError):
+            template_dir(escape)
+
+
+# --------------------------------------------------------------------------- #
+# The "plain" template. It drops awesome-cv.cls for stock `article`, which swaps
+# a forgiving custom environment for enumitem's strict one — so the cases that
+# matter here are the *sparse* ones, not the full CV.
+# --------------------------------------------------------------------------- #
+def test_plain_defines_every_macro_the_inline_markup_emits():
+    """cv/latex.py emits these unconditionally; an undefined one kills the build."""
+    out = render_document(
+        _doc(
+            template="plain",
+            sections=[ParagraphSection(key="s", title="S", text="`Java` ~React~ [P](http://a.b)")],
+        )
+    )["cv.tex"]
+    for macro in (r"\newcommand{\tech}", r"\newcommand{\techfe}", r"\newcommand{\hreficon}"):
+        assert macro in out
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        ExperienceSection(key="exp", title="Experience", entries=[Entry(title="Solo", date="2024")]),
+        ProjectsSection(key="prj", title="Projects", entries=[Entry(title="Solo", date="2024")]),
+        EducationSection(key="edu", title="Education", entries=[EducationEntry(degree="BSc")]),
+        BulletsSection(key="sk", title="Skills", items=[]),
+    ],
+)
+def test_plain_never_emits_an_empty_itemize(section):
+    """``\\begin{itemize}\\end{itemize}`` is a hard LaTeX error, not an empty block.
+
+    A fresh DB seeds a *blank* CV (CLAUDE.md rule 3), so an entry with no bullets
+    is the first thing a new user builds, not a corner case.
+    """
+    out = render_document(_doc(template="plain", sections=[section]))[f"resume/{section.key}.tex"]
+    assert r"\begin{itemize}" not in out
+    assert section.title in out  # the section itself still renders
+
+
+def test_plain_keeps_each_bullet_on_its_own_line():
+    """trim_blocks eats the newline after a tag; items must not run together."""
+    out = render_document(
+        _doc(
+            template="plain",
+            sections=[
+                BulletsSection(
+                    key="sk",
+                    title="Skills",
+                    items=[BulletItem(label="Lang", text="Java"), BulletItem(text="Python")],
+                )
+            ],
+        )
+    )["resume/sk.tex"]
+    assert len([ln for ln in out.splitlines() if r"\item" in ln]) == 2
 
 
 # --------------------------------------------------------------------------- #

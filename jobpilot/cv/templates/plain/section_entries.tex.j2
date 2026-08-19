@@ -1,0 +1,26 @@
+<# Shared by the 'experience' and 'projects' section types, mirroring
+   awesome_cv/section_entries.tex.j2 -- same data, no colour and no icon. #>
+\section{<< s.title|tex >>}
+<% for e in s.entries %>
+<% set title = ('\\hreficon{' ~ e.url|url ~ '}{' ~ e.title|tex ~ '}') if e.url else (e.title|tex) %>
+<% set when = ('\\hfill ' ~ e.date|tex) if e.date else '' %>
+<% if not loop.first %>
+\vspace{4pt}
+<% endif %>
+\textbf{<< title >>}<< when >>\par
+<# An entry with no bullets, no role and no stack renders no itemize at all:
+   \begin{itemize}\end{itemize} is a hard LaTeX error, not an empty block. #>
+<% if e.items or e.role or e.tech_stack %>
+\begin{itemize}
+<% for it in e.items %>
+  \item << it|tex >>
+<% endfor %>
+<% if e.role or e.tech_stack %>
+<% set role = ('\\textbf{Role}: ' ~ e.role|tex) if e.role else '' %>
+<% set gap = ' \\quad | \\quad ' if (e.role and e.tech_stack) else '' %>
+<% set stack = ('\\textbf{Tech Stack}: ' ~ e.tech_stack|techlist) if e.tech_stack else '' %>
+  \item << role >><< gap >><< stack >>
+<% endif %>
+\end{itemize}
+<% endif %>
+<% endfor %>

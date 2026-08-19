@@ -68,7 +68,7 @@ def write_letter_tex(
     be a second opinion about the same location — one that silently disagreed
     with the dispatcher's under test.
     """
-    sync_assets(dest)
+    sync_assets(dest, template=doc.template)
     path = dest / LETTER_FILE
     path.write_text(render_letter(doc, letter_context(letter, doc, job, today)), encoding="utf-8")
     return path

@@ -1,0 +1,44 @@
+<% include '_preamble.tex.j2' %>
+
+%-------------------------------------------------------------------------------
+% COVER LETTER -- same nine context keys as awesome_cv/cover_letter.tex.j2
+% (letter_context() in apply/letter_pdf.py always passes all of them).
+%
+% Paragraph breaks are written as explicit \par, never as blank lines: Jinja's
+% trim_blocks eats the newline after every `%>`, so a blank line next to a tag
+% silently collapses -- and in LaTeX that is the difference between two
+% paragraphs and one run-on line.
+%-------------------------------------------------------------------------------
+\begin{document}
+
+\makeplainheader
+
+\vspace{6pt}
+<% if date %>
+{\raggedleft\small << date|tex >>\par}
+<% endif %>
+
+\section{<< subject|tex >>}
+
+<% if recipient %>
+\textbf{<< recipient|tex >>}\par
+<% if recipient_location %>
+<< recipient_location|tex >>\par
+<% endif %>
+\vspace{2.5mm}
+<% endif %>
+<< greeting|tex >>\par
+\vspace{2.5mm}
+<% for para in paragraphs %>
+<< para|tex >>\par
+\vspace{2.5mm}
+<% endfor %>
+<% if learning_note %>
+<< learning_note|tex >>\par
+\vspace{2.5mm}
+<% endif %>
+<< closing|tex >>\par
+<< signature|tex >>
+
+%-------------------------------------------------------------------------------
+\end{document}

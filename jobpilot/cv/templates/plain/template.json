@@ -1,0 +1,5 @@
+{
+  "name": "Plain",
+  "description": "One column, no colour, no icons. Built on stock article so an ATS parser reads it in order — use it for portals that mangle the styled PDF.",
+  "assets": ["fonts"]
+}

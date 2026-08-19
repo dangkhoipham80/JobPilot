@@ -58,7 +58,11 @@ def test_get_master_auto_seeds(client):
 def test_templates_route_is_not_shadowed_by_scope(client):
     r = client.get("/cv/templates", headers=AUTH)
     assert r.status_code == 200
-    assert "awesome_cv" in r.json()["templates"]
+    listed = {t["id"]: t for t in r.json()["templates"]}
+    assert {"awesome_cv", "plain"} <= set(listed)
+    # The picker needs a label and a reason to pick one, not just an id.
+    assert listed["plain"]["name"] == "Plain"
+    assert listed["plain"]["description"]
 
 
 def test_put_appends_a_version(client):

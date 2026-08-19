@@ -1,0 +1,19 @@
+\section{<< s.title|tex >>}
+<% for e in s.entries %>
+<% set when = ('\\hfill ' ~ e.date|tex) if e.date else '' %>
+<% set where = [e.institution|tex, e.location|tex]|select|join(', ') %>
+<% if not loop.first %>
+\vspace{4pt}
+<% endif %>
+\textbf{<< e.degree|tex >>}<< when >>\par
+<% if where %>
+{\small << where >>}\par
+<% endif %>
+<% if e.items %>
+\begin{itemize}
+<% for it in e.items %>
+  \item << it|tex >>
+<% endfor %>
+\end{itemize}
+<% endif %>
+<% endfor %>

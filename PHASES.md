@@ -1031,3 +1031,67 @@ Nên CV có `OpenShift` mà thư viết `Red Hat OpenShift` vẫn bị chặn, �
 bản vá này sửa cho `Apache Kafka`. Muốn làm phải match theo **cụm**, không phải theo token —
 để lại backlog thay vì nới bằng cách dễ, vì mỗi lần nới guardrail này là một lần mở đường cho
 lời khai man tới nhà tuyển dụng.
+
+## Phase cv-A — Template thứ hai (`plain`) + chỗ chọn template trong Studio (2026-08-19)
+
+Việc A trong loạt 3 việc nâng cấp CV. Backend đã sẵn sàng từ Phase 4.5 (`doc.template`,
+`template_env()` đọc theo tên thư mục, `GET /cv/templates` đã tồn tại) — thiếu đúng hai thứ:
+một template thứ hai, và chỗ chọn nó.
+
+### `plain` là template khác *mục đích*, không phải khác màu
+
+Bỏ hẳn `awesome-cv.cls`, dựng trên `article` + `geometry`/`fontspec`/`enumitem`/`titlesec`/
+`hyperref`/`microtype`. Lý do tồn tại: **portal ATS nuốt PDF nhiều cột / nhiều icon rất tệ**,
+mà Phase 13 (`cv/ats.py`) đã đo được "máy có đọc được không" — giờ mới có bản để chọn khi câu
+trả lời là không. Verify bằng cách **đọc lại text layer**, không phải nhìn PDF: thứ tự đọc
+đúng, tiếng Việt nguyên vẹn (`Phạm Đăng Khôi`), và escape LaTeX round-trip (`100%`, `50_50`,
+`#hash`, `&`).
+
+### Manifest: thêm template = thêm một thư mục, vẫn đúng sau khi có assets riêng
+
+`ASSETS` trước đây là hằng module-level, copy cứng `awesome-cv.cls` + `fontawesome.sty` +
+`fonts` cho **mọi** build. `plain` không cần `.cls`. Nếu để một dict trong Python thì "thêm
+template" hoá ra là "thêm thư mục **và** sửa Python" — nên mỗi template tự khai trong
+`template.json` (`name`/`description`/`assets`), `list_templates()` đọc manifest. Manifest
+thiếu `assets` → fallback về bộ cũ, tức thư mục thả vào không manifest chạy y như trước.
+
+`GET /cv/templates` đổi từ `list[str]` sang `[{id,name,description}]`. Đổi được vì nó có
+**0 consumer** — endpoint tồn tại từ Phase 4.5 mà chưa ai gọi. Picker cần *lý do để chọn*,
+không phải chỉ một id.
+
+### Bốn cái bẫy — ba trong số đó là công cụ đo tự bịa ra lỗi
+
+1. **Heredoc Bash ăn mất backslash**: `\\[2pt]` tới LaTeX thành `\[2pt]` → "Bad math
+   environment delimiter". Đi debug LaTeX 2 vòng trong khi **LaTeX chưa bao giờ sai**. Cùng
+   họ với bài `pypdf` ở Phase 13. Từ đó viết file template bằng Write tool.
+2. **Git Bash đổi `/query` thành `C:/Program Files/Git/query`** khi gọi `docker run` và
+   `schtasks` → lỗi trông như "docker hỏng"/"tham số sai". Cần `MSYS_NO_PATHCONV=1`.
+3. **`\begin{itemize}\end{itemize}` là lỗi LaTeX cứng.** `cvitems` của `awesome-cv.cls` dễ
+   tính nên chưa bao giờ lộ; `enumitem` thì chết. Mà **DB mới seed CV rỗng** (rule 3) ⇒ đây là
+   thứ user mới gặp *đầu tiên*. Đã build thật cả CV rỗng lẫn entry chỉ có title để chứng minh,
+   vì test render chỉ chứng minh chuỗi `.tex`, không chứng minh LaTeX chịu nhận.
+4. **Bản `plain` đầu tiên tốn 2 trang** cho đúng nội dung `awesome_cv` gói trong 1. "Plain" mà
+   dài hơn thì là CV tệ hơn chứ không phải mộc hơn — siết spacing tới khi về 1 trang.
+
+### API chết giữa lúc verify — và nó **không** phải lỗi của phase này
+
+Sau khi restart, server phục vụ được `/api/cv/templates` (200 ×2) rồi **exited rc=3** đúng lúc
+`GET /api/cv/master` đang bay. Không có traceback nào trong `logs/api.log`. Event log Windows
+mới nói ra: **`python.exe` fault trong `libintl-9.dll` của `C:\Program Files\PostgreSQL\17\bin`,
+exception `0x40000015` (fatal app exit)** — crash tầng native trong DLL client của Postgres,
+không dính gì tới Jinja/React. Bằng chứng ngược lại: cùng commit, cùng DB, chạy uvicorn tay ở
+:8001 thì trang CV Studio load sạch, mọi request 200, server sống. **Chỉ 1 crash python.exe
+trong 21 ngày** nên chưa kết luận được là kinh niên hay một lần — ghi lại đây để lần sau thấy
+`rc=3` thì đi thẳng tới Event log thay vì đọc `api.log` (nơi hard-crash **không** để lại gì).
+
+**Verify (chạy thật):** 807 test pass; build Docker thật cho `plain` và `awesome_cv` — CV mẫu
+1 trang cả hai, cover letter 1 trang cả hai; build dir của `plain` **chỉ có `fonts`**, không
+có `.cls`/`fontawesome.sty` (chứng minh assets theo template); CV rỗng + entry thiếu bullet
+build được; `GET /api/cv/templates` trả đúng 2 template trên server thật; picker đổi được lựa
+chọn trong UI thật và ô "Accent colour" mờ đi kèm chữ *"not used by the plain template"*.
+**Không Save** — Master CV thật giữ nguyên v12.
+
+**Quyết định để lại:** `plain` dùng Roboto trong `fonts/` qua `fontspec` chứ không dùng font
+mặc định của TeX, vì font mặc định thiếu glyph tiếng Việt và chỗ thiếu là **khoảng trắng im
+lặng** trong PDF, không phải lỗi build.
+

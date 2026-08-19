@@ -14,13 +14,16 @@ from pathlib import Path, PurePosixPath
 
 from jobpilot.config import REPO_ROOT, get_config
 from jobpilot.cv.ats import AtsReport, check_pdf
-from jobpilot.cv.render import write_document
+from jobpilot.cv.render import DEFAULT_TEMPLATE, describe_template, write_document
 from jobpilot.cv.schema import CvDocument
 from jobpilot.tailor.build import BuildResult, build_cv
 
 MASTER_SCOPE = "master"
 
 # Files/dirs the generated cv.tex needs alongside it, sourced from the repo root.
+# Which ones depends on the template: the styled default needs its .cls and icon
+# package, "plain" needs only the fonts. Each template declares its own list in
+# template.json, so adding a template stays "add a directory".
 ASSETS = ("awesome-cv.cls", "fontawesome.sty", "fonts")
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -37,11 +40,22 @@ def build_dir(scope: str = MASTER_SCOPE, root: Path | None = None) -> Path:
     return base / "cv" / scope_slug(scope)
 
 
-def sync_assets(dest: Path, source: Path | None = None) -> None:
-    """Copy the LaTeX class/fonts into ``dest`` (skipping what's already there)."""
+def template_assets(template: str = DEFAULT_TEMPLATE) -> tuple[str, ...]:
+    """Assets ``template`` declares. A template with no manifest gets the legacy set.
+
+    Falling back to :data:`ASSETS` rather than to nothing means a template
+    directory dropped in without a ``template.json`` behaves exactly like every
+    template did before manifests existed — the failure mode is a stray unused
+    file, not a build that dies on a missing ``.cls``.
+    """
+    return describe_template(template).assets or ASSETS
+
+
+def sync_assets(dest: Path, source: Path | None = None, template: str = DEFAULT_TEMPLATE) -> None:
+    """Copy the LaTeX class/fonts ``template`` needs into ``dest`` (skipping what's there)."""
     source = source or REPO_ROOT
     dest.mkdir(parents=True, exist_ok=True)
-    for name in ASSETS:
+    for name in template_assets(template):
         src, dst = source / name, dest / name
         if not src.exists() or dst.exists():
             continue
@@ -86,7 +100,7 @@ def prepare_build_dir(
     section file — the ones you left alone keep tracking the JSON.
     """
     dest = build_dir(scope, root)
-    sync_assets(dest)
+    sync_assets(dest, template=doc.template)
     write_document(doc, dest)
     for rel, text in check_override(override or {}).items():
         target = dest / rel
