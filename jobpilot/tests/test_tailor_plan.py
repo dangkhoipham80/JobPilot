@@ -288,3 +288,29 @@ def test_system_prompt_carries_the_truthfulness_rule(master):
     text = system_prompt(master)
     assert "Never claim a skill" in text
     assert "MASTER CV" in text
+
+
+# --------------------------------------------------------------------------- #
+# Vendor qualifiers (found when an apply failed twice on a real cover letter)
+# --------------------------------------------------------------------------- #
+def test_a_vendor_prefix_is_not_a_separate_claim():
+    """A CV listing "Kafka" made "Apache Kafka" -- the product's own full name --
+    a rejected claim, while the bare "Kafka" passed."""
+    from jobpilot.tailor.guard import unknown_terms
+
+    vocab = {"kafka", "spring", "boot"}
+    assert unknown_terms("I am eager to learn Apache Kafka.", vocab) == []
+    assert unknown_terms("Built with Spring Boot.", vocab) == []
+
+
+def test_the_qualifier_is_only_forgiven_in_front_of_something_known():
+    """This is what keeps it from being a hole. The distinctive half still has
+    to be on the CV; only the vendor name riding in front of it is excused."""
+    from jobpilot.tailor.guard import unknown_terms
+
+    vocab = {"kafka"}
+    # Spark is not on the CV, so the claim is still caught.
+    assert "Spark" in unknown_terms("I am eager to learn Apache Spark.", vocab)
+    # And a bare vendor name claims something of its own -- the HTTP server.
+    assert unknown_terms("I have experience with Apache.", vocab) == ["Apache"]
+    assert "S3" in unknown_terms("I use Amazon S3 daily.", vocab)

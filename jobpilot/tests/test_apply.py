@@ -284,7 +284,15 @@ def test_dry_run_leaves_the_job_approved(db, tmp_path, monkeypatch):
     assert app.meta["email"]["to"] == "hr@acme.com"
 
 
-def test_disabled_email_fails_the_job_with_the_reason(db, tmp_path):
+def test_disabled_email_fails_the_job_with_the_reason(db, tmp_path, monkeypatch):
+    # Patched like every neighbouring test in this file. Without it this read the
+    # developer's own config.local.yaml and passed only because email happened to
+    # be off there — it went red the first time email was switched on for a real
+    # send, which is precisely when a test about the gates must not be lying.
+    monkeypatch.setattr(
+        "jobpilot.apply.dispatcher.get_config",
+        lambda: type("C", (), {"apply": ApplyCfg(email=EmailCfg(enabled=False))})(),
+    )
     _job(db)
     _cv(tmp_path, "itviec:1")
     outcome = dispatcher.apply_job(db, "itviec:1")
