@@ -288,3 +288,62 @@ def test_crawl_passes_does_not_come_from_last_seen_at(session_factory):
         passes = crawl_passes(db, ["itviec"]).get("itviec", [])
 
     assert len(passes) == 1, "the pass must still be visible via runs"
+
+
+def test_a_malformed_sites_blob_is_skipped_not_raised(session_factory):
+    """`or {}` alone lets a non-empty list through and then blows up on
+    .items(). A job detail page must not 500 because one historical run row has
+    a shape a past version of the writer produced."""
+    from jobpilot.crawler.quality import crawl_passes
+    from jobpilot.store.models import Run
+    from jobpilot.timeutil import vn_now
+
+    now = vn_now()
+    with session_factory() as db:
+        db.add_all([
+            Run(kind="crawl", started_at=now, stats={"sites": [{"source": "itviec"}]}),
+            Run(kind="crawl", started_at=now, stats={"sites": None}),
+            Run(kind="crawl", started_at=now, stats={}),
+            Run(kind="crawl", started_at=now, stats={"sites": {"itviec": {"ok": True, "fetched": 3}}}),
+        ])
+        db.commit()
+        passes = crawl_passes(db, ["itviec"]).get("itviec", [])
+
+    assert len(passes) == 1, "only the well-formed run counts, and nothing raises"
+
+
+def test_only_the_recent_window_of_runs_is_read(session_factory):
+    """This runs on every job-detail request; unbounded it grows with crawl
+    history. Truncating cannot cause a false negative, because a posting last
+    seen long ago predates the whole window."""
+    from jobpilot.crawler.quality import RECENT_RUNS, crawl_passes, unseen_flag
+    from jobpilot.store.models import Run
+    from jobpilot.timeutil import vn_now
+
+    now = vn_now()
+    with session_factory() as db:
+        for i in range(RECENT_RUNS + 20):
+            db.add(Run(kind="crawl", started_at=now - timedelta(hours=i),
+                       stats={"sites": {"itviec": {"ok": True, "fetched": 5}}}))
+        db.commit()
+        passes = crawl_passes(db, ["itviec"]).get("itviec", [])
+
+    assert len(passes) == RECENT_RUNS
+    # An old posting is still flagged despite the truncation.
+    assert unseen_flag(passes, now - timedelta(days=90)) == ["not_seen"]
+
+
+def test_a_naive_timestamp_from_the_database_does_not_raise():
+    """Postgres returns these columns tz-aware and SQLite returns them naive, so
+    a stored timestamp meeting a computed one raised TypeError instead of
+    answering. Production survived only because both sides came from the same
+    connection."""
+    from datetime import datetime as _dt
+
+    from jobpilot.crawler.quality import missed_passes
+    from jobpilot.timeutil import vn_now
+
+    naive = [_dt(2026, 8, 17, 19, 0), _dt(2026, 8, 8, 13, 0)]
+    aware_old = vn_now().replace(year=2020)
+    assert missed_passes(naive, aware_old) == 2          # aware needle, naive haystack
+    assert missed_passes([vn_now()], _dt(2020, 1, 1)) == 1  # and the other way round
