@@ -335,7 +335,15 @@ export interface TailorPlan {
   changes: TailorChange[];
 }
 
-export type DiffStatus = "rewritten" | "hidden" | "reordered" | "trimmed" | "unchanged";
+/** `expanded` = the section gained content. Only Master CV edits produce it —
+ *  tailoring can never add — and it is the status that matters most to check. */
+export type DiffStatus =
+  | "rewritten"
+  | "hidden"
+  | "reordered"
+  | "trimmed"
+  | "expanded"
+  | "unchanged";
 
 export interface SectionDiff {
   key: string;

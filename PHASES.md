@@ -1166,8 +1166,35 @@ Tệ hơn: lần chạy model thật sau đó, chính model **nhìn thấy** ent
 của chính tính năng này cảnh báo. **v13 vẫn đang nằm đó** (lệnh xoá bị permission chặn) — xem
 mục treo ở cuối.
 
-**Verify:** 831 test pass; guard chấm bằng 9 ca đối chứng (add hợp lệ / thiếu quote / quote
-diễn giải lại / quote thật nhưng thêm tech lạ / bịa metric / rewrite bịa 40% / rewrite có số do
-user đưa / merge / rewrite từ nội dung master); gọi model thật 2 ca ở trên; API thật đăng ký
-route và 5 test API pass. **Chưa verify UI trên trình duyệt** — route mới cần restart service.
+### Bug nguy hiểm nhất phase, chỉ lộ ra lúc verify UI: diff MÙ với nội dung THÊM VÀO
+
+`tailor/diff.py` báo `dropped` và `reordered` nhưng **không hề báo `added`** — vì caller duy
+nhất của nó (tailor) không bao giờ thêm được gì. Thêm 1 entry vào `projects` (3→4) mà
+`diff.changed == False`. Nghiêm trọng ở chỗ **diff chính là thứ user duyệt**: cả lập luận
+"guard chỉ là lexical nên diff bắt buộc là lớp đỡ" sụp đổ nếu diff không hiện thứ vừa thêm —
+user sẽ chấp nhận một entry họ chưa từng nhìn thấy.
+
+Lộ ra vì test happy-path **hỏng** ngay sau khi tôi thêm bước "không đổi gì thì không ghi
+version", mà bước đó ban đầu hỏi `diff.changed`. Sửa: `_order_note` báo cả `added`, thêm status
+`expanded` (nhãn "Added", màu accent để không lướt qua được), và câu hỏi "có đổi gì không"
+chuyển sang **so tài liệu** (`documents_differ`) chứ không hỏi diff — diff là *tóm tắt cho
+người*, mà tóm tắt được phép bỏ sót.
+
+**Bài học chung:** một hàm dùng chung *an toàn vì caller cũ không làm được điều đó* thành lỗ
+hổng ngay khi có caller mới. Sửa ở hàm chung, không viết bản thứ hai.
+
+### Vòng không đổi gì thì không ghi version
+
+Model từ chối làm (instruction mơ hồ) là vòng **thành công** — từ chối là câu trả lời đúng.
+Ghi một version giống hệt bản trước là xếp câu trả lời đó vào loại "đã sửa CV", làm lịch sử
+đầy row diff rỗng. UI phải **nói ra** ("Nothing changed — no new version"), nếu không nút bấm
+trông như không làm gì.
+
+**Verify (chạy thật, đọc output):** 836 test pass; guard chấm bằng 9 ca đối chứng (add hợp lệ /
+thiếu quote / quote diễn giải lại / quote thật nhưng thêm tech lạ / bịa metric / rewrite bịa
+40% / rewrite có số do user đưa / merge / rewrite từ nội dung master) + ca 2 op tranh cùng 1
+bullet; gọi model thật 2 ca; **UI thật trên trình duyệt**: gõ "Add my Kafka project." → model
+trả 0 op, UI hiện "Nothing changed — no new version" kèm `note` giải thích thiếu gì, DB xác
+nhận **vẫn v15, không ghi version nào**, Run row đóng đúng với `no_op: True`. Master CV thật
+không bị đụng vào trong toàn bộ quá trình verify.
 

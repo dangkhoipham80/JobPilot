@@ -308,6 +308,40 @@ def test_two_ops_may_not_claim_the_same_bullet():
     assert "already claimed" in " ".join(report.violations)
 
 
+def test_the_diff_reports_an_added_entry():
+    """The diff is what the user approves, so it may not answer "unchanged".
+
+    It did exactly that until this phase: `_order_note` reported dropped and
+    reordered items but never added ones, because tailoring — its only caller —
+    cannot add anything.
+    """
+    from jobpilot.tailor.diff import VERSION_LABELS, diff_documents
+
+    master = sample_document()
+    edited = apply_edits(master, plan(new_entries=[new_entry(title="JobPilot")]))
+    diff = diff_documents(master, edited, labels=VERSION_LABELS)
+
+    assert diff.changed, "a CV that gained an entry must not diff as unchanged"
+    projects = [s for s in diff.sections if s.key == "projects"][0]
+    assert projects.status == "expanded"
+    assert any("added entries: JobPilot" in n for n in projects.notes), projects.notes
+
+
+def test_the_diff_still_reports_a_dropped_bullet():
+    """The added/dropped pair must not shadow each other."""
+    from jobpilot.tailor.diff import VERSION_LABELS, diff_documents
+
+    master = sample_document()
+    edited = apply_edits(
+        master,
+        plan(drops=[Drop(section_key="skills", entry_index=-1, item_indices=[0], reason="t")]),
+    )
+    diff = diff_documents(master, edited, labels=VERSION_LABELS)
+    skills = [s for s in diff.sections if s.key == "skills"][0]
+    assert skills.status == "trimmed"
+    assert any("dropped" in n for n in skills.notes)
+
+
 def test_a_new_entry_splits_its_tech_stack():
     """`tech_stack` is one string in the schema and a list on the CV."""
     doc = CvDocument(

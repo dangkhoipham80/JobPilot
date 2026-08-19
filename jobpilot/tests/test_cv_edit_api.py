@@ -123,6 +123,26 @@ def test_a_plan_that_invents_a_fact_fails_the_task_and_writes_no_version(client,
     assert client.get("/cv/master/versions", headers=AUTH).json()["total"] == before
 
 
+def test_an_instruction_the_agent_declines_writes_no_version(client, run_task):
+    """Declining to invent detail is the right answer, not an edit.
+
+    A version identical to the previous one would file that answer as a change
+    and bury the rows that mean something.
+    """
+    app.dependency_overrides[get_edit_engine] = lambda: FixtureEditEngine(
+        plan=empty_plan().model_copy(update={"note": "too vague — no project name given"})
+    )
+    before = client.get("/cv/master/versions", headers=AUTH).json()["total"]
+
+    r = client.post("/cv/master/edit", json={"instruction": "Add my Kafka project."}, headers=AUTH)
+    task = run_task(client, r)
+
+    assert task["status"] == "done"
+    assert task["result"]["changed"] is False
+    assert "too vague" in task["result"]["note"]
+    assert client.get("/cv/master/versions", headers=AUTH).json()["total"] == before
+
+
 def test_a_refused_edit_still_closes_its_run_row(client, run_task, worker_db):
     """``session_scope()`` rolls back on the way out, so the failure must be committed.
 

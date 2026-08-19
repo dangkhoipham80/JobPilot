@@ -74,6 +74,18 @@ list. `template.json`:
   "rửa" thành *đã có trên CV* cho mọi job về sau. Đó là lý do đường này phải **chặt hơn**
   tailor, không phải lỏng hơn.
 - **Không giới hạn số vòng** (`edit_max_rounds` là của *một job*, không phải của Master CV).
+- **Vòng không đổi gì thì KHÔNG ghi version.** Model từ chối làm (instruction quá mơ hồ) là một
+  vòng **thành công** — câu trả lời đúng là từ chối. Ghi thêm một version giống hệt bản trước là
+  xếp câu trả lời đó vào loại "đã sửa CV", làm lịch sử đầy row có diff rỗng và chôn mất row có
+  ý nghĩa. Quyết định bằng `documents_differ(master, edited)` — **so tài liệu, không hỏi diff**:
+  diff là bản *tóm tắt cho người đọc*, mà tóm tắt thì được phép bỏ sót, nên dựa vào nó để quyết
+  định có ghi hay không là biến mọi điểm mù của nó thành **mất trắng một lần sửa**.
+- **`tailor/diff.py` từng MÙ với nội dung THÊM VÀO.** `_order_note` báo `dropped` + `reordered`
+  mà **không** báo `added`, vì caller duy nhất của nó (tailor) không bao giờ thêm được gì. Thêm
+  1 entry vào projects (3→4) mà diff trả `changed=False`. Nguy hiểm vì **diff chính là thứ user
+  duyệt** trước khi chấp nhận — cả tính năng sửa Master CV dựa vào đó. Đã sửa + thêm status
+  `expanded` (nhãn "Added", màu accent để không lướt qua được). Bài học: một hàm dùng chung
+  **an toàn vì caller cũ không làm được điều đó** sẽ thành lỗ hổng ngay khi có caller mới.
 - **Test dùng task queue thì BẮT BUỘC fixture `worker_db`.** Task body mở session riêng bằng
   `session_scope()` ⇒ override `get_db` của FastAPI **không tới được nó**, và nó ghi thẳng vào
   `DATABASE_URL` thật. Đã xảy ra: một test ghi hẳn một version bịa vào Master CV thật, và task

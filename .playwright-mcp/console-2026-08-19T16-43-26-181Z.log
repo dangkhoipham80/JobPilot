@@ -1,0 +1,6 @@
+[  139574ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466
+[  143625ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466
+[  149665ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466
+[  159709ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466
+[  177750ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466
+[  211806ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:8002/api/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:8002/assets/index-BXH5EAJ1.js:466

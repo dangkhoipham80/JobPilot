@@ -106,6 +106,16 @@ export function InstructionBox({
           </div>
         )}
 
+        {/* A round that changed nothing is a success, not a failure: refusing to
+            invent the detail you didn't give is the correct answer. But it must
+            not look like the button did nothing, so it is stated. */}
+        {task?.status === "done" && task.result?.changed === false && (
+          <p className="mt-3 rounded-lg border bg-surface-2 p-3 text-xs leading-relaxed text-ink-muted">
+            <span className="text-ink">Nothing changed — no new version.</span> The agent would
+            have had to invent something to do this.
+          </p>
+        )}
+
         {task?.status === "done" && task.result?.note ? (
           <p className="mt-3 rounded-lg border bg-surface-2 p-3 text-xs leading-relaxed text-ink-muted">
             <span className="text-ink">The agent noted:</span> {String(task.result.note)}

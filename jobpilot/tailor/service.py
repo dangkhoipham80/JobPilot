@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from jobpilot.config import get_config
 from jobpilot.cv import store as cv_store
 from jobpilot.cv.compile import compile_document
+from jobpilot.cv.schema import CvDocument
 from jobpilot.store.models import Edit, Job, JobStatus, Run
 from jobpilot.tailor.apply import apply_plan
 from jobpilot.tailor.build import BuildError
@@ -219,6 +220,21 @@ class MasterEditOutcome:
     diff: CvDiff
     attempts: int = 1
     note: str = ""
+    #: False when the round succeeded but produced no change, so no version was
+    #: appended and ``version`` is the one already current.
+    changed: bool = True
+
+
+def documents_differ(before: CvDocument, after: CvDocument) -> bool:
+    """Did this round actually alter the document?
+
+    Compares the documents themselves rather than asking the diff. The diff is a
+    *summary* built for humans, and summaries are allowed to omit; deciding
+    whether to write a version from one means any blind spot in it silently
+    becomes a lost edit. (It had one: added entries went unreported until this
+    phase, because tailoring cannot add.)
+    """
+    return before.model_dump(mode="json") != after.model_dump(mode="json")
 
 
 def edit_master(
@@ -259,6 +275,28 @@ def edit_master(
         # still running, forever. Same shape as tailor_job's failure path.
         db.commit()
         raise
+
+    # An instruction the agent declined to act on ("add my Kafka project", with no
+    # detail) is a *successful* round that changed nothing — the refusal is the
+    # right answer. Appending a version identical to the last one would file that
+    # answer as an edit, leaving the history full of rows whose diff is empty and
+    # burying the ones that mean something. Say what happened instead.
+    if not documents_differ(master, edited):
+        _finish_run(
+            db,
+            run,
+            {"instruction": instruction, "ok": True, "version": None, "ops": 0, "no_op": True},
+        )
+        db.commit()
+        current = cv_store.latest_version(db, cv_store.MASTER_SCOPE)
+        return MasterEditOutcome(
+            version=current.version if current else 0,
+            plan=result.plan,
+            diff=diff,
+            attempts=result.attempts,
+            note=result.plan.note,
+            changed=False,
+        )
 
     say("saving version")
     meta = {

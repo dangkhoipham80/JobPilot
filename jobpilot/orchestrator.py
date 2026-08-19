@@ -391,14 +391,15 @@ def cv_edit_body(instruction: str, engine) -> TaskBody:
         with session_scope() as db:
             outcome = service.edit_master(db, instruction, engine, progress=progress)
 
-        queue.publish({"type": "cv_updated", "scope": "master", "version": outcome.version})
+        if outcome.changed:
+            queue.publish({"type": "cv_updated", "scope": "master", "version": outcome.version})
         return {
             "scope": "master",
             "version": outcome.version,
             "ops": outcome.plan.count(),
             "attempts": outcome.attempts,
             "note": outcome.note,
-            "changed": outcome.diff.changed,
+            "changed": outcome.changed,
         }
 
     return body
