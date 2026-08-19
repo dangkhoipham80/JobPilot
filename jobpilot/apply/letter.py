@@ -39,7 +39,15 @@ from jobpilot.tailor.schema import TailorPlan
 MAX_WORDS = 300  # SKILL.md §2 step 4
 
 
-class CoverLetter(BaseModel):
+class _LetterBody(BaseModel):
+    """The parts of a letter every job has, gaps or not.
+
+    Shared rather than copied into both models: with two hand-written copies, a
+    field added to one and forgotten in the other would be dropped in silence by
+    ``to_letter()`` if it had a default, or raise a confusing TypeError at apply
+    time if it did not. Inheriting means a new field lands in both by default.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     greeting: str = Field(description='e.g. "Dear Hiring Team at ACME Corp,"')
@@ -48,6 +56,10 @@ class CoverLetter(BaseModel):
         description="Two or three short paragraphs. Every claim must be backed by "
         "the Master CV — name only technologies that already appear on it.",
     )
+    closing: str = Field(default="Best regards,", description='e.g. "Best regards,"')
+
+
+class CoverLetter(_LetterBody):
     learning_note: str = Field(
         default="",
         description="Optional single sentence acknowledging a requirement the "
@@ -55,7 +67,6 @@ class CoverLetter(BaseModel):
         "only field allowed to name a MISSING requirement, and it must never claim "
         "the skill. Leave empty when there is no important gap.",
     )
-    closing: str = Field(default="Best regards,", description='e.g. "Best regards,"')
 
     @classmethod
     def schema_for(cls, has_gaps: bool) -> type[BaseModel]:
@@ -97,33 +108,23 @@ class CoverLetter(BaseModel):
         return len(self.body().split())
 
 
-class _GaplessCoverLetter(BaseModel):
+class _GaplessCoverLetter(_LetterBody):
     """A letter for a job the CV already covers — with no ``learning_note`` field.
 
-    A separate model rather than ``CoverLetter`` with the field excluded:
-    ``exclude`` only affects serialization, so the model would still be shown
-    the field in the JSON schema and would still fill it in. It has to be
-    genuinely absent from the schema to be unrepresentable.
+    A sibling of ``CoverLetter`` rather than ``CoverLetter`` with the field
+    excluded: ``exclude`` only affects serialization, so the model would still
+    be shown the field in the JSON schema and would still fill it in. It has to
+    be genuinely absent from the schema to be unrepresentable.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
-    greeting: str = Field(description='e.g. "Dear Hiring Team at ACME Corp,"')
-    paragraphs: list[str] = Field(
-        default_factory=list,
-        description="Two or three short paragraphs. Every claim must be backed by "
-        "the Master CV — name only technologies that already appear on it.",
-    )
-    closing: str = Field(default="Best regards,", description='e.g. "Best regards,"')
-
     def to_letter(self) -> CoverLetter:
-        """Back to the one type the rest of the pipeline knows."""
-        return CoverLetter(
-            greeting=self.greeting,
-            paragraphs=self.paragraphs,
-            learning_note="",
-            closing=self.closing,
-        )
+        """Back to the one type the rest of the pipeline knows.
+
+        Built from ``model_dump()`` rather than field by field, so a field added
+        to ``_LetterBody`` later is carried across without anyone remembering to
+        edit this line.
+        """
+        return CoverLetter(**self.model_dump(), learning_note="")
 
 
 # --------------------------------------------------------------------------- #
@@ -182,7 +183,23 @@ def check_letter(
 # --------------------------------------------------------------------------- #
 # Prompt
 # --------------------------------------------------------------------------- #
-LETTER_RULES = f"""\
+_LEARNING_NOTE_RULE = """\
+- If the job needs something the candidate does not have and it matters, put a
+  single honest sentence in `learning_note` — willingness to learn, never a
+  claim of experience. That field is the only place a missing skill may appear.
+  Leave it empty if there is no important gap.
+"""
+
+
+def letter_rules(has_gaps: bool = True) -> str:
+    """The system rules, minus any rule about a field that is not in the schema.
+
+    Sending the ``learning_note`` rule alongside a schema with no such field is
+    an instruction the model cannot follow. Harmless for correctness — the
+    schema decides — but a contradiction between the rules and the shape is
+    exactly the kind of thing that makes a model improvise somewhere else.
+    """
+    return f"""\
 Write a cover letter for one job application, on behalf of the candidate whose
 CV appears below.
 
@@ -190,15 +207,16 @@ CV appears below.
 - Never claim a skill, technology, employer, metric, or achievement the CV does
   not already show. The body paragraphs are claims about the candidate and are
   checked against the CV word by word.
-- If the job needs something the candidate does not have and it matters, put a
-  single honest sentence in `learning_note` — willingness to learn, never a
-  claim of experience. That field is the only place a missing skill may appear.
-  Leave it empty if there is no important gap.
+{_LEARNING_NOTE_RULE if has_gaps else ""}\
 - Two or three short paragraphs: why this role, then two concrete strengths
   drawn from the CV with evidence, then a brief close.
 - Under {MAX_WORDS} words in total. Plain prose — no markdown, no bullet points,
   no LaTeX. Professional, specific, and free of filler.
 """
+
+
+#: The full rules, for callers that do not know about gaps (tests, fixtures).
+LETTER_RULES = letter_rules()
 
 
 def letter_prompt(job: Job, plan: TailorPlan | None) -> str:
@@ -286,12 +304,14 @@ class ModelLetterEngine:
     def write(self, master: CvDocument, job: Job, plan: TailorPlan | None = None) -> LetterResult:
         from jobpilot.tailor.prompt import render_master
 
-        system = f"{LETTER_RULES}\n\n{render_master(master)}"
-        messages: list[dict] = [{"role": "user", "content": letter_prompt(job, plan)}]
         # No gaps means learning_note has nothing it may legitimately name, so
         # the field is left out of the schema entirely rather than argued about
-        # in the prompt — which was tried, and lost three times running.
-        schema = CoverLetter.schema_for(has_gaps=bool(plan and plan.gaps()))
+        # in the prompt — which was tried, and lost three times running. The
+        # rules drop the matching instruction for the same reason.
+        has_gaps = bool(plan and plan.gaps())
+        system = f"{letter_rules(has_gaps)}\n\n{render_master(master)}"
+        messages: list[dict] = [{"role": "user", "content": letter_prompt(job, plan)}]
+        schema = CoverLetter.schema_for(has_gaps)
 
         def ask() -> CoverLetter:
             # The gapless schema returns its own type; normalise straight away so

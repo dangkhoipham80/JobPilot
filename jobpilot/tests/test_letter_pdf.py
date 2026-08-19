@@ -225,3 +225,30 @@ def test_the_gapless_letter_converts_back_to_one_type():
     assert isinstance(letter, CoverLetter)
     assert letter.learning_note == ""
     assert "I build things." in letter.body()
+
+
+def test_the_rules_drop_the_note_instruction_when_the_schema_has_no_note():
+    """Telling the model to fill a field the schema does not contain is an
+    instruction it cannot follow. The schema decides, so this is not a
+    correctness bug — but a contradiction between the rules and the shape is
+    what makes a model improvise elsewhere."""
+    from jobpilot.apply.letter import letter_rules
+
+    assert "learning_note" in letter_rules(has_gaps=True)
+    assert "learning_note" not in letter_rules(has_gaps=False)
+    # The rest of the rules survive either way.
+    for rules in (letter_rules(True), letter_rules(False)):
+        assert "Never claim a skill" in rules and "short paragraphs" in rules
+
+
+def test_a_field_added_to_the_letter_body_reaches_both_schemas():
+    """The two models used to copy three fields by hand. A field added to one
+    and forgotten in the other would be dropped in silence by to_letter() if it
+    had a default, or raise at apply time if it did not."""
+    from jobpilot.apply.letter import CoverLetter, _GaplessCoverLetter, _LetterBody
+
+    shared = set(_LetterBody.model_fields)
+    assert shared <= set(CoverLetter.model_fields)
+    assert shared <= set(_GaplessCoverLetter.model_fields)
+    assert set(CoverLetter.model_fields) - shared == {"learning_note"}
+    assert set(_GaplessCoverLetter.model_fields) == shared
