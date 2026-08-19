@@ -253,6 +253,11 @@ def edit_master(
         diff = diff_documents(master, edited, labels=VERSION_LABELS)
     except (EditError, EditApplyError, GuardrailViolation) as exc:
         _finish_run(db, run, {"instruction": instruction, "ok": False, "error": str(exc)})
+        # Commit before re-raising: session_scope() rolls back on the way out, so
+        # without this the failure record is discarded and the Run row keeps the
+        # finished_at=NULL it was created with — a refused edit that reads as
+        # still running, forever. Same shape as tailor_job's failure path.
+        db.commit()
         raise
 
     say("saving version")

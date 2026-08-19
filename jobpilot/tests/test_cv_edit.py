@@ -287,6 +287,27 @@ def test_merge_keeps_the_first_slot_and_removes_the_rest():
     assert out.sections[0].entries[0].items == ["a and c", "b"]
 
 
+def test_two_ops_may_not_claim_the_same_bullet():
+    """apply_edits resolves against the original, so the loser vanishes silently."""
+    report = _check(
+        plan(
+            merges=[
+                Merge(
+                    section_key="experience",
+                    entry_index=0,
+                    item_indices=[0, 2],
+                    text="merged",
+                    source_quote="",
+                    reason="t",
+                )
+            ],
+            rewrites=[rewrite(section_key="experience", entry_index=0, item_index=0, text="rewritten")],
+        )
+    )
+    assert not report.ok
+    assert "already claimed" in " ".join(report.violations)
+
+
 def test_a_new_entry_splits_its_tech_stack():
     """`tech_stack` is one string in the schema and a list on the CV."""
     doc = CvDocument(

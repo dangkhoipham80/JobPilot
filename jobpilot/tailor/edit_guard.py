@@ -47,11 +47,11 @@ from jobpilot.cv.schema import (
     ProjectsSection,
 )
 from jobpilot.tailor.edit import NA, MasterEditPlan
+from jobpilot.tailor.guard import GuardrailViolation, PlanReport, terms_in, unknown_terms, vocabulary
+from jobpilot.textnorm import quote_appears_in
 
 #: Ops that put a *new* claim on the CV and therefore must cite the instruction.
 ADDITIVE_OPS = frozenset({"add_bullet", "add_entry"})
-from jobpilot.tailor.guard import GuardrailViolation, PlanReport, terms_in, unknown_terms, vocabulary
-from jobpilot.textnorm import quote_appears_in
 
 #: Maximal runs of digits. Decimal points and separators are deliberately not
 #: joined: "3.7" yields {"3", "7"}, so a rewrite claiming 3.7 when the CV says
@@ -176,7 +176,33 @@ def check_edit_plan(plan: MasterEditPlan, master: CvDocument, instruction: str) 
         for field_label, text in _texts_of(kind, op):
             _check_text(f"{label} {field_label}", text, op, src, out)
 
+    _check_conflicts(plan, out)
     return PlanReport(violations=out)
+
+
+def _check_conflicts(plan: MasterEditPlan, out: list[str]) -> None:
+    """Two ops may not claim the same bullet.
+
+    ``apply_edits`` resolves every index against the original list, so a plan
+    that both merges bullet 0 and rewrites bullet 0 has a *silent* winner — the
+    merged text simply vanishes, and the diff shows a change the user never sees
+    the other half of. Nothing about that is visible after the fact, so it is
+    refused here rather than resolved by ordering.
+    """
+    claimed: dict[tuple[str, int, int], str] = {}
+    for kind, op in plan.labelled():
+        if kind not in ("rewrite", "merge", "drop"):
+            continue
+        indices = [op.item_index] if kind == "rewrite" else list(op.item_indices)
+        for i in indices:
+            slot = (op.section_key, getattr(op, "entry_index", NA), i)
+            if slot in claimed:
+                out.append(
+                    f"{kind}: bullet {i} of {op.section_key!r} is already claimed by a "
+                    f"{claimed[slot]} — one change per bullet, or the other one is lost"
+                )
+            else:
+                claimed[slot] = kind
 
 
 def _texts_of(kind: str, op) -> list[tuple[str, str]]:

@@ -121,3 +121,29 @@ def test_a_plan_that_invents_a_fact_fails_the_task_and_writes_no_version(client,
     assert task["status"] == "failed"
     assert "40" in task["error"]
     assert client.get("/cv/master/versions", headers=AUTH).json()["total"] == before
+
+
+def test_a_refused_edit_still_closes_its_run_row(client, run_task, worker_db):
+    """``session_scope()`` rolls back on the way out, so the failure must be committed.
+
+    Without that the Run row keeps the ``finished_at=NULL`` it was created with,
+    and a refused edit shows on the Runs page as one that never stopped.
+    """
+    from sqlalchemy import select
+
+    from jobpilot.store.models import Run
+
+    bad = empty_plan().model_copy(
+        update={"new_entries": [_entry("Ghost", ["Ran a 40 person team."])]}
+    )
+    app.dependency_overrides[get_edit_engine] = lambda: FixtureEditEngine(plan=bad)
+
+    r = client.post("/cv/master/edit", json={"instruction": INSTRUCTION}, headers=AUTH)
+    assert run_task(client, r)["status"] == "failed"
+
+    with worker_db() as s:
+        run = s.scalars(select(Run).where(Run.kind == "cv_edit").order_by(Run.id.desc())).first()
+        assert run is not None
+        assert run.finished_at is not None, "a refused edit left its Run row open"
+        assert run.stats["ok"] is False
+        assert "40" in run.stats["error"]
