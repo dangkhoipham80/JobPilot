@@ -107,6 +107,15 @@ export const api = {
   cv: (scope: string) => req<CvDocumentResponse>(cvPath(scope)),
   // Whatever templates ship in the image — a fixed, tiny set, so no paging.
   cvTemplates: () => req<{ templates: CvTemplate[] }>("/cv/templates"),
+  /* Change the Master CV from a sentence. Deliberately not named `editCv` —
+     that already means "re-tailor this job's CV with a reviewer note", and the
+     two do very different things to different documents. Queued like tailoring,
+     so follow the task with `useTask`; a new version appends when it lands. */
+  editMasterCv: (instruction: string) =>
+    req<Task>("/cv/master/edit", {
+      method: "POST",
+      body: JSON.stringify({ instruction }),
+    }),
   saveCv: (scope: string, document: CvDocument) =>
     req<CvDocumentResponse>(cvPath(scope), { method: "PUT", body: JSON.stringify(document) }),
   compileCv: (scope: string) => req<CvCompileResult>(`${cvPath(scope)}/compile`, { method: "POST" }),

@@ -1091,7 +1091,110 @@ build được; `GET /api/cv/templates` trả đúng 2 template trên server th�
 chọn trong UI thật và ô "Accent colour" mờ đi kèm chữ *"not used by the plain template"*.
 **Không Save** — Master CV thật giữ nguyên v12.
 
-**Quyết định để lại:** `plain` dùng Roboto trong `fonts/` qua `fontspec` chứ không dùng font
+**Quyết định để lại (cv-A):** `plain` dùng Roboto trong `fonts/` qua `fontspec` chứ không dùng font
 mặc định của TeX, vì font mặc định thiếu glyph tiếng Việt và chỗ thiếu là **khoảng trắng im
 lặng** trong PDF, không phải lỗi build.
+
+## Phase cv-B — Sửa Master CV bằng câu lệnh + guardrail provenance (2026-08-19)
+
+Việc B. Đường instruction đã có nhưng chỉ cho CV tailored theo job; Master CV thì chưa.
+Phần khó **không phải** là nối dây, mà là guardrail: nó đang đối chiếu với chính Master CV,
+nên áp nguyên vào đây thì **chặn mọi dữ kiện mới**, kể cả dữ kiện thật.
+
+### Đảo ngược câu hỏi, không nới guardrail
+
+Tailor hỏi *"cái này đã có trên CV chưa?"* — đúng, vì lúc tailor thì Master CV **là** toàn bộ
+sự thật. Edit hỏi *"dữ kiện này có phải do user nói không?"* — vì đây chính là chỗ sự thật mới
+được phép đi vào. Cùng một nguyên tắc 1, hai câu hỏi khác nhau, và **chủ sở hữu sự thật khác
+nhau**: user không tự nói dối với chính mình, rủi ro là **model chèn thứ user không nói**.
+
+Cơ chế: **instruction là giấy phép, `source_quote` là trích dẫn**. Op thêm mới bắt buộc có
+quote và quote phải xuất hiện thật trong instruction — dùng lại đúng cơ chế `quote` của inbox
+sync (Phase 19), gom về `jobpilot/textnorm.py` để **một normaliser, hai bên dùng chung** thay
+vì hai bản sẽ lệch.
+
+Bản đầu cấp phép *chỉ theo nội dung quote*: **sai trong thực tế**. Dữ kiện của một entry nằm
+rải khắp câu, nên quote vào mệnh đề "a crawler built with FastAPI" làm chính **tên project** bị
+từ chối. Sửa: quote là *chứng từ* (bắt buộc có thật, để người đọc diff kiểm được), còn *lời
+user nói chung* mới là nguồn cấp phép. Vẫn chặn nguyên vẹn mọi ca nguy hiểm.
+
+### Lỗ hổng metric — thứ guard cũ không thể nhìn thấy
+
+Đo chứ không đoán, trên `unknown_terms` hiện có:
+
+| Câu thêm vào CV | Guard cũ |
+|---|---|
+| "Also experienced with Kafka and **Terraform**." | 🛑 chặn |
+| "Increased throughput by **40%**." | ✅ **lọt** |
+| "**Led a team of 12 engineers**." | ✅ **lọt** |
+| "Built an engine handling **millions of orders**." | ✅ **lọt** |
+
+`_TOKEN_RE` bắt buộc token bắt đầu bằng **chữ cái** ⇒ `40%` không hề được tokenize; văn xuôi
+thường không bao giờ "trông như công nghệ". Ở tailor thì chịu được (schema không cho viết câu
+đó). Ở đây model **có** viết văn xuôi ⇒ phải kiểm chữ số riêng, đối chiếu cùng hai nguồn.
+
+### `400 Schema is too complex` — bài học đắt nhất phiên, và test xanh không thấy gì
+
+831 test xanh với `FixtureEditEngine`; gọi thật thì Anthropic **từ chối schema**. Bisect bằng
+API thật (chi tiết + số liệu ở `jobpilot/llm/CLAUDE.md`): thủ phạm **không phải kích thước** mà
+là **field optional** — `TailorPlan` 4682 byte PASS, schema mới 3153 byte FAIL, tách nhỏ 3291
+byte vẫn FAIL, **bỏ hết default → 3260 byte PASS**. Field có default nở thành nhánh
+`anyOf`/nullable và làm vỡ ngân sách dù schema đọc rất nhỏ.
+
+Trớ trêu: tôi chọn "một model phẳng, tránh union" *vì* sợ khác biệt giữa provider — và chính
+cái phẳng đó là hình dạng bị từ chối. Thiết kế đúng hoá ra cũng là thiết kế an toàn hơn: **mỗi
+loại op một list riêng** (`rewrites`/`merges`/`drops`/`new_bullets`/`new_entries`), object nhỏ,
+mọi field required. Một `drop` giờ **không thể** mang `title` — sai không biểu diễn được, đúng
+tinh thần "đổi sang cấu trúc thay vì thuyết phục model".
+
+### Chạy thật với model thật (2 ca, cả hai vòng đầu)
+
+- **Có chi tiết** → `attempts=1`, guard PASS, quote đúng nguyên văn, `tech_stack` tách đúng.
+- **"Add my Kafka project."** (mơ hồ) → model thêm **0 op**, ghi vào `note` rằng thiếu tên,
+  thời gian, vai trò, công nghệ. **Không bịa gì** — và không cần tới vòng retry, vì prompt làm
+  cho việc từ chối là nước đi tự nhiên.
+
+### Sự cố: test ghi vào DB THẬT
+
+`test_cv_edit_api` bản đầu thiếu fixture `worker_db`. Task body mở session riêng bằng
+`session_scope()` nên override `get_db` **không tới nó** ⇒ nó ghi thẳng vào Postgres thật:
+**v13 của Master CV là một project "JobPilot" bịa**, do tôi tạo ra. Task vẫn báo **done**.
+Hỏng *im lặng*, và chỉ lộ ra vì assert sau đó đọc lại thấy tài liệu không đổi.
+
+Tệ hơn: lần chạy model thật sau đó, chính model **nhìn thấy** entry rác đó và nhắc trong
+`note` — tức là nó đã bắt đầu ảnh hưởng hành vi. Đây đúng là rủi ro "rửa lời khai" mà docstring
+của chính tính năng này cảnh báo. **v13 vẫn đang nằm đó** (lệnh xoá bị permission chặn) — xem
+mục treo ở cuối.
+
+### Bug nguy hiểm nhất phase, chỉ lộ ra lúc verify UI: diff MÙ với nội dung THÊM VÀO
+
+`tailor/diff.py` báo `dropped` và `reordered` nhưng **không hề báo `added`** — vì caller duy
+nhất của nó (tailor) không bao giờ thêm được gì. Thêm 1 entry vào `projects` (3→4) mà
+`diff.changed == False`. Nghiêm trọng ở chỗ **diff chính là thứ user duyệt**: cả lập luận
+"guard chỉ là lexical nên diff bắt buộc là lớp đỡ" sụp đổ nếu diff không hiện thứ vừa thêm —
+user sẽ chấp nhận một entry họ chưa từng nhìn thấy.
+
+Lộ ra vì test happy-path **hỏng** ngay sau khi tôi thêm bước "không đổi gì thì không ghi
+version", mà bước đó ban đầu hỏi `diff.changed`. Sửa: `_order_note` báo cả `added`, thêm status
+`expanded` (nhãn "Added", màu accent để không lướt qua được), và câu hỏi "có đổi gì không"
+chuyển sang **so tài liệu** (`documents_differ`) chứ không hỏi diff — diff là *tóm tắt cho
+người*, mà tóm tắt được phép bỏ sót.
+
+**Bài học chung:** một hàm dùng chung *an toàn vì caller cũ không làm được điều đó* thành lỗ
+hổng ngay khi có caller mới. Sửa ở hàm chung, không viết bản thứ hai.
+
+### Vòng không đổi gì thì không ghi version
+
+Model từ chối làm (instruction mơ hồ) là vòng **thành công** — từ chối là câu trả lời đúng.
+Ghi một version giống hệt bản trước là xếp câu trả lời đó vào loại "đã sửa CV", làm lịch sử
+đầy row diff rỗng. UI phải **nói ra** ("Nothing changed — no new version"), nếu không nút bấm
+trông như không làm gì.
+
+**Verify (chạy thật, đọc output):** 836 test pass; guard chấm bằng 9 ca đối chứng (add hợp lệ /
+thiếu quote / quote diễn giải lại / quote thật nhưng thêm tech lạ / bịa metric / rewrite bịa
+40% / rewrite có số do user đưa / merge / rewrite từ nội dung master) + ca 2 op tranh cùng 1
+bullet; gọi model thật 2 ca; **UI thật trên trình duyệt**: gõ "Add my Kafka project." → model
+trả 0 op, UI hiện "Nothing changed — no new version" kèm `note` giải thích thiếu gì, DB xác
+nhận **vẫn v15, không ghi version nào**, Run row đóng đúng với `no_op: True`. Master CV thật
+không bị đụng vào trong toàn bộ quá trình verify.
 

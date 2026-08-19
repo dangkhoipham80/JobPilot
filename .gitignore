@@ -70,3 +70,6 @@ Thumbs.db
 
 # Runtime logs from the Windows scheduled task (deploy/windows/run-api.cmd)
 logs/
+
+# Scratch from driving the dashboard with Playwright (screenshots, console logs)
+.playwright-mcp/

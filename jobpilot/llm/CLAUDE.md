@@ -19,6 +19,16 @@
   strict — mọi object `additionalProperties:false`, **mọi** field trong `required`). Bẫy ở
   `strictify`: "mọi field required" **không** có nghĩa bỏ field optional — optional được nới
   thành nullable, nếu không model bị ép **bịa** ra `summary`.
+- **`400 Schema is too complex` là do FIELD OPTIONAL, không phải do schema to.** Đo thật
+  (2026-08-19, khi thêm `MasterEditPlan`): `TailorPlan` **4682 byte → PASS**; schema mới
+  **3153 byte → FAIL**; tách nhỏ còn **3291 byte → vẫn FAIL**; **cùng cấu trúc đó bỏ hết
+  default cho mọi field → 3260 byte → PASS**. Field có default ⇒ optional ⇒ nở thành nhánh
+  `anyOf`/nullable, và đủ nhiều nhánh thì vỡ ngân sách *dù schema đọc rất nhỏ*. Luật rút ra:
+  schema gửi cho provider thì **mọi field required**, "không áp dụng" biểu diễn bằng `""`/`-1`
+  chứ không bằng optional — và prompt phải nói rõ điều đó. Hệ quả thứ hai: **đừng gộp một
+  model "phẳng" nhiều field cho mọi trường hợp**; một object lồng nhiều field + nhiều array là
+  đúng hình dạng bị từ chối. Tách thành nhiều list nhỏ (mỗi loại op một list) vừa nhẹ schema
+  vừa khiến tổ hợp vô nghĩa **không biểu diễn được**.
 - **Đo, đừng đoán.** Mọi lượt gọi ghi một row `llm_calls` (**kể cả lượt bị guard từ chối, kể cả
   lượt gọi hỏng**). Đọc bằng `GET /stats/llm` hoặc `jobpilot llm stats`. `jobpilot llm bench
   --task classify|tailor` chạy lại đúng phép đo của Phase 20 (5 email có đáp án / 4 job thật).

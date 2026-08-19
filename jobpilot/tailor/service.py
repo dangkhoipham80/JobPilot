@@ -21,10 +21,18 @@ from sqlalchemy.orm import Session
 from jobpilot.config import get_config
 from jobpilot.cv import store as cv_store
 from jobpilot.cv.compile import compile_document
+from jobpilot.cv.schema import CvDocument
 from jobpilot.store.models import Edit, Job, JobStatus, Run
 from jobpilot.tailor.apply import apply_plan
 from jobpilot.tailor.build import BuildError
-from jobpilot.tailor.diff import CvDiff, diff_documents
+from jobpilot.tailor.diff import VERSION_LABELS, CvDiff, diff_documents
+from jobpilot.tailor.edit import (
+    EditApplyError,
+    EditError,
+    MasterEditEngine,
+    MasterEditPlan,
+    apply_edits,
+)
 from jobpilot.tailor.engine import TailorEngine, TailorError
 from jobpilot.tailor.guard import GuardrailViolation
 from jobpilot.tailor.schema import TailorPlan
@@ -200,6 +208,126 @@ def _build_meta(
         "round": round_no,
         "instruction": instruction,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Master CV editing by instruction
+# --------------------------------------------------------------------------- #
+@dataclass
+class MasterEditOutcome:
+    version: int
+    plan: MasterEditPlan
+    diff: CvDiff
+    attempts: int = 1
+    note: str = ""
+    #: False when the round succeeded but produced no change, so no version was
+    #: appended and ``version`` is the one already current.
+    changed: bool = True
+
+
+def documents_differ(before: CvDocument, after: CvDocument) -> bool:
+    """Did this round actually alter the document?
+
+    Compares the documents themselves rather than asking the diff. The diff is a
+    *summary* built for humans, and summaries are allowed to omit; deciding
+    whether to write a version from one means any blind spot in it silently
+    becomes a lost edit. (It had one: added entries went unreported until this
+    phase, because tailoring cannot add.)
+    """
+    return before.model_dump(mode="json") != after.model_dump(mode="json")
+
+
+def edit_master(
+    db: Session,
+    instruction: str,
+    engine: MasterEditEngine,
+    progress: Callable[[str], None] | None = None,
+) -> MasterEditOutcome:
+    """Apply one natural-language instruction to the Master CV.
+
+    Unlike a tailor round this touches no job and no state machine — it appends a
+    ``cv_versions`` row for ``master`` and stops. There is deliberately **no
+    round limit**: ``edit_max_rounds`` bounds how often one *job* may be
+    re-tailored, but the Master CV is a document someone maintains for years.
+
+    Nothing here is auto-accepted in the dangerous sense: every save is a new
+    version carrying the plan and the diff in ``meta``, so the change can be read
+    and rolled back (Phase 16). The guard's job is to prevent a *silent* untruth;
+    the diff's job is to let the user disagree with a truthful one.
+    """
+    say = progress or (lambda *_: None)
+    master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+
+    run = Run(kind="cv_edit", stats={"instruction": instruction})
+    db.add(run)
+    db.commit()
+
+    try:
+        say("asking the model")
+        result = engine.edit(master, instruction)
+        edited = apply_edits(master, result.plan)
+        diff = diff_documents(master, edited, labels=VERSION_LABELS)
+    except (EditError, EditApplyError, GuardrailViolation) as exc:
+        _finish_run(db, run, {"instruction": instruction, "ok": False, "error": str(exc)})
+        # Commit before re-raising: session_scope() rolls back on the way out, so
+        # without this the failure record is discarded and the Run row keeps the
+        # finished_at=NULL it was created with — a refused edit that reads as
+        # still running, forever. Same shape as tailor_job's failure path.
+        db.commit()
+        raise
+
+    # An instruction the agent declined to act on ("add my Kafka project", with no
+    # detail) is a *successful* round that changed nothing — the refusal is the
+    # right answer. Appending a version identical to the last one would file that
+    # answer as an edit, leaving the history full of rows whose diff is empty and
+    # burying the ones that mean something. Say what happened instead.
+    if not documents_differ(master, edited):
+        _finish_run(
+            db,
+            run,
+            {"instruction": instruction, "ok": True, "version": None, "ops": 0, "no_op": True},
+        )
+        db.commit()
+        current = cv_store.latest_version(db, cv_store.MASTER_SCOPE)
+        return MasterEditOutcome(
+            version=current.version if current else 0,
+            plan=result.plan,
+            diff=diff,
+            attempts=result.attempts,
+            note=result.plan.note,
+            changed=False,
+        )
+
+    say("saving version")
+    meta = {
+        "edit_plan": result.plan.model_dump(mode="json"),
+        "diff": diff.model_dump(mode="json"),
+        "instruction": instruction,
+        "attempts": result.attempts,
+        "note": result.plan.note,
+    }
+    version = cv_store.save_version(
+        db, cv_store.MASTER_SCOPE, edited, author="agent", meta=meta, commit=False
+    )
+    _finish_run(
+        db,
+        run,
+        {
+            "instruction": instruction,
+            "ok": True,
+            "version": version.version,
+            "ops": result.plan.count(),
+            "attempts": result.attempts,
+        },
+    )
+    db.commit()
+    return MasterEditOutcome(
+        version=version.version,
+        plan=result.plan,
+        diff=diff,
+        attempts=result.attempts,
+        note=result.plan.note,
+    )
 
 
 def approve(db: Session, job_id: str) -> Job:

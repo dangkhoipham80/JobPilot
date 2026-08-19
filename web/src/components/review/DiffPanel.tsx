@@ -1,4 +1,4 @@
-import { ArrowRight, Eye, EyeOff, MoveVertical, PenLine, Scissors } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, MoveVertical, PenLine, Plus, Scissors } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { CvDiff, DiffStatus, TailorChange } from "@/types";
@@ -15,6 +15,10 @@ import type { CvDiff, DiffStatus, TailorChange } from "@/types";
 const STATUS: Record<DiffStatus, { label: string; icon: typeof PenLine; className: string }> = {
   rewritten: { label: "Rewritten", icon: PenLine, className: "text-accent border-accent/40 bg-accent/10" },
   trimmed: { label: "Trimmed", icon: Scissors, className: "text-critical border-critical/40 bg-critical/8" },
+  // Content the CV did not have before. Given the accent rather than a quiet
+  // colour deliberately: this is the one status under which a fabricated claim
+  // would appear, so it is the one a reviewer must not skim past.
+  expanded: { label: "Added", icon: Plus, className: "text-accent border-accent/40 bg-accent/10" },
   hidden: { label: "Hidden", icon: EyeOff, className: "text-ink-muted border-border bg-surface-2" },
   reordered: { label: "Reordered", icon: MoveVertical, className: "text-good border-good/40 bg-good/8" },
   unchanged: { label: "Unchanged", icon: Eye, className: "text-ink-muted border-border" },

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Code2, LayoutList, Plus, Save, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
+import { useTask } from "@/hooks/useTask";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import { Pagination } from "@/components/Pagination";
 import { Button, Card, CardBody, Select, Skeleton } from "@/components/ui";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
 import { MarkupLegend } from "@/components/cv/fields";
 import { HeaderEditor } from "@/components/cv/HeaderEditor";
+import { InstructionBox } from "@/components/cv/InstructionBox";
 import { PdfPreview } from "@/components/cv/PdfPreview";
 import { RawLatexEditor } from "@/components/cv/RawLatexEditor";
 import { SectionEditor } from "@/components/cv/SectionEditor";
@@ -60,6 +62,14 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   // once per mount rather than tied to scope/version.
   const templates = useApi(() => api.cvTemplates(), []);
 
+  // Edit-by-instruction (Master only). The task is followed rather than awaited:
+  // it is a model call plus a guard round, which is seconds, not milliseconds.
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editTask = useTask(editTaskId, wsVersion);
+  /** Version the document was on when the edit was queued, for the diff after. */
+  const editBase = useRef<number>(0);
+
   const versionPaging = usePaging("cv-versions");
   const versions = useApi(
     () => api.cvVersions(scope, { limit: versionPaging.size, offset: versionPaging.offset }),
@@ -82,6 +92,30 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
     () => !!draft && !!data && JSON.stringify(draft) !== JSON.stringify(data.document),
     [draft, data],
   );
+
+  const askForEdit = useCallback(
+    async (instruction: string) => {
+      setEditError(null);
+      editBase.current = savedVersion;
+      try {
+        const task = await api.editMasterCv(instruction);
+        setEditTaskId(task.id);
+      } catch (e) {
+        setEditError(e instanceof ApiError ? e.message : "Could not start the edit");
+      }
+    },
+    [scope, savedVersion],
+  );
+
+  // When an edit lands, pull the new version in and put the diff on screen. The
+  // guard proves the model quoted the user; only the diff shows whether it
+  // understood them, so it is opened rather than merely offered.
+  useEffect(() => {
+    if (editTask?.status !== "done") return;
+    const version = Number(editTask.result?.version) || 0;
+    refetch();
+    if (version > editBase.current) setCompare({ base: editBase.current, target: version });
+  }, [editTask?.status, editTask?.result?.version, refetch]);
 
   const save = useCallback(async () => {
     if (!draft) return;
@@ -192,6 +226,9 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
           ) : (
             <>
               <MarkupLegend />
+              {scope === "master" && (
+                <InstructionBox task={editTask} error={editError} onSubmit={askForEdit} />
+              )}
               <TemplatePicker
                 templates={templates.data?.templates ?? null}
                 error={templates.error}

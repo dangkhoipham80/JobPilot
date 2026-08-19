@@ -8,9 +8,10 @@ should still ``encodeURIComponent`` it.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
+from jobpilot import llm
 from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.paging import LimitParam, OffsetParam, page_list
 from jobpilot.api.schemas import (
@@ -23,15 +24,19 @@ from jobpilot.api.schemas import (
     CvVersionDiffOut,
     CvVersionOut,
     Page,
+    TailorIn,
+    TaskOut,
 )
 from jobpilot.api.ws import manager
 from jobpilot.cv import store
 from jobpilot.cv.compile import UnsafeTexPath, build_dir, check_build, check_override, compile_document
 from jobpilot.cv.render import list_templates, render_document, render_tex_snapshot
 from jobpilot.cv.schema import CvDocument
+from jobpilot.orchestrator import TaskBusy, cv_edit_body, queue
 from jobpilot.store.models import Job
 from jobpilot.tailor.build import BuildError
 from jobpilot.tailor.diff import VERSION_LABELS, diff_documents
+from jobpilot.tailor.edit import MasterEditEngine, default_edit_engine
 
 router = APIRouter(prefix="/cv", tags=["cv"], dependencies=[Depends(require_token)])
 
@@ -47,6 +52,59 @@ def _load(db: Session, scope: str) -> CvDocument:
 @router.get("/templates", response_model=CvTemplatesOut)
 def templates() -> CvTemplatesOut:
     return CvTemplatesOut(templates=list_templates())
+
+
+#: Exclusivity key for the queue. Not a job id — the thing two concurrent edits
+#: would corrupt is the master version chain, not a job.
+MASTER_EDIT_KEY = "master-cv"
+
+
+def get_edit_engine() -> MasterEditEngine:
+    """Overridden in tests with a fixture engine (no network, no API key).
+
+    Same pre-flight as the tailor route: a missing key is a 409 now rather than a
+    task that dies a minute later with the same news.
+    """
+    blocked = llm.blocker("tailor")
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
+    return default_edit_engine()
+
+
+@router.post("/{scope}/edit", response_model=TaskOut, status_code=202)
+def edit_cv(
+    scope: str,
+    body: TailorIn,
+    db: Session = Depends(get_db),
+    engine: MasterEditEngine = Depends(get_edit_engine),
+) -> JSONResponse:
+    """Change the Master CV from a natural-language instruction.
+
+    Master scope only, on purpose. A tailored CV is derived from a job and is
+    re-planned in full by ``POST /jobs/{id}/edit``; editing one here would fork
+    it away from the plan that explains it.
+    """
+    if scope != store.MASTER_SCOPE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"only the Master CV is edited this way; use POST /jobs/{scope}/edit",
+        )
+    instruction = body.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=422, detail="instruction must not be empty")
+    _load(db, scope)  # 404 now rather than inside the worker
+
+    try:
+        task = queue.submit(
+            "cv_edit",
+            cv_edit_body(instruction, engine),
+            label=f"edit master CV · {instruction[:40]}",
+            job_id=MASTER_EDIT_KEY,
+            exclusive=True,
+        )
+    except TaskBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(status_code=202, content=TaskOut(**task.to_dict()).model_dump(mode="json"))
 
 
 @router.get("/{scope}", response_model=CvDocumentOut)
@@ -217,6 +275,7 @@ def version_detail(scope: str, version: int, db: Session = Depends(get_db)) -> C
         **CvVersionOut.model_validate(row).model_dump(),
         document=CvDocument.model_validate(row.content),
         tex=row.tex_snapshot or render_tex_snapshot(CvDocument.model_validate(row.content)),
+        meta=row.meta or {},
     )
 
 

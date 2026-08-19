@@ -21,7 +21,7 @@ from pydantic import BaseModel, computed_field
 from jobpilot.cv.schema import CvDocument, ParagraphSection, Section
 
 # Section states, ordered by how much attention they deserve in the UI.
-SectionStatus = str  # "rewritten" | "hidden" | "reordered" | "trimmed" | "unchanged"
+SectionStatus = str  # "rewritten" | "hidden" | "trimmed" | "expanded" | "reordered" | "unchanged"
 
 
 class DiffLabels(BaseModel):
@@ -89,8 +89,18 @@ def _item_labels(section: Section) -> list[str]:
 
 
 def _order_note(kind: str, before: list[str], after: list[str]) -> list[str]:
-    """Describe a list change as dropped items and/or a new ordering."""
+    """Describe a list change as added/dropped items and/or a new ordering.
+
+    Additions were not reported until Master CV editing existed, because
+    tailoring cannot add anything — it only reorders, drops and hides. That made
+    the omission invisible *and* dangerous the moment a second caller could add:
+    a diff that answers "unchanged" for a CV that gained an entry is the one
+    thing the reviewer must never be told, since this diff is what they approve.
+    """
     notes: list[str] = []
+    added = [x for x in after if x not in before]
+    if added:
+        notes.append(f"added {kind}: {', '.join(added)}")
     dropped = [x for x in before if x not in after]
     if dropped:
         notes.append(f"dropped {kind}: {', '.join(dropped)}")
@@ -140,7 +150,12 @@ def _diff_section(before: Section, after: Section, labels: DiffLabels) -> Sectio
             notes += [f"{lbl}: {n}" for n in _order_note("tech stack", old_stack, new_stack)]
 
     if notes:
-        out.status = "trimmed" if any("dropped" in n for n in notes) else "reordered"
+        if any(n.startswith("dropped") or ": dropped" in n for n in notes):
+            out.status = "trimmed"
+        elif any(n.startswith("added") or ": added" in n for n in notes):
+            out.status = "expanded"
+        else:
+            out.status = "reordered"
         out.notes = notes
     return out
 

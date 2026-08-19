@@ -335,7 +335,15 @@ export interface TailorPlan {
   changes: TailorChange[];
 }
 
-export type DiffStatus = "rewritten" | "hidden" | "reordered" | "trimmed" | "unchanged";
+/** `expanded` = the section gained content. Only Master CV edits produce it —
+ *  tailoring can never add — and it is the status that matters most to check. */
+export type DiffStatus =
+  | "rewritten"
+  | "hidden"
+  | "reordered"
+  | "trimmed"
+  | "expanded"
+  | "unchanged";
 
 export interface SectionDiff {
   key: string;
@@ -555,6 +563,12 @@ export interface TaskResult {
   pages?: number | null;
   match_score?: number;
   gaps?: number;
+  /* cv_edit — `note` is what the agent refused to guess at, and is the reason
+     a "done" edit can still be a partial one. */
+  scope?: string;
+  ops?: number;
+  note?: string;
+  changed?: boolean;
   /* apply — `result` is the field that matters: a finished task can still mean
      nothing was sent (dry_run), or that it's now your turn (awaiting_user). */
   channel?: ApplyChannel;

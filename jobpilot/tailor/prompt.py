@@ -157,6 +157,67 @@ def user_prompt(
     return "\n".join(parts)
 
 
+#: Editing the Master CV, not tailoring it. The rules invert: new facts are the
+#: point, but only the user may introduce them. Nothing here asks the model to be
+#: honest as a matter of policy — `tailor/edit_guard.py` refuses anything whose
+#: words or numbers do not trace back to the CV or to the instruction, and this
+#: text exists so the model spends its one retry fixing the right thing.
+EDIT_RULES = """\
+You maintain a software engineer's Master CV. The user tells you, in their own
+words, what to change. You return a list of operations against the outline below.
+
+# Where facts may come from
+The Master CV and THE USER'S INSTRUCTION are your only two sources. You may not
+add a technology, a metric, an employer, a date or an achievement that appears in
+neither. If the instruction is too vague to act on — "add my Kafka project" with
+no detail — do not invent the detail. Do that part not at all and say why in
+`note`. A missing bullet costs the user ten seconds; an invented one costs them
+an interview.
+
+# Quoting is not optional
+Every `add_bullet` and `add_entry` MUST carry `source_quote`: the words of the
+instruction that state the fact, copied exactly. Not a paraphrase, not a summary
+— a substring. It is checked mechanically, and an op whose quote is not found is
+discarded. Use one for `rewrite` too whenever the user gave you a new fact or a
+new number ("my GPA is now 3.7"), because without it that number is rejected.
+
+# The operations — one list each, all of them present, empty when unused
+- `rewrites`    — replace one bullet (`item_index`) or a paragraph's own text.
+- `merges`      — combine the bullets in `item_indices`; the first index keeps the
+                  merged text, the rest are removed. At least two indices.
+- `drops`       — remove the bullets in `item_indices`.
+- `new_bullets` — append a bullet. Needs `source_quote`.
+- `new_entries` — append a job/project. Needs `source_quote`. `tech_stack` is one
+                  comma-separated string, not a list.
+
+Every field of every op must be present. Use `""` for a string that does not
+apply and `-1` for an index that does not apply — never omit a field.
+
+All indices address the outline below, as printed. `entry_index` is -1 when the
+op targets a section rather than an entry inside it; `item_index` is -1 when the
+op targets a paragraph section's own text.
+
+# Writing
+Text uses the CV's inline markup and nothing else: **bold**, `accent`, and
+[label](url). Never raw LaTeX. Keep the user's own phrasing where you can —
+you are recording what they told you, not improving on it.
+"""
+
+
+def edit_system_prompt(master: CvDocument) -> str:
+    """Stable per document — editing rules plus the same indexed outline."""
+    return f"{EDIT_RULES}\n\n{render_master(master)}"
+
+
+def edit_user_prompt(instruction: str) -> str:
+    return (
+        "The user asks for the following change to their Master CV.\n\n"
+        f"INSTRUCTION:\n{instruction}\n\n"
+        "Return the operations that carry it out. Quote the instruction for "
+        "anything you add."
+    )
+
+
 #: What to say about each kind of violation, keyed by how the guard phrases it.
 #: The corrective round is only corrective if it addresses what actually broke —
 #: a fixed sentence about indices is no help to a plan that broke `section_order`,
@@ -199,7 +260,42 @@ _REMEDIES: tuple[tuple[str, str], ...] = (
 )
 
 
-def retry_prompt(violations: list[str]) -> str:
+#: The same idea for Master CV edits. A separate table rather than a separate
+#: function: one corrective round, one way of building it — two copies of
+#: `retry_prompt` would drift the moment either side gained a rule.
+EDIT_REMEDIES: tuple[tuple[str, str], ...] = (
+    (
+        "requires source_quote",
+        "Anything that ADDS to the CV needs `source_quote`: copy the words of the "
+        "instruction that state the fact. If the instruction never states it, drop "
+        "the op and explain in `note` — do not supply the detail yourself.",
+    ),
+    (
+        "does not appear in the instruction",
+        "`source_quote` is matched as a substring of the instruction, ignoring only "
+        "spacing and case. Copy it exactly; a paraphrase always fails.",
+    ),
+    (
+        "number",
+        "Every digit you write must come from the Master CV or from the instruction. "
+        "If the user did not give a figure, write the sentence without one.",
+    ),
+    (
+        "neither in the master cv",
+        "Name only technologies that appear in the Master CV outline or in the user's "
+        "instruction. Do not infer related tools from the ones they named.",
+    ),
+    (
+        "out of range",
+        "Every index addresses the outline above, counting from 0. Use -1 for "
+        "`entry_index`/`item_index` when the op targets a whole section.",
+    ),
+)
+
+
+def retry_prompt(
+    violations: list[str], remedies: tuple[tuple[str, str], ...] | None = None
+) -> str:
     """Sent after a plan fails the guardrails, to get one corrected attempt.
 
     Repeats the rule behind each violation rather than a generic reminder. A
@@ -208,13 +304,14 @@ def retry_prompt(violations: list[str]) -> str:
     """
     listed = "\n".join(f"  - {v}" for v in violations)
     blob = " ".join(violations).lower()
-    remedies = [text for key, text in _REMEDIES if key in blob]
-    if not remedies:
-        remedies = [
+    table = remedies if remedies is not None else _REMEDIES
+    picked = [text for key, text in table if key in blob]
+    if not picked:
+        picked = [
             "Indices must point at content that exists in the Master CV outline, and "
             "the summary may only name technologies the CV already contains."
         ]
     return (
         "That plan was rejected by the CV guardrails:\n"
-        f"{listed}\n\n" + "\n".join(remedies) + "\n\nReturn a corrected plan."
+        f"{listed}\n\n" + "\n".join(picked) + "\n\nReturn a corrected plan."
     )

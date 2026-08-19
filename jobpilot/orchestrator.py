@@ -376,6 +376,35 @@ def tailor_body(job_id: str, engine, instruction: str | None = None) -> TaskBody
     return body
 
 
+def cv_edit_body(instruction: str, engine) -> TaskBody:
+    """One Master CV edit round: plan with the model, guard it, append a version.
+
+    No ``job_id`` and so no per-job exclusivity — the guard against two edits
+    racing is the queue's own ``master-cv`` key (see the route), because the
+    thing they would race over is the version chain, not a job.
+    """
+
+    def body(progress: Progress) -> dict:
+        from jobpilot.store.db import session_scope
+        from jobpilot.tailor import service
+
+        with session_scope() as db:
+            outcome = service.edit_master(db, instruction, engine, progress=progress)
+
+        if outcome.changed:
+            queue.publish({"type": "cv_updated", "scope": "master", "version": outcome.version})
+        return {
+            "scope": "master",
+            "version": outcome.version,
+            "ops": outcome.plan.count(),
+            "attempts": outcome.attempts,
+            "note": outcome.note,
+            "changed": outcome.changed,
+        }
+
+    return body
+
+
 def apply_body(job_id: str, letter_engine=None) -> TaskBody:
     """Dispatch one application to its channel.
 
