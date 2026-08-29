@@ -111,8 +111,9 @@ export function InstructionBox({
             not look like the button did nothing, so it is stated. */}
         {task?.status === "done" && task.result?.changed === false && (
           <p className="mt-3 rounded-lg border bg-surface-2 p-3 text-xs leading-relaxed text-ink-muted">
-            <span className="text-ink">Nothing changed — no new version.</span> The agent would
-            have had to invent something to do this.
+            <span className="text-ink">Nothing changed — no new version.</span> Either the
+            instruction didn't give enough to act on without inventing something, or the result
+            matched what's already there.
           </p>
         )}
 
