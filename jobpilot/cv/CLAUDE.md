@@ -70,6 +70,16 @@ list. `template.json`:
   lạ, **không** chặn được câu văn xuôi bịa quanh những từ đã được cấp phép ("built a scalable
   crawler handling millions of listings" — không token nào lạ). Hai lớp đỡ còn lại là **diff
   bắt buộc xem trước khi chấp nhận** và `note`. Đừng quảng cáo guard này mạnh hơn thực tế.
+- **Dán nguyên một JD vào ô instruction = cấp phép trọn gói mọi tên công nghệ trong đó.**
+  Giấy phép là *cả instruction*, không phải riêng câu trích — nên một instruction dài dạng
+  "update my CV for this job: Requirements: Kafka, Kubernetes, Terraform, ..." cấp phép cho
+  agent viết bullet gộp cả 5 công nghệ đó vào Master CV dù user chưa từng nói mình có kinh
+  nghiệm với chúng, miễn có 1 quote hợp lệ đâu đó. Đây không phải lỗi thực thi, mà là hệ quả
+  trực tiếp của quyết định "giấy phép theo cả câu, không theo riêng quote" (chọn có chủ đích vì
+  quote-only làm chính tên project bị chặn — xem bullet phía trên). Vẫn còn lớp diff + user
+  duyệt để bắt lại — nhưng nếu tính năng "Ask for a change" từng được PR/demo nói là chặn được
+  tên công nghệ lạ, câu đó cần sửa lại: nó chặn được model **tự bịa ra** một tên công nghệ, không
+  chặn được model **sao chép** tên công nghệ từ một JD user dán vào.
 - **Master CV là corpus mà mọi lần tailor sau đối chiếu.** Một câu bịa lọt vào đây sẽ được
   "rửa" thành *đã có trên CV* cho mọi job về sau. Đó là lý do đường này phải **chặt hơn**
   tailor, không phải lỏng hơn.

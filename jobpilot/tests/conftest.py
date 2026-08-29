@@ -79,6 +79,39 @@ def session_factory(engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
+@pytest.fixture(autouse=True)
+def _forbid_unrouted_sessions(monkeypatch):
+    """No test may reach ``DATABASE_URL`` by forgetting ``worker_db``.
+
+    A test posting to a 202-background-task endpoint without requesting
+    ``worker_db`` used to just... write to the real Postgres, silently, because
+    ``session_scope()`` builds its session from the process-wide sessionmaker
+    and nothing pointed that at the test engine. The task still reported "done"
+    (PHASES.md, Phase cv-B — it produced a fabricated Master CV entry in the
+    real database). ``worker_db`` re-patches the same target after this one has
+    already run, so it wins for tests that request it; everything else now
+    fails loudly instead of writing somewhere real.
+
+    Two targets, not one: ``jobpilot.api.deps`` did ``from jobpilot.store.db
+    import get_sessionmaker``, which binds its own name at import time, so
+    patching ``store.db.get_sessionmaker`` alone leaves the request path's
+    ``get_db`` untouched. Nothing currently reaches it -- every test overrides
+    FastAPI's ``get_db`` directly -- but that's exactly the kind of thing a new
+    test could get wrong the same way the original incident did.
+    """
+
+    def _unrouted():
+        raise RuntimeError(
+            "session_scope() (or FastAPI's default get_db) was called without "
+            "worker_db pointing get_sessionmaker() at the test database -- "
+            "request worker_db (or run_task, which depends on it), or override "
+            "get_db via app.dependency_overrides, instead of hitting DATABASE_URL"
+        )
+
+    monkeypatch.setattr("jobpilot.store.db.get_sessionmaker", _unrouted)
+    monkeypatch.setattr("jobpilot.api.deps.get_sessionmaker", _unrouted)
+
+
 @pytest.fixture
 def worker_db(session_factory, monkeypatch):
     """Point the queue's worker threads at the test database.
