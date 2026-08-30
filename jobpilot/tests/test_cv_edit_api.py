@@ -107,6 +107,28 @@ def test_an_instruction_appends_a_version_with_the_plan(client, run_task, edit_e
     assert detail["meta"]["edit_plan"]["new_entries"][0]["source_quote"] == QUOTE
 
 
+def test_an_instruction_carries_a_raw_tex_override_forward(client, run_task, worker_db):
+    """Editing the Master CV must not be a backdoor way to lose hand-written LaTeX.
+
+    ``PUT /cv/{scope}`` already carries a ``tex_override`` forward for exactly
+    this reason: dropping it the moment an unrelated field changes would throw
+    away a human's raw ``.tex`` silently. ``edit_master`` appends a version the
+    same way ``put_cv`` does, so it must do the same thing.
+    """
+    with worker_db() as s:
+        cv_store.save_tex_override(s, cv_store.MASTER_SCOPE, {"cv.tex": r"\documentclass{article}"})
+
+    before = client.get("/cv/master", headers=AUTH).json()
+    assert before["tex_override"] is True
+
+    r = client.post("/cv/master/edit", json={"instruction": INSTRUCTION}, headers=AUTH)
+    task = run_task(client, r)
+    assert task["status"] == "done", task.get("error")
+
+    after = client.get("/cv/master", headers=AUTH).json()
+    assert after["tex_override"] is True, "the raw .tex override was dropped by an unrelated edit"
+
+
 def test_a_plan_that_invents_a_fact_fails_the_task_and_writes_no_version(client, run_task):
     """The guard runs in the worker too — a fixture engine cannot smuggle one past."""
     bad = empty_plan().model_copy(

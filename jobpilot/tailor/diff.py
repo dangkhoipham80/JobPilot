@@ -142,6 +142,16 @@ def _diff_section(before: Section, after: Section, labels: DiffLabels) -> Sectio
     for lbl, entry in zip(_entry_labels(after), getattr(after, "entries", [])):
         original = before_entries.get(lbl)
         if original is None:
+            # A brand-new entry, not a matched one -- the loop above already says
+            # "added entries: <label>", but that's just a name. What the reviewer
+            # is actually approving is the content, so spell it out the same way
+            # a bullet-level addition on an existing entry would be.
+            entry_items = getattr(entry, "items", [])
+            if entry_items:
+                notes.append(f"{lbl}: new bullets: {'; '.join(entry_items)}")
+            entry_stack = getattr(entry, "tech_stack", [])
+            if entry_stack:
+                notes.append(f"{lbl}: new tech stack: {', '.join(entry_stack)}")
             continue
         notes += [f"{lbl}: {n}" for n in _order_note("bullets", original.items, entry.items)]
         old_stack = getattr(original, "tech_stack", [])
@@ -150,10 +160,14 @@ def _diff_section(before: Section, after: Section, labels: DiffLabels) -> Sectio
             notes += [f"{lbl}: {n}" for n in _order_note("tech stack", old_stack, new_stack)]
 
     if notes:
-        if any(n.startswith("dropped") or ": dropped" in n for n in notes):
-            out.status = "trimmed"
-        elif any(n.startswith("added") or ": added" in n for n in notes):
+        # New content wins the badge over a trim in the same section: an addition
+        # is where an untruth would sneak in, so it's the one the reviewer must
+        # not skim past. A section that both gained and lost content still says
+        # "expanded" -- the notes list both, but the badge tracks the riskier one.
+        if any(n.startswith("added") or ": added" in n or ": new " in n for n in notes):
             out.status = "expanded"
+        elif any(n.startswith("dropped") or ": dropped" in n for n in notes):
+            out.status = "trimmed"
         else:
             out.status = "reordered"
         out.notes = notes

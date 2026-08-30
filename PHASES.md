@@ -1198,3 +1198,185 @@ trả 0 op, UI hiện "Nothing changed — no new version" kèm `note` giải th
 nhận **vẫn v15, không ghi version nào**, Run row đóng đúng với `no_op: True`. Master CV thật
 không bị đụng vào trong toàn bộ quá trình verify.
 
+### Review gate (`phase-reviewer`) — CHANGES REQUESTED, hai lần lộ
+
+Review độc lập trên diff bắt được 2 blocker và 4 mục nên sửa, cả hai blocker đều là loại lỗi
+*trông như đúng* mà nguyên tắc xuyên suốt ở đầu file này đã cảnh báo:
+
+- **`edit_master` âm thầm xoá `tex_override`.** `put_cv` và `rollback` đều mang override theo
+  khi ghi version mới; `edit_master` thì không — verify được bằng `FixtureEditEngine`: override
+  `True` trước, `False` sau một câu lệnh sửa hoàn toàn không liên quan tới LaTeX. Sửa: mang
+  override theo giống hệt `put_cv`, comment nói rõ nó vẫn một chiều (đã ghi ở "Nợ kỹ thuật").
+- **Diff của entry mới chỉ có tên, không có nội dung.** Sửa `b09940f` mới đóng được nửa lỗ hổng
+  "diff mù với nội dung thêm vào" — `_diff_section` báo được *rằng* có entry mới, nhưng khi
+  `original is None` thì `continue` thẳng, bullets/tech_stack của entry đó không bao giờ vào
+  `notes`. Đúng chỗ nội dung bịa sẽ nằm nếu guard lexical bỏ sót. Sửa: liệt kê bullets/tech stack
+  của entry mới vào notes thay vì bỏ qua.
+
+Bốn mục nên sửa, không chặn nhưng cùng một tinh thần "đo chứ đừng đoán":
+
+- `_check_conflicts` không phủ được `ParagraphSection` — hai rewrite cùng `summary` với
+  `entry_index`/`item_index` khác nhau (0 vs -1) không bị coi là tranh chấp, dù `apply_edits` áp
+  paragraph rewrite theo `section_key` alone nên bản sau đè bản trước im lặng. Sửa: slot của
+  paragraph rewrite chuẩn hoá về `(key, NA, NA)` bất kể model điền gì vào hai field không dùng
+  tới.
+- Số viết bằng chữ ("twelve", "millions", "half"...) đi vòng qua `_digits` vì regex chỉ bắt chữ
+  số. Thêm `_NUMBER_WORDS` — có chủ đích **bỏ qua one..ten** vì chúng là từ đệm quá phổ biến
+  trong văn xuôi thường ("one of the two"), thêm vào sẽ tạo false positive tốn hơn cái nó bắt
+  được.
+- Badge `trimmed` che mất `expanded` khi một section vừa thêm vừa xoá trong cùng một plan — đổi
+  thứ tự ưu tiên: `expanded` thắng, vì đó là chỗ rủi ro thật nằm.
+- Dán nguyên một JD vào ô instruction cấp phép cho *toàn bộ* danh sách công nghệ trong đó, vì
+  giấy phép là cả instruction chứ không phải riêng quote (quyết định có chủ đích, xem "Đảo ngược
+  câu hỏi" phía trên). Đây **không** phải bug thực thi — là hệ quả đúng của thiết kế đã chọn.
+  Không sửa code (sửa sai sẽ tái phát lỗi quote-vào-sai-mệnh-đề mà thiết kế này đang né), chỉ
+  sửa lại câu tuyên bố cho khớp thực tế ở `jobpilot/cv/CLAUDE.md` và ghi rõ vào `TESTCASES.html`
+  (`TC-045-13`) rằng đây là giới hạn đã biết, chưa đóng.
+
+Cũng nhân dịp này đóng luôn class lỗi đã gây ra sự cố "ghi vào DB THẬT" ở trên, thay vì chỉ vá
+call site đó: thêm fixture `autouse` `_forbid_unrouted_sessions` patch `get_sessionmaker` thành
+hàm luôn `raise`; `worker_db` patch lại **sau** nó nên test nào request `worker_db` vẫn chạy
+bình thường, còn test nào quên thì lỗi ngay tại chỗ thay vì âm thầm ghi vào `DATABASE_URL`. Chạy
+lại toàn bộ suite sau khi thêm guard này để chắc không có test nào đang ngầm dựa vào đường không
+được route — không có, 836/836 vẫn xanh.
+
+**Verify vòng 2:** 4 test mới (nội dung entry mới trong diff, `expanded` thắng `trimmed`, xung
+đột paragraph rewrite, `tex_override` sống sót qua một edit) + 836 cũ = **840 pass**, `ruff` và
+`tsc --noEmit` sạch.
+
+### Review gate vòng 3 — regression thật trong lúc sửa finding của vòng 2
+
+Review lại sau vòng 2 bắt được **blocker mới do chính bản vá vòng 2 gây ra**, cộng 4 mục nhỏ
+chưa chặt:
+
+- **`dirtyRef` chặn nhầm cả đường Restore.** Bản vá vòng 2 gắn guard `dirtyRef` vào effect
+  "adopt server document" — effect đó phục vụ ba việc (nạp lần đầu, refetch sau save, refetch
+  sau edit-task), guard chỉ nên áp cho việc thứ ba. Kết quả: user đang sửa dở (`dirty=true`) mà
+  bấm **Restore** — `rollback()` gọi API thật, version tăng, History mọc row mới, nhưng editor
+  **không đổi gì** vì effect thấy `dirtyRef.current` rồi bỏ qua. Y hệt lớp lỗi "im lặng bỏ qua
+  thứ user vừa yêu cầu" mà chính nguyên tắc 1 cảnh báo — chỉ khác là lần này nạn nhân là thao
+  tác Restore chứ không phải nội dung CV. Sửa: bỏ guard khỏi effect chung (nạp lần đầu / save /
+  rollback / đổi scope đều phải adopt vô điều kiện — đó là lúc user tự yêu cầu), chuyển
+  `dirtyRef` sang đúng một chỗ cần nó — effect edit-task-landing — và khi bị chặn ở đó thì
+  **không** im lặng: giữ lại version bị bỏ qua trong state, hiện banner "agent đã lưu vN, bấm
+  Load để nạp (mất draft) hoặc Save để ghi đè lên trên", diff panel vẫn mở bình thường vì nó đọc
+  từ `cvDiff` API, không đọc từ `draft`.
+- Test cho "expanded thắng trimmed" drop nhầm section (`skills`) trong khi add vào `projects`
+  nên không ghim được ca nó tuyên bố sửa — sửa test để drop và add cùng rơi vào `projects`, kèm
+  assert có mặt note "dropped bullets" để chắc ca đang test đúng là ca tranh chấp thật.
+  Bài học lặp lại đúng thứ ở nguyên tắc xuyên suốt đầu file: **test xanh không chứng minh gì**
+  nếu test không thật sự đi qua nhánh nó tuyên bố kiểm.
+- `_NUMBER_WORDS` hụt dạng động từ quá khứ ("doubled", "halved", "tripled", "quadrupled") — mục
+  đích khai báo là "bắt số viết bằng chữ né `_digits`" mà đường né tự nhiên nhất trên một CV
+  ("Doubled request throughput.") vẫn lọt. Thêm 4 dạng đó vào set, kèm test ghim cả ca chặn được
+  lẫn ca cố tình bỏ qua (`one`..`ten`, để quyết định "loại trừ từ đệm phổ biến" đọc như một lựa
+  chọn có chủ đích, không phải một khoảng trống).
+- `TC-045-13` khai `pin:'test_cv_edit.py'` cho cả hai ca nhưng ca 2 (dán JD → PASS theo thiết
+  kế) chưa có test nào ghim — với một giới hạn **cố ý giữ**, characterization test là thứ duy
+  nhất chặn nó đổi hành vi âm thầm khi có ai sửa `_check_text` sau này. Thêm
+  `test_a_pasted_jd_licenses_every_technology_it_names`.
+- Docstring của `_forbid_unrouted_sessions` khai "No test may reach `DATABASE_URL`" nhưng chỉ
+  patch `jobpilot.store.db.get_sessionmaker` — `jobpilot/api/deps.py` import hàm đó **bằng
+  tên** lúc module load (`from jobpilot.store.db import get_sessionmaker`) nên patch không tới
+  được đường request thật. Không lộ vì mọi test hiện tại đều tự override `get_db` qua
+  `dependency_overrides`, nhưng câu tuyên bố cần khớp thực tế — patch thêm
+  `jobpilot.api.deps.get_sessionmaker` để đóng nốt lớp phòng thủ đó, phòng khi có test sau này
+  quên override.
+
+**Bài học vòng này:** sửa một finding bằng cách thêm guard rộng thì rất dễ mở ra một lỗ mới ở
+chính chỗ khác — "diff mù với nội dung thêm" (vòng 1) và "Restore bị `dirtyRef` chặn nhầm"
+(vòng 2) là cùng một hình dạng lỗi: một effect/hàm dùng chung phục vụ nhiều mục đích, sửa cho
+một mục đích mà quên các mục đích còn lại. Review độc lập trên diff thật — không phải đọc lại
+chính code mình vừa viết — là thứ bắt được cả hai lần.
+
+**Verify vòng 3:** 8 test mới (2 word-number, 1 pin cho JD-paste, 1 sửa lại test expanded-vs-
+trimmed cho đúng ca, 4 test cho vòng trước vẫn còn) + 836 gốc = **844 pass**, `ruff` và
+`tsc --noEmit` sạch. Chưa mở uvicorn + browser thật để xác nhận banner "Load vN" — để lại cho
+lúc verify UI trước khi merge.
+
+### Verify UI thật (vite dev + API/Postgres thật) — và vì sao KHÔNG bấm Restore
+
+Mở CV Studio thật trên Master CV production (v16, dữ liệu thật của user). Sửa một field, xác
+nhận "unsaved changes" + nút Save bật đúng sau khi refactor `dirtyRef` — verify được phần an
+toàn. **Cố ý không** bấm Restore hay chạy edit-task thật lên Master CV production để verify
+regression vòng 2: đó là ghi một version thật vào DB thật chỉ để thử, đúng loại việc mà sự cố
+"ghi vào DB THẬT" ở trên đã cảnh báo — không lặp lại cùng một lỗi để verify bản vá cho chính lỗi
+đó. Phần còn lại verify bằng đọc code + suy luận qua từng effect, ghi rõ là chưa chạy tay.
+
+### Review gate vòng 4 — banner tự nhận "đã lưu" cho một round KHÔNG lưu gì
+
+Review lại bắt được blocker thật ngay trong phần chưa verify tay ở trên: effect edit-landing
+gọi `setEditSkippedVersion(version)` chỉ dựa vào `dirtyRef.current`, không hỏi round đó có thật
+sự ghi version hay không. Nhánh no-op của `edit_master` trả `version` = version **hiện tại**
+(không phải version mới, vì không có version mới), nên `Number(version) || 0` vẫn ra số dương
+bình thường. Kịch bản hỏng: user đang dirty, gõ "Add my Kafka project." → guard từ chối đúng
+thiết kế, 0 version mới ghi — nhưng banner vẫn hiện "The agent saved vN" + nút "Load vN", và
+bấm vào thì `refetch()` nạp lại đúng document cũ, xoá sạch sửa đổi chưa lưu của user để đổi lấy
+**không có gì**. Sửa: gate cả nhánh `refetch()` lẫn nhánh `setEditSkippedVersion` bằng
+`editTask.result?.changed !== false && version > editBase.current` — cùng điều kiện `changed`
+mà `InstructionBox.tsx` đã dùng để tự nó không hiện "Nothing changed" và banner mâu thuẫn nhau
+cùng lúc.
+
+Hai mục nên sửa cùng lượt, cùng gốc "sửa nửa đường":
+
+- **Nút "Load vN" gọi `refetch()` = HEAD, không phải vN.** Vô hại lúc không có gì chen giữa,
+  nhưng nếu user bấm Save trước khi thấy banner (banner bị `save()` clear, nhưng bản thân banner
+  đã hiển thị *trước đó* dựa trên version cũ), hoặc một tab/CLI khác ghi thêm version, bấm "Load
+  vN" sẽ nạp một document khác vN mà UI vẫn ghi nhãn vN. Sửa: gọi thẳng
+  `api.cvVersion(scope, editSkippedVersion)` rồi `setDraft(detail.document)` — đúng nghĩa đen
+  của "Load vN", không phụ thuộc HEAD đang ở đâu.
+- **Copy "Save to add yours on top of it" mô tả sai.** `PUT /cv/{scope}` không merge, nó ghi
+  đè nguyên `draft` — nên làm đúng lời banner (Save sau khi bấm bỏ qua) sẽ **thay** nội dung
+  của agent ở đầu lịch sử bằng bản của user, không phải cộng dồn. Sửa lại câu cho khớp: nói rõ
+  Save sẽ thay vN ở head, vN vẫn còn trong History (append-only, không mất).
+
+**Bài học lặp lại lần ba, cùng một hình dạng:** vòng 1 diff mù nội dung thêm vào; vòng 2
+`dirtyRef` quên effect khác dùng chung; vòng 3 banner quên phân biệt "có lưu" với "không lưu".
+Cả ba đều là **một effect/hàm phục vụ nhiều nhánh, sửa đúng nhánh đang nhìn mà quên nhánh còn
+lại đọc chung một biến**. Review độc lập trên diff thật — không phải tự đọc lại code mình vừa
+viết — là thứ duy nhất bắt được cả bốn vòng.
+
+**Verify vòng 4:** `ruff check jobpilot` sạch, `tsc --noEmit` sạch, 844 test Python vẫn xanh
+(vòng này không đổi code Python, chỉ `CvStudio.tsx`). Không có test frontend tự động cho
+`CvStudio.tsx` (`web/src` chưa có `*.test.tsx` nào) — banner + "Load vN" verify bằng đọc code
+qua ba vòng review độc lập, không phải chạy tay, vì lý do đã nói ở trên (không muốn ghi version
+thử nghiệm vào Master CV production để verify).
+
+### Review gate vòng 5 — chính bản vá "Load vN chính xác" của vòng 4 lại là bug nặng hơn
+
+`loadSkippedEdit` đổi từ `refetch()` sang `api.cvVersion(scope, editSkippedVersion)` +
+`setDraft()` để tránh nạp nhầm HEAD trong ca hiếm (tab khác ghi thêm version giữa lúc banner
+hiện và lúc user bấm Load). Review vòng 5 chỉ ra: cách đó đổi một sai **hiếm** lấy một sai
+**chắc chắn xảy ra mỗi lần bấm Load**. `setDraft` một mình không đụng `data`/`savedVersion`, mà
+`dirty` so `draft` với `data.document` — nên ngay sau Load, `dirty` vẫn `true` (draft = nội dung
+vN, data vẫn là bản trước đó vì không có gì gọi `refetch()`). Header tiếp tục ghi "vN cũ ·
+unsaved changes" dù editor đang hiện *đúng* nội dung agent vừa lưu, và nếu user tin theo badge
+đó mà bấm Save thì `PUT` **luôn append** (không dedupe) → ghi thêm một version giống hệt bản agent
+vừa lưu — đúng thứ mà chính round 3 sửa `edit_master` để tránh (history đầy row trùng lặp), giờ
+tái diễn từ phía UI. `savedVersion` kẹt lại còn kéo lệch `editBase.current` của round edit tiếp
+theo.
+
+Sửa: quay lại `refetch()` cho `loadSkippedEdit` — refetch nuôi effect "adopt server document"
+(đã unconditional từ vòng 3) nên `draft`+`savedVersion` được set **cùng nhau**, `dirty` về đúng
+`false`. Ca hiếm (HEAD đã bị tab khác đẩy qua vN) thì đơn giản là nạp bản mới hơn thật — một sự
+thật, không phải một lỗi hiển thị. Bài học: giữa "chính xác tuyệt đối ở ca hiếm" và "đúng luôn ở
+ca thường", chọn cái sau nếu ca hiếm không phải mất dữ liệu, chỉ là kém tối ưu.
+
+Ba mục nhỏ sửa cùng lượt (đọc ra khi review vòng 5 truy hết toàn bộ writer của `data`/`draft` để
+xác nhận blocker trên):
+
+- Effect edit-landing không gate theo `scope` — instruction chỉ sửa Master, nhưng effect đọc
+  `scope` **lúc nó chạy**, không phải lúc task được gửi đi; user gửi instruction rồi chuyển
+  sang xem CV tailored của một job trước khi task xong sẽ khiến effect refetch/mở diff/hiện
+  banner nhắm vào scope sai. Thêm `if (scope !== "master") return;` và `scope` vào dependency
+  array.
+- Lưu raw LaTeX (tab LaTeX) không xoá `editSkippedVersion` — banner "Your edits were kept" có
+  thể vẫn đứng đó sau khi một save khác (từ tab LaTeX) đã ghi đè đúng draft mà nó tuyên bố giữ.
+  Thêm `setEditSkippedVersion(null)` vào `onSaved` của `RawLatexEditor`.
+- (Không cần sửa riêng: bỏ nhánh `try/catch` quanh `api.cvVersion` cùng lúc với việc bỏ chính
+  lệnh gọi đó — `refetch()` của `useApi` không throw, tự lưu lỗi vào `error` state đã có sẵn
+  đường hiển thị ở đầu component.)
+
+**Verify vòng 5:** `tsc --noEmit` sạch, `ruff check jobpilot` sạch, 844 test Python không đổi
+(vòng này chỉ sửa `CvStudio.tsx`).
+

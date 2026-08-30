@@ -299,6 +299,7 @@ def edit_master(
         )
 
     say("saving version")
+    override = cv_store.latest_tex_override(db, cv_store.MASTER_SCOPE)
     meta = {
         "edit_plan": result.plan.model_dump(mode="json"),
         "diff": diff.model_dump(mode="json"),
@@ -306,6 +307,13 @@ def edit_master(
         "attempts": result.attempts,
         "note": result.plan.note,
     }
+    if override:
+        # Carry the raw-.tex override forward like put_cv does: dropping it here
+        # would silently throw away hand-written .tex the moment an instruction
+        # touched the JSON. Still one-way (jobpilot/cv/CLAUDE.md) -- the field
+        # change lands in the document but the PDF keeps building from the
+        # override until the user clears it -- but that's the UI's job to say.
+        meta[cv_store.TEX_OVERRIDE_KEY] = dict(override)
     version = cv_store.save_version(
         db, cv_store.MASTER_SCOPE, edited, author="agent", meta=meta, commit=False
     )

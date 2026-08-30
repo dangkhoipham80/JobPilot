@@ -51,7 +51,17 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   // undefined = never compiled this session; null = compiled but not checked.
   const [ats, setAts] = useState<AtsReport | null | undefined>(undefined);
 
-  // Adopt the server document whenever a different version arrives.
+  // Adopt the server document whenever a different version arrives: on first
+  // load, on a scope change, and after save()/rollback() -- all three are the
+  // user asking for exactly this. Guarding this effect on "dirty" broke
+  // Restore: rollback() appends a version and refetches, and a blanket guard
+  // made that refetch a silent no-op whenever the user had unsaved edits, so
+  // the History row and header version moved but the editor never did.
+  // The one case this must NOT do is the edit-landing effect below adopting
+  // *without asking* -- that guard lives there instead, narrowly, via
+  // `dirtyRef` (web/src/CLAUDE.md: guard must be useRef, not state, so the
+  // effect reads the current flag without re-running on every keystroke).
+  const dirtyRef = useRef(false);
   useEffect(() => {
     if (!data) return;
     setDraft(data.document);
@@ -69,6 +79,12 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   const editTask = useTask(editTaskId, wsVersion);
   /** Version the document was on when the edit was queued, for the diff after. */
   const editBase = useRef<number>(0);
+  /** Which task's landing this effect has already acted on -- `editTask` stays
+   * "done" in state for the rest of the session, so anything that makes the
+   * effect below re-run (scope changing back to "master", `refetch`'s identity
+   * changing with it) would otherwise resurrect the same banner/diff for a
+   * task that already landed once, using now-stale `editBase`/dirty state. */
+  const handledEditTaskId = useRef<string | null>(null);
 
   const versionPaging = usePaging("cv-versions");
   const versions = useApi(
@@ -86,16 +102,27 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   );
   // A compare pinned to versions of the CV you just navigated away from would
   // be captioned with the new scope's name.
-  useEffect(() => setCompare(null), [scope]);
+  useEffect(() => {
+    setCompare(null);
+    setEditSkippedVersion(null);
+  }, [scope]);
 
   const dirty = useMemo(
     () => !!draft && !!data && JSON.stringify(draft) !== JSON.stringify(data.document),
     [draft, data],
   );
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  /** A version the agent produced while the editor had unsaved edits — not
+   * pulled in automatically, so it doesn't get silently overwritten. */
+  const [editSkippedVersion, setEditSkippedVersion] = useState<number | null>(null);
 
   const askForEdit = useCallback(
     async (instruction: string) => {
       setEditError(null);
+      setEditSkippedVersion(null);
       editBase.current = savedVersion;
       try {
         const task = await api.editMasterCv(instruction);
@@ -107,20 +134,78 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
     [scope, savedVersion],
   );
 
-  // When an edit lands, pull the new version in and put the diff on screen. The
-  // guard proves the model quoted the user; only the diff shows whether it
-  // understood them, so it is opened rather than merely offered.
+  // When an edit lands, pull the new version in and put the diff on screen --
+  // unless the editor has unsaved edits of the user's own right now, in which
+  // case pulling it in would discard those silently (this is the one place
+  // that reads dirtyRef; the general "adopt the server document" effect above
+  // must stay unguarded, or Restore breaks the same way). The diff is opened
+  // either way: it comes from `cvDiff`, not from `draft`, so it stays accurate
+  // even while the editor keeps showing the user's own in-progress version.
+  //
+  // Gated on `changed`, not just a version number: a no-op round (the agent
+  // declined an ambiguous instruction) reports the *current* version, which is
+  // truthy and > 0 same as a real one, and would otherwise pop a banner
+  // claiming the agent saved something it explicitly didn't.
+  //
+  // Gated on scope === "master" too: editing by instruction only ever targets
+  // the Master CV (InstructionBox only renders there), but the task can still
+  // be in flight after the user navigates to a job's tailored scope, and this
+  // effect reads `scope` fresh each run -- without the guard it would refetch,
+  // open a compare, or bank a "load vN" offer against the wrong CV entirely.
+  //
+  // Latched by `handledEditTaskId`: the guards above stop wrong-scope runs but
+  // not *stale* ones -- `editTaskId` and its "done" result sit in state for the
+  // rest of the session, so navigating away and back to "master" re-runs this
+  // effect (scope is a dep, and `refetch`'s identity moves with it) and would
+  // otherwise redo everything against `editBase`/`dirtyRef` values that no
+  // longer describe the current moment. Only a fresh `editTaskId` (a new
+  // instruction) clears the latch.
+  //
+  // `editTask.id !== editTaskId` is not redundant with the above: `useTask`
+  // does not reset its `task` state to null when `taskId` changes, only when
+  // it goes null -- so there is a real commit, right after a second
+  // instruction is submitted, where `editTaskId` already names the new task
+  // but `editTask` still holds the *previous* task's "done" result. Without
+  // this check that stale-but-"done" object burns the latch for the new id
+  // before the new id's own result ever arrives, and the second (and every
+  // later) instruction's landing is silently swallowed.
   useEffect(() => {
+    if (scope !== "master") return;
     if (editTask?.status !== "done") return;
+    if (!editTaskId || editTask.id !== editTaskId) return;
+    if (handledEditTaskId.current === editTaskId) return;
+    handledEditTaskId.current = editTaskId;
     const version = Number(editTask.result?.version) || 0;
+    const changed = editTask.result?.changed !== false && version > editBase.current;
+    if (!changed) return;
+    if (dirtyRef.current) {
+      setEditSkippedVersion(version);
+    } else {
+      refetch();
+    }
+    setCompare({ base: editBase.current, target: version });
+  }, [scope, editTaskId, editTask?.id, editTask?.status, editTask?.result?.version, editTask?.result?.changed, refetch]);
+
+  // Deliberately just a refetch, not a fetch of that exact version: the common
+  // case is that vN is still HEAD (nothing else has appended since), and
+  // refetch() feeds the general "adopt the server document" effect above,
+  // which then sets draft AND savedVersion together so `dirty` correctly goes
+  // back to false. Fetching vN's content directly and only calling setDraft()
+  // was tried and is worse -- it leaves savedVersion/data pointing at the
+  // pre-edit version forever, so `dirty` never clears and Save re-appends a
+  // duplicate of vN on every click. The rarer race (something else moved HEAD
+  // past vN before this runs) just loads that newer real version instead,
+  // which is a real, honest state -- unlike the guaranteed-wrong one above.
+  const loadSkippedEdit = useCallback(() => {
+    setEditSkippedVersion(null);
     refetch();
-    if (version > editBase.current) setCompare({ base: editBase.current, target: version });
-  }, [editTask?.status, editTask?.result?.version, refetch]);
+  }, [refetch]);
 
   const save = useCallback(async () => {
     if (!draft) return;
     setSaving(true);
     setActionError(null);
+    setEditSkippedVersion(null);
     try {
       const res = await api.saveCv(scope, draft);
       setSavedVersion(res.version);
@@ -152,6 +237,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   const rollback = useCallback(
     async (target: number) => {
       setActionError(null);
+      setEditSkippedVersion(null);
       try {
         const res = await api.rollbackCv(scope, target);
         setSavedVersion(res.version);
@@ -219,6 +305,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
               scope={scope}
               version={savedVersion}
               onSaved={() => {
+                setEditSkippedVersion(null);
                 setSavedVersion((v) => v + 1);
                 refetch();
               }}
@@ -228,6 +315,22 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
               <MarkupLegend />
               {scope === "master" && (
                 <InstructionBox task={editTask} error={editError} onSubmit={askForEdit} />
+              )}
+              {editSkippedVersion != null && (
+                <Card>
+                  <CardBody className="flex items-center justify-between gap-3 text-xs text-ink-muted">
+                    <span>
+                      The agent saved <span className="text-ink">v{editSkippedVersion}</span> while
+                      you had unsaved edits here. Your edits were kept — load it to bring it into
+                      the editor (this discards your local edits), or keep editing and Save: that
+                      replaces it at the head of history with your version instead (v
+                      {editSkippedVersion} stays in History either way).
+                    </span>
+                    <Button size="sm" variant="outline" onClick={loadSkippedEdit}>
+                      Load v{editSkippedVersion}
+                    </Button>
+                  </CardBody>
+                </Card>
               )}
               <TemplatePicker
                 templates={templates.data?.templates ?? null}

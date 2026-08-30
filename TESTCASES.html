@@ -387,7 +387,19 @@ P('04.5','CV Studio','Nguồn sự thật của nội dung CV là **JSON structu
   exp:'Build thành công. `plain` dùng `enumitem`, mà `itemize` rỗng là **lỗi LaTeX cứng** (`awesome-cv.cls` thì dễ tính nên không lộ) — section/entry không có bullet phải không sinh `itemize` nào. DB mới seed CV rỗng nên đây là đường user mới đi đầu tiên.',pin:'test_cv_render.py'},
  {id:'TC-045-09',c:'Preview PDF trên trình duyệt thật',r:'hiện PDF, không trống',tag:'manual',
   steps:['Mở `/cv` bằng Chrome/Edge bình thường (không headless)'],
-  exp:'Khung preview hiện PDF. Headless Chrome **không có PDF viewer** nên khung sẽ trống — đó là giới hạn của headless, không phải bug.'}
+  exp:'Khung preview hiện PDF. Headless Chrome **không có PDF viewer** nên khung sẽ trống — đó là giới hạn của headless, không phải bug.'},
+ {id:'TC-045-11',c:'Sửa Master CV bằng câu lệnh, có chi tiết cụ thể',r:'ghi version mới, quote đúng nguyên văn',tag:'auto',
+  steps:['Trong CV Studio, ô "Ask for a change" gõ một câu lệnh có tên project/công nghệ/vai trò cụ thể','Chờ task xong'],
+  exp:'`attempts=1`, guard PASS, diff hiện đúng bullet/tech stack vừa thêm (không chỉ tên entry), version tăng.',pin:'test_cv_edit.py'},
+ {id:'TC-045-12',c:'Câu lệnh mơ hồ bị từ chối, không phải lỗi',r:'0 op, không ghi version mới',tag:'auto',
+  steps:['Gõ "Add my Kafka project." (không tên, không thời gian, không vai trò)'],
+  exp:'Model trả 0 op, UI hiện "Nothing changed — no new version" kèm `note` giải thích thiếu gì. DB **không** tăng version, Run đóng với `no_op: True`.',pin:'test_cv_edit_api.py'},
+ {id:'TC-045-13',c:'Guardrail provenance chặn được bịa, không chặn được sao chép từ JD',r:'đúng như tài liệu, không quảng cáo quá',tag:'auto',
+  steps:['Ca 1: instruction không nhắc "Terraform" nhưng bullet chèn "Terraform" → phải bị chặn','Ca 2: instruction dán nguyên JD liệt kê nhiều công nghệ, bullet chèn cả danh sách kèm quote hợp lệ → theo thiết kế hiện tại vẫn PASS (rủi ro đã ghi ở jobpilot/cv/CLAUDE.md, chưa đóng)'],
+  exp:'Ca 1: `check_edit_plan` trả violation, plan bị từ chối. Ca 2: PASS — đây là giới hạn đã biết của guard lexical, không phải bug; lớp đỡ còn lại là diff + user duyệt.',pin:'test_cv_edit.py'},
+ {id:'TC-045-14',c:'Sửa Master CV bằng instruction không làm mất `tex_override` đang bật',r:'override vẫn còn sau khi edit',tag:'auto',
+  steps:['`PUT /cv/master/tex` để bật raw-LaTeX override','Gõ một instruction hợp lệ trong "Ask for a change"','`GET /cv/master`'],
+  exp:'`tex_override: true` vẫn đúng sau khi edit — carry-forward giống `PUT /cv/{scope}`, không âm thầm xoá bản `.tex` viết tay (dù vẫn một chiều: field vừa đổi trong JSON chưa tới PDF cho tới khi override được gỡ).',pin:'test_cv_edit_api.py'}
 ]);
 
 P('05','Tailor engine + CV Review','Guardrail chống bịa là **hình dạng schema**, không phải luật để agent tự giác: plan chỉ đánh theo chỉ số của Master CV, free text duy nhất là `summary`.',[

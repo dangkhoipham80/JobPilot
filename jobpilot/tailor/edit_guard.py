@@ -30,7 +30,9 @@ requires a token to start with a letter — so "increased throughput by 40%" and
 tailoring, where the schema forbids writing such a sentence at all, but here the
 model does write prose, and an invented metric is the single most damaging thing
 it could put on a CV. Digits are therefore checked directly, against the same
-two sources.
+two sources — and so are the number words a model could use to say "12" without
+writing a digit (``_NUMBER_WORDS``), since "twelve" is exactly as unbacked as
+"12" if neither source ever said it.
 """
 
 from __future__ import annotations
@@ -58,6 +60,53 @@ ADDITIVE_OPS = frozenset({"add_bullet", "add_entry"})
 #: 3.5 is caught on the "7".
 _DIGITS = re.compile(r"\d+")
 
+#: Number words worth checking like digits. Deliberately excludes one..ten and
+#: "quarter"/"couple": those double as ordinary English filler ("one of the",
+#: "a couple of things") and would false-positive on prose that isn't claiming
+#: a metric at all. What's left still catches "led a team of twelve" or
+#: "cut costs by half" written out instead of numerals — the exact way a model
+#: could dodge ``_digits`` while still inventing a figure.
+_NUMBER_WORDS = frozenset(
+    {
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "sixty",
+        "seventy",
+        "eighty",
+        "ninety",
+        "dozen",
+        "dozens",
+        "hundred",
+        "hundreds",
+        "thousand",
+        "thousands",
+        "million",
+        "millions",
+        "billion",
+        "billions",
+        "half",
+        "halved",
+        "double",
+        "doubled",
+        "triple",
+        "tripled",
+        "quadruple",
+        "quadrupled",
+    }
+)
+_WORD_RE = re.compile(r"[a-zA-Z]+")
+
 __all__ = ["check_edit_plan", "GuardrailViolation", "PlanReport"]
 
 
@@ -73,7 +122,11 @@ class _Sources:
 
 
 def _digits(text: str) -> set[str]:
-    return set(_DIGITS.findall(text or ""))
+    return set(_DIGITS.findall(text or "")) | _number_words(text)
+
+
+def _number_words(text: str) -> set[str]:
+    return {w.lower() for w in _WORD_RE.findall(text or "") if w.lower() in _NUMBER_WORDS}
 
 
 def _master_text(doc: CvDocument) -> str:
@@ -176,11 +229,11 @@ def check_edit_plan(plan: MasterEditPlan, master: CvDocument, instruction: str) 
         for field_label, text in _texts_of(kind, op):
             _check_text(f"{label} {field_label}", text, op, src, out)
 
-    _check_conflicts(plan, out)
+    _check_conflicts(plan, by_key, out)
     return PlanReport(violations=out)
 
 
-def _check_conflicts(plan: MasterEditPlan, out: list[str]) -> None:
+def _check_conflicts(plan: MasterEditPlan, by_key: dict, out: list[str]) -> None:
     """Two ops may not claim the same bullet.
 
     ``apply_edits`` resolves every index against the original list, so a plan
@@ -188,14 +241,25 @@ def _check_conflicts(plan: MasterEditPlan, out: list[str]) -> None:
     merged text simply vanishes, and the diff shows a change the user never sees
     the other half of. Nothing about that is visible after the fact, so it is
     refused here rather than resolved by ordering.
+
+    A paragraph section is a special case of the same rule: ``apply_edits``
+    applies rewrites to it by ``section_key`` alone (there is only one piece of
+    text to replace, so ``entry_index``/``item_index`` are unused there), so two
+    rewrites of the same paragraph must collide on that key even if the model
+    filled the unused indices differently.
     """
     claimed: dict[tuple[str, int, int], str] = {}
     for kind, op in plan.labelled():
         if kind not in ("rewrite", "merge", "drop"):
             continue
-        indices = [op.item_index] if kind == "rewrite" else list(op.item_indices)
+        section = by_key.get(op.section_key)
+        if kind == "rewrite" and isinstance(section, ParagraphSection):
+            indices: list[int] = [NA]
+        else:
+            indices = [op.item_index] if kind == "rewrite" else list(op.item_indices)
+        entry_index = NA if isinstance(section, ParagraphSection) else getattr(op, "entry_index", NA)
         for i in indices:
-            slot = (op.section_key, getattr(op, "entry_index", NA), i)
+            slot = (op.section_key, entry_index, i)
             if slot in claimed:
                 out.append(
                     f"{kind}: bullet {i} of {op.section_key!r} is already claimed by a "

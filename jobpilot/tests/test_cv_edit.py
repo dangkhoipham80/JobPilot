@@ -106,11 +106,60 @@ def test_a_real_quote_does_not_license_unrelated_technology():
     assert "Terraform" in " ".join(report.violations)
 
 
+def test_a_pasted_jd_licenses_every_technology_it_names():
+    """Known, accepted limitation (jobpilot/cv/CLAUDE.md), pinned so it can only
+    change on purpose. The license is the *whole instruction*, not the quoted
+    span (`test_a_paraphrased_quote_is_refused` shows why quote-only licensing
+    was tried and rejected: it broke on facts spread across a sentence, like a
+    project's own name). Pasting a full JD is the same mechanism working exactly
+    as designed, just on text the user didn't compose themselves -- diff review
+    is the layer meant to catch this, not the guard."""
+    jd = (
+        "Please update my CV for this job I found: Requirements: 5+ years with "
+        "Kafka, Kubernetes and Terraform, experience running Snowflake pipelines on GCP."
+    )
+    report = _check(
+        plan(
+            new_entries=[
+                new_entry(
+                    title="",
+                    items=["Kafka, Kubernetes, Terraform, Snowflake and GCP pipelines."],
+                    quote="5+ years with Kafka, Kubernetes and Terraform",
+                )
+            ]
+        ),
+        instruction=jd,
+    )
+    assert report.ok, report.violations
+
+
 def test_an_invented_metric_is_refused():
     """The hole the tailor guard cannot see: digits are not 'technology-looking'."""
     report = _check(plan(new_entries=[new_entry(items=["Crawled 50000 jobs per day."])]))
     assert not report.ok
     assert "50000" in " ".join(report.violations)
+
+
+def test_a_spelled_out_metric_is_refused_like_a_digit_would_be():
+    """`_digits` only sees "12", not "twelve" -- both are equally unbacked."""
+    report = _check(plan(new_entries=[new_entry(items=["Led a team of twelve engineers."])]))
+    assert not report.ok
+    assert "twelve" in " ".join(report.violations)
+
+
+def test_a_past_tense_multiplier_is_refused_too():
+    """"Doubled" is "double" plus a verb ending, not a different number."""
+    report = _check(plan(new_entries=[new_entry(items=["Doubled request throughput."])]))
+    assert not report.ok
+    assert "doubled" in " ".join(report.violations)
+
+
+def test_small_cardinal_number_words_are_deliberately_not_checked():
+    """one..ten double as ordinary English filler ("one of the two") -- checking
+    them would false-positive on prose that isn't claiming a metric at all. This
+    pins the trade-off so it reads as a choice, not a gap, if it changes later."""
+    report = _check(plan(new_entries=[new_entry(items=["One of the two services it talks to."])]))
+    assert report.ok, report.violations
 
 
 def test_a_number_the_user_gave_is_accepted():
@@ -325,6 +374,80 @@ def test_the_diff_reports_an_added_entry():
     projects = [s for s in diff.sections if s.key == "projects"][0]
     assert projects.status == "expanded"
     assert any("added entries: JobPilot" in n for n in projects.notes), projects.notes
+
+
+def test_the_diff_reports_the_new_entrys_content_not_just_its_name():
+    """A name in the diff is not something a reviewer can approve or reject.
+
+    `_diff_section` matched new entries by label and skipped them outright when
+    no original existed to pair with -- the bullets a fabricated entry would
+    carry never reached the one artifact the guardrail's second layer relies on.
+    """
+    from jobpilot.tailor.diff import VERSION_LABELS, diff_documents
+
+    master = sample_document()
+    edited = apply_edits(
+        master,
+        plan(
+            new_entries=[
+                new_entry(
+                    title="JobPilot",
+                    items=["Crawled fifty thousand jobs a day.", "Cut hiring time by half."],
+                    tech="FastAPI, Postgres",
+                )
+            ]
+        ),
+    )
+    diff = diff_documents(master, edited, labels=VERSION_LABELS)
+
+    projects = [s for s in diff.sections if s.key == "projects"][0]
+    joined = " ".join(projects.notes)
+    assert "Crawled fifty thousand jobs a day." in joined
+    assert "Cut hiring time by half." in joined
+    assert "FastAPI" in joined and "Postgres" in joined
+
+
+def test_expanded_status_wins_over_trimmed_in_the_same_section():
+    """An addition is the riskier event and must not hide behind a trim badge.
+
+    Both events have to land in the *same* section for this to test anything:
+    dropping from a different section than the one gaining an entry would pass
+    under the old precedence too, since it's the "projects" SectionDiff whose
+    status is asserted.
+    """
+    from jobpilot.tailor.diff import VERSION_LABELS, diff_documents
+
+    master = sample_document()
+    edited = apply_edits(
+        master,
+        plan(
+            drops=[Drop(section_key="projects", entry_index=0, item_indices=[0], reason="t")],
+            new_entries=[new_entry(items=["Something new."])],
+        ),
+    )
+    diff = diff_documents(master, edited, labels=VERSION_LABELS)
+    projects = [s for s in diff.sections if s.key == "projects"][0]
+    assert any(": dropped bullets" in n for n in projects.notes), projects.notes
+    assert projects.status == "expanded"
+
+
+def test_two_rewrites_of_the_same_paragraph_conflict_even_with_different_indices():
+    """`apply_edits` applies a paragraph rewrite by section_key alone, so two
+    rewrites of `summary` collide on the document regardless of what the model
+    filled into the unused entry_index/item_index fields -- the guard has to
+    collide on the same terms or the second rewrite silently eats the first."""
+    report = check_edit_plan(
+        plan(
+            rewrites=[
+                rewrite(section_key="summary", entry_index=-1, item_index=-1, text="first"),
+                rewrite(section_key="summary", entry_index=-1, item_index=0, text="second"),
+            ]
+        ),
+        sample_document(),
+        INSTRUCTION,
+    )
+    assert not report.ok
+    assert "already claimed" in " ".join(report.violations)
 
 
 def test_the_diff_still_reports_a_dropped_bullet():

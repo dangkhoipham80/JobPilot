@@ -177,9 +177,11 @@ an interview.
 # Quoting is not optional
 Every `add_bullet` and `add_entry` MUST carry `source_quote`: the words of the
 instruction that state the fact, copied exactly. Not a paraphrase, not a summary
-— a substring. It is checked mechanically, and an op whose quote is not found is
-discarded. Use one for `rewrite` too whenever the user gave you a new fact or a
-new number ("my GPA is now 3.7"), because without it that number is rejected.
+— a substring. It is checked mechanically, and a plan containing an op whose
+quote is not found is rejected outright — the whole plan, not just that op —
+and you get one corrective retry with the reason. Use a quote for `rewrite` too
+whenever the user gave you a new fact or a new number ("my GPA is now 3.7"),
+because without it that number is rejected.
 
 # The operations — one list each, all of them present, empty when unused
 - `rewrites`    — replace one bullet (`item_index`) or a paragraph's own text.
