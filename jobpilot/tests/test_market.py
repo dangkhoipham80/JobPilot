@@ -43,6 +43,263 @@ def test_the_unit_between_a_range_and_its_dash_is_not_lost():
     assert (both.min, both.max) == (15e6, 25e6)
 
 
+def test_a_tilde_is_a_range_separator_like_a_dash():
+    """"2000～3000 USD" reported 2000-2000. Boards write the separator as a
+    tilde, and a CJK-aware input method turns it full-width, so the label reads
+    as a range to a human and as one number to the parser — the ceiling is
+    replaced by the floor with nothing to show for it."""
+    for label, low, high in (
+        ("2000～3000 USD", 2000, 3000),
+        ("1500~2500 USD", 1500, 2500),
+        ("1000 ~ 2000 USD", 1000, 2000),
+        ("2000〜3000 USD", 2000, 3000),
+        # The real minus sign turns up too, and is not the ASCII hyphen.
+        ("2000 − 3000 USD", 2000, 3000),
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (low, high), label
+
+
+def test_a_currency_symbol_on_the_second_bound_does_not_break_the_range():
+    """"$2,000 - $3,000" reported 2000-2000. The unit was allowed *after* the
+    first figure but nothing was allowed *before* the second, and US boards
+    write the symbol on both. Same failure as "15tr - 25tr", other end."""
+    for label in (
+        "$2,000 - $3,000",
+        "$2,000-$3,000",
+        "USD 2,000 - USD 3,000",
+        "US$ 2,000 - US$ 3,000",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (2000, 3000), label
+
+
+def test_an_open_ended_floor_does_not_invent_a_ceiling():
+    """"160 triệu+" reported 160-160, which asserts a maximum the ad never gave.
+    The mirror of "up to 3000" leaving min None: an unstated bound stays None,
+    because every such ad otherwise understates the top of the market by exactly
+    the amount that made it worth posting."""
+    for label in ("160 triệu+", "15tr+", "20 triệu trở lên", "Trên 30 triệu"):
+        parsed = parse_salary(label)
+        assert parsed.max is None, f"{label!r} invented a ceiling of {parsed.max}"
+        assert parsed.min is not None
+    assert parse_salary("160 triệu+").min == 160e6
+    assert parse_salary("2000 USD or more").min == 2000
+    # Punctuation after the "+" is still the open-ended reading.
+    assert parse_salary("160 triệu+ (gross)").max is None
+
+
+def test_a_plus_that_introduces_a_bonus_is_not_an_open_range():
+    """"2000 USD + phụ cấp" is a base plus allowances, not "2000 or more" — and
+    it is common enough in Vietnamese ads that reading it as an open range would
+    be a guess rendered as a fact. It stays a point salary.
+
+    The signal is the space *before* the plus, not what follows it. Keying on
+    what follows gets "15tr+ gross" and "2000+ USD" backwards — both are open
+    ranges whose plus happens to precede a word."""
+    for label in ("2000 USD + phụ cấp", "3000 USD + bonus", "Lương cứng 15 triệu + hoa hồng"):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} was read as an open range"
+    for label in ("15tr+ gross", "2000+ USD", "5.000.000+ VNĐ"):
+        assert parse_salary(label).max is None, f"{label!r} invented a ceiling"
+
+
+def test_an_open_floor_also_needs_a_figure_written_as_money():
+    """The money fence went on the floor/ceiling keywords but not on this branch,
+    so any "<digits>+" still qualified: "20 triệu, 3+ năm kinh nghiệm" reported a
+    floor of 3 million and put a 20tr job in the "<$500" band. Years of
+    experience are the most common thing a "+" is attached to in a job ad."""
+    for label in (
+        "20 triệu, 3+ năm kinh nghiệm",
+        "2000 USD, 5+ years experience",
+        # The first fix left an "or ends the label" alternative on this branch,
+        # so dropping the trailing words let the same bug straight back in.
+        # An anchor is not a marker — the rule this module states about itself.
+        "20 triệu, 3+",
+        "2000 USD, 5+",
+        "Lương 20 triệu, KN 3+",
+    ):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} read a year count as pay"
+    assert parse_salary("20 triệu, 3+ năm kinh nghiệm").min == 20e6
+    assert parse_salary("2000 USD, 5+ years experience").min == 2000
+    assert parse_salary("20 triệu, 3+").min == 20e6
+
+
+def test_an_open_floor_on_a_bonus_is_not_the_salary():
+    """Being money is not the same as being pay. "Lương 20 triệu, thưởng 500k+"
+    contains a well-formed open floor — the bonus — and taking it put a 20tr job
+    at 500 million, near the top of the market instead of the middle.
+
+    Position alone does not separate that from "Thưởng 2 tháng, 160 triệu+",
+    where the open floor *is* the salary: requiring the floor to be the label's
+    first figure fixes the first case and breaks twelve of the second. What
+    separates them is whether the *earlier* figure is money at all."""
+    for label in (
+        "Lương 20 triệu, thưởng 500k+",
+        "Lương 20 triệu, thưởng 500k trở lên",
+        "20 triệu, phụ cấp 2 tr+",
+        "2000 USD, bonus 401k+",
+    ):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} reported the bonus as the floor"
+    assert parse_salary("Lương 20 triệu, thưởng 500k+").min == 20e6
+
+    # ...but an open floor preceded by a number that is *not* money still wins.
+    for label in ("Thưởng 2 tháng, 160 triệu+", "Lương tháng 13, 15tr+"):
+        assert parse_salary(label).max is None, label
+    assert parse_salary("Thưởng 2 tháng, 160 triệu+").min == 160e6
+
+
+def test_a_bound_we_cannot_read_is_unknown_not_a_point_salary():
+    """"Lương USD, up to 3000" came back as 3000–3000 — a floor invented for a
+    label that explicitly declared none, which is the mirror image of the bug
+    this whole change exists to fix. When the label states a bound and no figure
+    beside it reads as money, the honest answer is None."""
+    assert parse_salary("Lương USD, up to 3000") is None
+    # A "net"/"gross" qualifier between figure and currency is still readable.
+    assert parse_salary("Thưởng 2 tháng, up to 3000 net USD").max == 3000
+    # A bound keyword that appears *after* the salary is not talking about it.
+    assert parse_salary("Lương 20 triệu, trên 2 năm kinh nghiệm").min == 20e6
+
+
+def test_and_up_does_not_match_inside_a_longer_word():
+    """"3000 USD and updated benefits" is not an open range."""
+    parsed = parse_salary("3000 USD and updated benefits")
+    assert parsed.min == parsed.max == 3000
+
+
+def test_a_zero_bound_is_a_figure_not_a_missing_group():
+    """The figure is picked from whichever alternative matched. Chaining those
+    with `or` would read a captured "0" as "nothing matched" and fall through to
+    the next group, which is None — so the helper tests against None instead."""
+    assert parse_salary("up to 0 USD").max == 0
+    assert parse_salary("$0+").min == 0
+
+
+def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():
+    """"trên" and "dưới" are among the commonest words in Vietnamese ads and
+    almost never introduce a salary. Letting them take any following number made
+    "Lương 20 triệu, trên 2 năm kinh nghiệm" report a floor of 2 million — a
+    20tr job dropped into the "<$500" band — and made "20 triệu, dưới 30 tuổi"
+    use an *age* as the pay ceiling. Both are worse than the bare-figure branch
+    they displaced, and both fail plausibly."""
+    for label in (
+        "Lương 20 triệu, trên 2 năm kinh nghiệm",
+        "20 triệu, dưới 30 tuổi",
+        # The first fence also accepted a bare figure at end of label, which let
+        # the same sentence back in with the words reordered. An anchor is not
+        # a unit.
+        "Lương 20 triệu, tuổi dưới 30",
+        "Lương 20 triệu, trên 2",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (20e6, 20e6), label
+    assert parse_salary("Lương 25 triệu (trên 3 năm KN)").min == 25e6
+
+    # ...while the same keywords still work when they do introduce money.
+    assert parse_salary("trên 30 triệu").min == 30e6
+    assert parse_salary("dưới 30 triệu").max == 30e6
+    assert parse_salary("up to 25 million VND").max == 25e6
+    assert parse_salary("dưới 5.000.000 đ").max == 5e6
+
+
+def test_a_trailing_dollar_sign_is_a_currency_marker_like_a_leading_one():
+    """"$" counted as money before a figure but not after it, because the marker
+    list had been written out three times and the copies drifted. So "Up to
+    2000$" invented a floor of 2000 — breaking this module's own stated rule
+    that "up to" has no minimum — while "Up to 2000 USD" did not."""
+    capped = parse_salary("Up to 2000$")
+    assert capped.min is None and capped.max == 2000
+    floored = parse_salary("từ 2000$")
+    assert floored.min == 2000 and floored.max is None
+    # And the keyword must still find the right figure when another precedes it.
+    assert parse_salary("Thưởng 2 tháng, up to 3000 dollars").max == 3000
+
+
+def test_a_range_also_needs_a_bound_written_as_money():
+    """Widening the separators to include "~" turned "2 ~ 3 năm kinh nghiệm"
+    into a salary range, on labels the previous version read correctly — a year
+    range is written exactly like a pay range apart from the unit. So a range
+    needs at least one of its four marker slots filled. That also closes the
+    plain-dash version of the same thing, which was wrong before this change."""
+    for label in (
+        "Lương 20 triệu, 2 ~ 3 năm kinh nghiệm",
+        "20 triệu, kinh nghiệm 2~3 năm",
+        "Lương 20 triệu, tuổi 25 ~ 30",
+        "20 triệu, 2 − 3 năm KN",
+        "Lương 20 triệu, 2 - 3 năm kinh nghiệm",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (20e6, 20e6), label
+
+    # ...and a rejected range must not stop the scan, or the real one is missed.
+    real = parse_salary("2 - 3 năm KN, lương 20 - 60 triệu")
+    assert (real.min, real.max) == (20e6, 60e6)
+
+
+def test_a_trailing_marker_may_be_bracketed_or_written_us_dollar():
+    """"US$" counted as money in the range pattern but not in the bounded one,
+    because the leading-marker list still had two copies. The label then fell to
+    the bare-figure branch, which took the *first* number in the string — the
+    "2" of "Thưởng 2 tháng"."""
+    for label, ceiling in (
+        ("Thưởng 2 tháng, up to 3000 (USD)", 3000),
+        ("Thưởng 2 tháng, up to 3000 US$", 3000),
+        ("Lương thử việc 85%, up to 3000 (USD)", 3000),
+        ("Lương tháng 13, up to 2000 US$", 2000),
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (None, ceiling), label
+    # A leading marker makes an open floor money too, same as a trailing one.
+    assert parse_salary("$2000+ (gross)").max is None
+
+
+def test_k_is_not_read_as_thousands_and_that_is_deliberate():
+    """"$50k" parses as 50, which is wrong by 1000x. It stays that way because
+    the cheap fix is worse than the bug: a whole-label "this says k" flag, like
+    the one `millions` uses, multiplies bounds that were already correct —
+    "401k" and "thưởng 500k" sit beside ordinary salaries all the time. That
+    was tried, and "$800 - $900/month, 401k" came back as 800,000–900,000 a
+    month. Doing it properly means binding the scale to the figure carrying the
+    "k". This test pins the limitation so the shortcut is not retried."""
+    assert parse_salary("$50k - $70k/year").min == 50
+    # The shape that made the whole-label flag unsafe.
+    beside = parse_salary("$800 - $900/month, 401k")
+    assert (beside.min, beside.max) == (800, 900)
+    bonus = parse_salary("1,500 - 2,500 USD, thưởng 500k")
+    assert (bonus.min, bonus.max) == (1500, 2500)
+
+
+def test_min_does_not_match_inside_another_word():
+    """The floor keyword had no word boundary, so "Lương admin 5 triệu" matched
+    the "min" inside "admin" and became an open-ended floor of 5 triệu."""
+    parsed = parse_salary("Lương admin 5 triệu")
+    assert (parsed.min, parsed.max) == (5e6, 5e6)
+
+
+def test_salary_shapes_seen_in_the_live_database():
+    """Formats taken from real crawled rows rather than invented, because every
+    other case in this file was written from imagination and this module's worst
+    failures have all been shapes nobody thought to imagine.
+
+    "Up to $3500" comes from a real ITviec title ("SA Java - Up to $3500") and
+    is the one that was genuinely broken: the "$" sits between the keyword and
+    the figure, the old pattern wanted a digit there, so the label fell through
+    to the bare-figure branch and came back as 3500–3500 — a floor invented for
+    an ad that gave none. "$ 1,500-2,500 /tháng" is a VietnamWorks salary field,
+    symbol detached by a space."""
+    capped = parse_salary("Up to $3500")
+    assert (capped.min, capped.max) == (None, 3500)
+
+    vnw = parse_salary("$ 1,500-2,500 /tháng")
+    assert (vnw.min, vnw.max, vnw.currency, vnw.period) == (1500, 2500, "USD", "month")
+
+    assert parse_salary("20 - 60 triệu").max == 60e6  # TopCV
+    hourly = parse_salary("$42/hr")  # WeWorkRemotely title
+    assert (hourly.min, hourly.period) == (42, "hour")
+
+
 def test_a_salary_with_no_currency_is_refused():
     """"20 - 60" is millions of dong or dollars an hour depending on the board.
     Guessing would render a coin flip as a fact."""

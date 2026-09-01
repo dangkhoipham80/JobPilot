@@ -1576,3 +1576,197 @@ test đặt **file thật ở path tương đối thật**, và kiểm lại r�
 tiếng Việt × 2 template × 2 engine, cover letter (`cover_letter.tex`, entry khác `cv.tex`) × 2
 engine — 1 trang, dấu tiếng Việt đủ. `jobpilot cv build` qua CLI ra `[OK: 1 page]` bằng tectonic.
 Build lần đầu ~3 phút (tải gói TeX về cache), lần sau **~1–2.5s offline** (`-C` không cần mạng).
+
+## Parser lương — nhánh một-số nuốt mất cái trần, ba lần nữa (2026-09-01)
+
+Cùng một hình dạng bug với ca `"15tr - 25tr"` ở Phase 21, và nó **tái phát ba lần**. Gốc chung:
+khi `_RANGE` không khớp, `parse()` **rơi xuống nhánh `_ANY_NUM`** và báo **sàn thành cả hai đầu**.
+Không có lỗi, không có cảnh báo — chỉ là một cái trần bị thay bằng cái sàn.
+
+| Nhãn | Trước | Sau |
+|---|---|---|
+| `2000～3000 USD` | 2000–2000 | 2000–3000 |
+| `$2,000 - $3,000` | 2000–2000 | 2000–3000 |
+| `160 triệu+` | 160tr–160tr | 160tr–**None** |
+| `Lương admin 5 triệu` | sàn mở 5tr | 5tr–5tr |
+
+1. **Tilde.** Dấu ngăn không chỉ là gạch ngang: board ghi `~`, và bộ gõ CJK biến nó thành
+   full-width `～` hoặc wave dash `〜`. `_SEP` giờ gồm `- – — − ~ ～ 〜 to đến` (thêm cả **dấu trừ
+   thật** U+2212, khác hyphen ASCII).
+2. **Ký hiệu tiền ở đầu số thứ hai.** Unit được cho phép *sau* số thứ nhất (`15tr - 25tr`) nhưng
+   không có gì được phép *trước* số thứ hai, trong khi board Mỹ ghi `$` ở **cả hai** đầu. Đúng
+   một bug với ca `15tr`, chỉ khác đầu.
+3. **Sàn mở bịa ra trần.** `160 triệu+` ra `min=max=160tr` — **khẳng định một cái trần mà tin
+   không hề nói**. Đối xứng với luật "up to 3000 ⇒ min=None" đã có sẵn: bound không được nói thì
+   để `None`. ⚠️ Nói cho đúng mức: ca này **không đổi con số nào hôm nay**, vì `usd_month` lấy
+   trung bình các bound *đã biết* nên cả hai cách đều ra 6299.21, và `market.py` chỉ đọc
+   `usd_month`. Sửa vì mô hình hoá sai, **không** vì biểu đồ đang sai — hai ca range ở trên mới
+   là chỗ con số thật sự đổi.
+4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
+   "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
+
+**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BẢY VÒNG mới kín.** Hàng rào
+"con số chỉ là tiền khi được viết như tiền" lắp thiếu chỗ ba lần liên tiếp, mỗi lần đều là **đúng
+cái lỗi đang đi diệt**:
+
+1. Thêm `trên`/`dưới` vào `_MIN_ONLY`/`_MAX_ONLY` mà **không đòi con số dính đơn vị tiền**. Hai
+   từ đó phổ biến bậc nhất trong boilerplate tin Việt ⇒ `"Lương 20 triệu, trên 2 năm kinh
+   nghiệm"` báo sàn **2 triệu** (job 20tr rơi vào band `<$500`), `"20 triệu, dưới 30 tuổi"` lấy
+   **tuổi** làm trần lương. **Tệ hơn** nhánh một-số nó thay thế — nhánh đó lấy số đầu tiên, mà
+   label lương luôn dẫn bằng lương.
+2. Bản vá đầu của hàng rào lại nhận **"số nằm cuối label"** là đủ ⇒ đúng câu đó **đảo trật tự
+   chữ** là lọt lại: `"Lương 20 triệu, tuổi dưới 30"` → trần 30tr. **Một cái neo không phải là
+   một đơn vị.**
+3. `_MIN_SUFFIX` — nhánh **mới nhất, do chính lần sửa này thêm vào** — bị bỏ quên ngoài hàng rào,
+   nên mọi `<số>+` vẫn thành sàn mở: `"20 triệu, 3+ năm kinh nghiệm"` báo sàn **3 triệu**. Mà số
+   năm kinh nghiệm chính là thứ hay đi kèm dấu `+` nhất trong một tin tuyển dụng.
+4. `_RANGE` cũng bị bỏ ngoài hàng rào, mà lần sửa này lại **nới `_SEP` thêm `~ ～ 〜 −`** ⇒
+   `"Lương 20 triệu, 2 ~ 3 năm kinh nghiệm"` ra `2tr–3tr`. **Khoảng số năm kinh nghiệm được viết
+   y hệt khoảng lương**, chỉ khác cái đơn vị — nới separator mà không có hàng rào là mở cửa cho
+   đúng thứ đó, và lần này nó làm **hỏng những nhãn `main` đọc đúng**.
+
+Cộng một ca cùng gốc: **bảng ký hiệu tiền bị chép ra ba bản, và ba bản đã lệch nhau.** `$` là ký
+hiệu hợp lệ **sau** con số ở bản này mà không ở bản kia ⇒ `"Up to 2000$"` bịa ra sàn 2000 trong
+khi `"Up to 2000 USD"` thì không — vi phạm chính cái luật ghi trong docstring của module. Giờ chỉ
+còn **một** `_MONEY` dùng chung. (Cùng bài học với `normalize_title` ở `crawler/CLAUDE.md`: hai bộ
+luật song song sẽ lệch, chỉ là lúc nào.)
+
+Và marker **đứng trước** thì lệch thêm một lần nữa: `US$` là tiền ở `_RANGE` (có test ghim hẳn)
+nhưng không phải tiền ở `_MAX_ONLY`, nên `"Thưởng 2 tháng, up to 3000 US$"` rơi xuống `_ANY_NUM`
+và báo lương = **2** (số của "2 tháng"). Lệch **ngay trong chính commit tuyên bố đã gộp bảng**.
+
+**Luật cuối**: con số là tiền khi có **ký hiệu đứng trước** (`$2000`, `USD 2000`, `US$ 2000`)
+**hoặc marker đứng sau** (`2000 USD`, `2000 (USD)`, `20 triệu`, `2000$`). Marker đứng trước nằm ở
+**một** hằng `_LEAD`, marker đứng sau ở **một** hằng `_MONEY`, và **cả bốn** nhánh
+(`_RANGE`/`_MIN_ONLY`/`_MAX_ONLY`/`_MIN_SUFFIX`) dựng từ hai hằng đó. Nhánh thứ năm `_ANY_NUM`
+**cố ý** không có hàng rào — nó là chỗ mọi nhãn "không phải tiền" rơi xuống, và ở đó lấy **số đầu
+tiên** mới là câu trả lời đúng.
+
+⚠️ **Thêm keyword / separator / hình dạng mới mà không đi qua `_LEAD`/`_TRAIL` là cách cả bốn
+regression trên lọt vào.** Không có ngoại lệ nào đáng.
+
+**Regression thứ NĂM — và lần này câu trả lời đúng là REVERT, không phải sửa tiếp.** Tôi tự ý
+thêm `k` = nghìn (không nằm trong bug được báo; nhặt từ một gợi ý của reviewer). Cờ `thousands`
+làm **toàn nhãn** giống `millions`, nên nó nhân ×1000 cả những bound **vốn đã đúng**:
+`"$800 - $900/month, 401k"` → 800.000–900.000/tháng; `"800 - 1200 USD + thưởng 500k"` còn tệ hơn
+— chỉ bound thấp bị scale, rồi guard `low > high` **đảo hai đầu**, giấu luôn dấu hiệu bất thường.
+`401k` là chữ chuẩn của board Mỹ, `"thưởng 500k"` là boilerplate tin Việt.
+
+`millions` sống được như cờ toàn nhãn **chỉ vì** tin VN có quy ước "số trần cạnh *triệu* là
+triệu". `k` không có quy ước đó. Làm đúng = gắn scale vào **chính figure mang chữ `k`** — một
+thay đổi riêng, cho một bug **có sẵn trên `main`** và **không** nằm trong phạm vi được giao. Nên:
+revert, ghi vào docstring của module như **giới hạn đã biết**, và có test ghim để không ai thử
+lại lối tắt.
+
+Kèm một bài học về test: test tôi viết cho guard của `k` là **test rỗng** — nó assert trên
+`"1,500 - 2,500 USD"`, nhãn **không hề có chữ `k`**, nên `thousands` không bao giờ bật và assert
+pass bất kể guard đúng hay sai. Đúng loại "test xanh không chứng minh gì" mà `CLAUDE.md` cảnh báo,
+lần thứ hai trong cùng một task (lần trước là test ghim cái mock của `shutil.which`).
+
+**Regression thứ SÁU**: `_MIN_SUFFIX` vẫn nhận `|\s*$` — "hết label" làm marker tiền — tức đúng
+cái mà banner comment ngay phía trên nó **cấm**, và đúng bài học đã ghi ở vòng 2 ("một cái neo
+không phải là một đơn vị"). Bỏ mấy chữ đuôi đi là bug vòng 3 lọt lại: `"20 triệu, 3+"` → sàn
+3 triệu, `"2000 USD, 5+"` → sàn 5 USD. Bằng chứng nó là **dead weight** chứ không phải đánh đổi:
+xoá nhánh đó rồi chạy lại `test_market.py` → **0 test fail**. Đã xoá + ghim test.
+
+### Chỗ QUYẾT ĐỊNH KHÔNG SỬA, và lý do là số đo chứ không phải sự thận trọng
+
+Còn một họ nhãn branch **tệ hơn `main`**: marker tiền **tách rời cả hai bound** —
+`"Lương USD, 1,500 - 2,500"` ra `1500–1500` (main: `1500–2500`). Fence đòi marker **dính** vào
+một trong hai bound, mà cái này nằm tách phía trước cả cụm.
+
+Đã **thử sửa**: cho phép dấu câu giữa marker và số (`_GAP = [\s:,)\]]*`). Kết quả đo được:
+sửa đúng 3 ca detached-marker, **và đẻ ra một false positive mới** —
+`"Lương USD, 2 - 3 năm kinh nghiệm"` → `2–3`. Tức là **đổi một lỗi lấy một lỗi khác**, đúng cái
+trade đã thua sáu lần trong chính task này. ⇒ **Revert, giữ fence chặt, ghi thành giới hạn thứ
+ba** trong docstring của module. Tin ghi currency **cạnh** con số — gần như toàn bộ, và **tất cả**
+nguồn JSON-LD — không bị ảnh hưởng.
+
+**Regression thứ BẢY**: hàng rào chỉ hỏi *"đây có phải tiền không"*, **không bao giờ hỏi *"đây có
+phải TIỀN LƯƠNG không"***. `_MIN_SUFFIX` (nhánh mới của branch này) vì thế bám vào **tiền thưởng**:
+`"Lương 20 triệu, thưởng 500k+"` → sàn **500 triệu** — đẩy job 20tr lên gần **đỉnh** biểu đồ, tệ
+hơn mọi ca trước (các ca trước chỉ đẩy xuống đáy). Và ở chiều ngược lại, `"Lương USD, up to 3000"`
+→ `3000|3000`: keyword trượt fence rồi rơi xuống `_ANY_NUM`, mà nhánh đó trả `min == max` ⇒ **bịa
+ra đúng cái bound mà tin tuyên bố là mở** — gương ngược của chính fix headline (`160 triệu+`).
+
+Sửa: (1) `_MIN_SUFFIX` chỉ thắng khi **không có figure NÀO viết-như-tiền đứng trước nó**. (2)
+Keyword bound đã xuất hiện mà không đọc được figure tiền ⇒ trả `None` ("không biết"), **không** để
+`_ANY_NUM` trả lời thay bằng một mốc bịa.
+
+⚠️ Cách phân biệt **theo vị trí** ("floor phải là số đầu tiên") là **sai và đã bị bỏ**: nó sửa 4 ca
+`thưởng 500k+` nhưng **làm hỏng 12 ca** kiểu `"Thưởng 2 tháng, 160 triệu+"` (ở đó floor **chính là**
+lương). Tín hiệu đúng không phải vị trí mà là **figure đứng trước có phải tiền hay không**:
+`"20 triệu"` là tiền, `"2 tháng"` / `"tháng 13"` / `"85%"` thì không.
+
+### Sai sót về PHƯƠNG PHÁP ĐO — tự phát hiện, phải ghi lại
+
+Ba vòng đầu tôi chạy differential bằng `git stash` rồi copy `salary.py` ra so sánh. **`git stash`
+chỉ cất phần CHƯA COMMIT** — mà lúc đó đã có 3–5 commit trên branch ⇒ cái tôi gọi là "main" thực
+ra là **HEAD trừ đi mấy sửa đang dở**. Nên con số *"230 nhãn, 25 ca đổi, toàn cải thiện"* ở các
+vòng trước **không phải** so với `main`; nó chỉ so với chính branch vài phút trước đó. Lấy `main`
+thật phải là `git show main:jobpilot/crawler/salary.py`.
+
+Đo lại cho đúng, với oracle "**nhiễu không được làm đổi đáp án**" (parse riêng phần lương sạch rồi
+so với khi có nhiễu bao quanh) trên 289 nhãn:
+
+| | khớp đáp án sạch |
+|---|---|
+| `main` | 141/289 — **49%** |
+| branch | 283/289 — **98%** |
+
+**142 ca tốt hơn, 0 ca tệ hơn.** 6 ca còn lại đều là giới hạn #2 đã ghi (`"Thưởng 2 tháng, 2000
+USD"` → 2), và `main` cũng sai y hệt.
+
+**Giới hạn còn lại, nói thẳng**: fence không cứu được nhãn **dẫn đầu bằng số không-phải-tiền** —
+`"2 - 3 năm KN, 20 triệu"` vẫn ra 2 triệu, vì `_ANY_NUM` (cố ý không fence, phải có ai đó trả lời)
+lấy số đầu tiên. `main` cũng sai ca này. "Lấy số đầu tiên" đúng nhiều hơn sai, nhưng là
+**heuristic, không phải bảo đảm**.
+
+**Chỗ tinh tế, và bản đầu sửa NGƯỢC**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó
+giới thiệu một khoản cộng thêm, rất phổ biến trong tin Việt. Đọc nó thành "2000 trở lên" là **đổi
+một con số sai lấy một con số sai khác**.
+
+⚠️ Regex đúng là **`(?<!\s)\+`** — tín hiệu nằm ở **khoảng trắng ĐỨNG TRƯỚC** dấu `+`: dính số
+là sàn mở, rời ra là khoản cộng thêm. Bản đầu viết `\+(?!\s*\w)` (**SAI, đừng copy**), key vào
+thứ **đứng sau** dấu `+`, nên đọc ngược `"15tr+ gross"` và `"2000+ USD"`: cả hai đều là sàn mở mà
+vẫn bị bịa trần.
+
+### Verify
+
+**+16 test mới** (877 tổng sau khi merge cùng phase tectonic). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+`parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
+tức **+25%** vào đúng con số dựng nên median của `/market`.
+
+### Verify trên DỮ LIỆU THẬT (chạy crawl mới, không chỉ nhãn tự bịa)
+
+Cả 6 vòng review đều chỉ đo trên **nhãn tổng hợp** — đúng bẫy #1 của repo. Nên đã **crawl thật**
+thêm (ITviec/VietnamWorks/LinkedIn/Arbeitnow/Greenhouse; TopCV bị 403 như đã biết) → 196 job.
+
+Nhãn lương **thật** thu được, cộng chuỗi lương nằm trong **title** (moi từ `payload`):
+
+| Nhãn thật | nguồn | `main` | branch |
+|---|---|---|---|
+| `20 - 60 triệu` | TopCV | 20tr–60tr | 20tr–60tr |
+| `$ 1,500-2,500 /tháng` | VietnamWorks | 1500–2500 | 1500–2500 |
+| `IT Salary Report 2024-2025` | ITviec | `None` | `None` |
+| `$42/hr` | WWR (title) | 42, hour | 42, hour |
+| **`Up to $3500`** | **ITviec (title `SA Java - Up to $3500`)** | **3500–3500** ❌ | **None–3500** ✅ |
+
+⇒ **Có một ca thật sự sai trên `main` và branch sửa đúng**: `$` nằm **giữa keyword và con số**, mà
+pattern cũ đòi ngay sau `up to` phải là chữ số ⇒ rơi xuống nhánh một-số và **bịa ra một cái sàn**
+cho tin vốn không hề nói sàn — vi phạm chính luật ghi ở đầu module. Đây là **format có thật**, không
+phải nhãn tôi nghĩ ra. Đã thêm test `test_salary_shapes_seen_in_the_live_database` ghim đúng 4 nhãn
+thật này, có ghi rõ xuất xứ.
+
+Bốn nhãn còn lại **giống hệt nhau** ở hai bên ⇒ branch **không phá** nhãn thật nào.
+
+**Nói thẳng về mức độ ảnh hưởng thực tế**: corpus local hiện chỉ có **2 nhãn lương parse được**
+trên **196 job** (57% là LinkedIn — không có lương; ITviec giấu lương sau login; TopCV 403), và
+cả hai nhãn đó **không dính** bug nào trong bảng trên. Nên `/market` ở máy này **chưa hề vẽ sai** —
+guardrail `covered/total` đang báo đúng *"Only 2 job(s) list a parsable salary"*. Phần lớn bug đã
+sửa vẫn **đang tiềm ẩn**; chỉ ca `Up to $3500` là đã quan sát được ngoài đời. Không có chuyện
+"chart đang sai và giờ đã đúng".
+
+⚠️ **`salary_range` là dữ liệu đã ghi trong `payload`, không tính lại lúc đọc.** Sửa parser xong
+**bắt buộc `backfill --force`** (đã chạy: 181 job), nếu không `/market` vẫn vẽ bằng số cũ và mọi
+verify đều "xanh" một cách vô nghĩa.

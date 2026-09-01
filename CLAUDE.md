@@ -187,10 +187,11 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | deploy | FastAPI serve `web/dist` **same-origin** (API xuống `/api`), siết token + khoá gate email, systemd/timer + backup, CI/CD | `api/static.py`, `api/security.py`, `deploy/`, `.github/workflows/ci.yml`, `DEPLOY.md` |
 | cv-A | Template thứ hai **`plain`** (ATS-first, bỏ `.cls`) + picker trong Studio; template tự khai `template.json` | `cv/templates/plain/`, `cv/render.py`, `web/src/components/cv/TemplatePicker.tsx` |
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
+| salary | Parser lương: sàn không còn bị báo thành cả hai đầu; hàng rào **"số chỉ là tiền khi được viết như tiền"** (`_LEAD`/`_TRAIL`) áp cho cả 4 nhánh match | `crawler/salary.py`, `analytics/CLAUDE.md` |
 | cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** mặc định, Docker thành đường lui (`cv.engine`); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
 | i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 17 namespace / 751 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 
-858 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+877 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
