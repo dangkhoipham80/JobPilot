@@ -73,6 +73,10 @@
   ⇒ `millions` sống được như cờ toàn nhãn **chỉ vì** tin VN có quy ước "số trần cạnh *triệu* là
   triệu"; `k` không có quy ước tương đương. Làm đúng = gắn scale vào **chính figure mang chữ
   `k`**, là một thay đổi riêng. Có test ghim giới hạn này để không ai thử lại lối tắt.
+- **Marker tiền TÁCH RỜI cả hai bound thì fence không thấy** — `"Lương USD, 1,500 - 2,500"` ra
+  `1500–1500`. Đã thử nới (cho dấu câu xen giữa marker và số) và **đo được là đổi lỗi lấy lỗi**:
+  sửa 3 ca detached-marker nhưng đẻ ra `"Lương USD, 2 - 3 năm kinh nghiệm"` → `2–3`. Giữ fence
+  chặt, ghi thành giới hạn. **Đừng nới lại mà không đo.**
 - **Fence KHÔNG cứu được nhãn dẫn đầu bằng số không-phải-tiền.** `"2 - 3 năm KN, 20 triệu"` ra
   **2 triệu**: `_RANGE` từ chối `"2 - 3"` (đúng), rồi `_ANY_NUM` lấy số đầu tiên. `_ANY_NUM` cố
   ý **không** có fence — phải có ai đó trả lời — và "lấy số đầu tiên" đúng nhiều hơn sai vì nhãn

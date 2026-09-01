@@ -109,11 +109,35 @@ def test_an_open_floor_also_needs_a_figure_written_as_money():
     so any "<digits>+" still qualified: "20 triệu, 3+ năm kinh nghiệm" reported a
     floor of 3 million and put a 20tr job in the "<$500" band. Years of
     experience are the most common thing a "+" is attached to in a job ad."""
-    for label in ("20 triệu, 3+ năm kinh nghiệm", "2000 USD, 5+ years experience"):
+    for label in (
+        "20 triệu, 3+ năm kinh nghiệm",
+        "2000 USD, 5+ years experience",
+        # The first fix left an "or ends the label" alternative on this branch,
+        # so dropping the trailing words let the same bug straight back in.
+        # An anchor is not a marker — the rule this module states about itself.
+        "20 triệu, 3+",
+        "2000 USD, 5+",
+        "Lương 20 triệu, KN 3+",
+    ):
         parsed = parse_salary(label)
         assert parsed.min == parsed.max, f"{label!r} read a year count as pay"
     assert parse_salary("20 triệu, 3+ năm kinh nghiệm").min == 20e6
     assert parse_salary("2000 USD, 5+ years experience").min == 2000
+    assert parse_salary("20 triệu, 3+").min == 20e6
+
+
+def test_and_up_does_not_match_inside_a_longer_word():
+    """"3000 USD and updated benefits" is not an open range."""
+    parsed = parse_salary("3000 USD and updated benefits")
+    assert parsed.min == parsed.max == 3000
+
+
+def test_a_zero_bound_is_a_figure_not_a_missing_group():
+    """The figure is picked from whichever alternative matched. Chaining those
+    with `or` would read a captured "0" as "nothing matched" and fall through to
+    the next group, which is None — so the helper tests against None instead."""
+    assert parse_salary("up to 0 USD").max == 0
+    assert parse_salary("$0+").min == 0
 
 
 def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():

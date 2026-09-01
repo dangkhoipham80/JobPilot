@@ -17,7 +17,7 @@ than no number.
 * **No inventing a midpoint.** "Up to 3000 USD" has no minimum. It stays
   ``None`` rather than becoming 0, which would drag every average down.
 
-Two known limitations, written down rather than half-fixed:
+Three known limitations, written down rather than half-fixed:
 
 * **"k" is not read as thousands.** "$50k - $70k/year" parses as 50 to 70, which
   is wrong by 1000x on the commonest US-board format. The obvious fix -- a
@@ -32,6 +32,14 @@ Two known limitations, written down rather than half-fixed:
   money, and the fallback then takes the first figure in the string. The
   fallback is right far more often than not -- salary labels lead with the
   salary -- but it is a heuristic, not a guarantee.
+* **A marker detached from both bounds is not seen.** "Lương USD, 1,500 - 2,500"
+  gives 1500-1500, because the fence wants a marker touching one of the bounds
+  and this one sits in front of the whole phrase. Allowing punctuation between
+  marker and figure was tried: it fixes exactly this shape and breaks "Lương
+  USD, 2 - 3 năm kinh nghiệm", which it then reads as a pay range of 2 to 3.
+  That is the same trade this module has now lost six times, so the fence stays
+  tight and this stays a gap. Ads that write the currency beside a figure are
+  unaffected, which is nearly all of them and all of the JSON-LD sources.
 """
 
 from __future__ import annotations
@@ -115,8 +123,9 @@ _MAX_ONLY = re.compile(rf"\b(?:up\s*to|tới|đến|max|dưới|under|below)\s*{
 # "From 2000 USD", "từ 15 triệu", "trên 30 triệu", "at least 2000 USD"
 _MIN_ONLY = re.compile(rf"\b(?:from|từ|starting|min|at\s*least|ít\s*nhất|trên)\s*{_BOUND}", re.I)
 
-#: "or more", spelled out.
-_OPEN = r"(?:trở\s*lên|or\s*more|and\s*up|or\s*above)"
+#: "or more", spelled out. The trailing guard keeps "and up" from matching
+#: inside "and updated benefits".
+_OPEN = r"(?:trở\s*lên|or\s*more|and\s*up|or\s*above)(?!\w)"
 
 # The floor written as a suffix: "160 triệu+", "$2000+", "20 triệu trở lên".
 #
@@ -135,8 +144,13 @@ _MIN_SUFFIX = re.compile(
     rf"(?:{_LEAD}\s*({_NUM})(?:(?<!\s)\+|\s*{_OPEN})"
     # "15tr+", "160 triệu+", "2000 USD or more" -- money by the trailing marker
     rf"|({_NUM}){_TRAIL}\s*(?:(?<!\s)\+|{_OPEN})"
-    # "2000+ USD", "5.000.000+ VNĐ", "2000+" -- plus bound, marker after it
-    rf"|({_NUM})(?<!\s)\+(?:{_TRAIL}|\s*$))",
+    # "2000+ USD", "5.000.000+ VNĐ" -- plus bound to the figure, marker after it
+    #
+    # No "or end of label" alternative here, however tempting: this branch is
+    # where "20 triệu, 3+" would come back as a floor of 3 million. An anchor is
+    # not a marker, which is the rule stated at the top of this section -- and it
+    # got broken here first, on the branch added last.
+    rf"|({_NUM})(?<!\s)\+{_TRAIL})",
     re.I,
 )
 _ANY_NUM = re.compile(_NUM)
@@ -146,8 +160,8 @@ def _figure(m: re.Match) -> str:
     """The captured figure, from whichever alternative carried the marker.
 
     ``_BOUND`` and ``_MIN_SUFFIX`` express "a figure written as money" as two or
-    three alternatives, so exactly one group is ever set. Tested down to ``"0"``,
-    which must not be mistaken for "no group matched".
+    three alternatives, so exactly one group is ever set. The test covers ``"0"``,
+    which ``or``-chaining would have mistaken for "no group matched".
     """
     return next(g for g in m.groups() if g is not None)
 

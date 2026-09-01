@@ -183,7 +183,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
 | i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 17 namespace / 751 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 
-855 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+857 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên

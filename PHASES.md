@@ -1499,7 +1499,7 @@ Không có lỗi, không có cảnh báo — chỉ là một cái trần bị th
 4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
    "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
 
-**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BỐN VÒNG mới kín.** Hàng rào
+**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá SÁU VÒNG mới kín.** Hàng rào
 "con số chỉ là tiền khi được viết như tiền" lắp thiếu chỗ ba lần liên tiếp, mỗi lần đều là **đúng
 cái lỗi đang đi diệt**:
 
@@ -1557,6 +1557,25 @@ Kèm một bài học về test: test tôi viết cho guard của `k` là **test
 pass bất kể guard đúng hay sai. Đúng loại "test xanh không chứng minh gì" mà `CLAUDE.md` cảnh báo,
 lần thứ hai trong cùng một task (lần trước là test ghim cái mock của `shutil.which`).
 
+**Regression thứ SÁU**: `_MIN_SUFFIX` vẫn nhận `|\s*$` — "hết label" làm marker tiền — tức đúng
+cái mà banner comment ngay phía trên nó **cấm**, và đúng bài học đã ghi ở vòng 2 ("một cái neo
+không phải là một đơn vị"). Bỏ mấy chữ đuôi đi là bug vòng 3 lọt lại: `"20 triệu, 3+"` → sàn
+3 triệu, `"2000 USD, 5+"` → sàn 5 USD. Bằng chứng nó là **dead weight** chứ không phải đánh đổi:
+xoá nhánh đó rồi chạy lại `test_market.py` → **0 test fail**. Đã xoá + ghim test.
+
+### Chỗ QUYẾT ĐỊNH KHÔNG SỬA, và lý do là số đo chứ không phải sự thận trọng
+
+Còn một họ nhãn branch **tệ hơn `main`**: marker tiền **tách rời cả hai bound** —
+`"Lương USD, 1,500 - 2,500"` ra `1500–1500` (main: `1500–2500`). Fence đòi marker **dính** vào
+một trong hai bound, mà cái này nằm tách phía trước cả cụm.
+
+Đã **thử sửa**: cho phép dấu câu giữa marker và số (`_GAP = [\s:,)\]]*`). Kết quả đo được:
+sửa đúng 3 ca detached-marker, **và đẻ ra một false positive mới** —
+`"Lương USD, 2 - 3 năm kinh nghiệm"` → `2–3`. Tức là **đổi một lỗi lấy một lỗi khác**, đúng cái
+trade đã thua sáu lần trong chính task này. ⇒ **Revert, giữ fence chặt, ghi thành giới hạn thứ
+ba** trong docstring của module. Tin ghi currency **cạnh** con số — gần như toàn bộ, và **tất cả**
+nguồn JSON-LD — không bị ảnh hưởng.
+
 **Giới hạn còn lại, nói thẳng**: fence không cứu được nhãn **dẫn đầu bằng số không-phải-tiền** —
 `"2 - 3 năm KN, 20 triệu"` vẫn ra 2 triệu, vì `_ANY_NUM` (cố ý không fence, phải có ai đó trả lời)
 lấy số đầu tiên. `main` cũng sai ca này. "Lấy số đầu tiên" đúng nhiều hơn sai, nhưng là
@@ -1573,7 +1592,7 @@ vẫn bị bịa trần.
 
 ### Verify
 
-855 test xanh (844 + 11 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+857 test xanh (844 + 13 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 
