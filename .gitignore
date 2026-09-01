@@ -73,3 +73,9 @@ logs/
 
 # Scratch from driving the dashboard with Playwright (screenshots, console logs)
 .playwright-mcp/
+
+# Downloaded LaTeX engine. jobpilot/tailor/build.py looks here when tectonic is
+# not on PATH, so the binary can live with the checkout instead of in a config
+# entry that names one machine.
+/tools/tectonic
+/tools/tectonic.exe

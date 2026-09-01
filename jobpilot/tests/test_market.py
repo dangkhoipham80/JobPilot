@@ -278,6 +278,28 @@ def test_min_does_not_match_inside_another_word():
     assert (parsed.min, parsed.max) == (5e6, 5e6)
 
 
+def test_salary_shapes_seen_in_the_live_database():
+    """Formats taken from real crawled rows rather than invented, because every
+    other case in this file was written from imagination and this module's worst
+    failures have all been shapes nobody thought to imagine.
+
+    "Up to $3500" comes from a real ITviec title ("SA Java - Up to $3500") and
+    is the one that was genuinely broken: the "$" sits between the keyword and
+    the figure, the old pattern wanted a digit there, so the label fell through
+    to the bare-figure branch and came back as 3500–3500 — a floor invented for
+    an ad that gave none. "$ 1,500-2,500 /tháng" is a VietnamWorks salary field,
+    symbol detached by a space."""
+    capped = parse_salary("Up to $3500")
+    assert (capped.min, capped.max) == (None, 3500)
+
+    vnw = parse_salary("$ 1,500-2,500 /tháng")
+    assert (vnw.min, vnw.max, vnw.currency, vnw.period) == (1500, 2500, "USD", "month")
+
+    assert parse_salary("20 - 60 triệu").max == 60e6  # TopCV
+    hourly = parse_salary("$42/hr")  # WeWorkRemotely title
+    assert (hourly.min, hourly.period) == (42, "hour")
+
+
 def test_a_salary_with_no_currency_is_refused():
     """"20 - 60" is millions of dong or dollars an hour depending on the board.
     Guessing would render a coin flip as a fact."""

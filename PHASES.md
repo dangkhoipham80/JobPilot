@@ -1627,16 +1627,39 @@ vẫn bị bịa trần.
 
 ### Verify
 
-859 test xanh (844 + 15 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+860 test xanh (844 + 16 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 
-**Nói thẳng về mức độ ảnh hưởng thực tế**: corpus local hiện chỉ có **1 nhãn lương parse được**
-trên 181 job (57% là LinkedIn — không có lương; ITviec giấu lương sau login), và nhãn đó
-(`20 - 60 triệu`) **không dính** bug nào ở trên. Nên `/market` ở máy này **chưa hề vẽ sai** —
-guardrail `covered/total` đang báo đúng *"Only 1 job(s) list a parsable salary"*. Bug là thật và
-đã sửa, nhưng nó **đang tiềm ẩn**, sẽ lộ ra khi TopCV/VietnamWorks/board Mỹ vào nhiều hơn. Không
-có chuyện "chart đang sai và giờ đã đúng".
+### Verify trên DỮ LIỆU THẬT (chạy crawl mới, không chỉ nhãn tự bịa)
+
+Cả 6 vòng review đều chỉ đo trên **nhãn tổng hợp** — đúng bẫy #1 của repo. Nên đã **crawl thật**
+thêm (ITviec/VietnamWorks/LinkedIn/Arbeitnow/Greenhouse; TopCV bị 403 như đã biết) → 196 job.
+
+Nhãn lương **thật** thu được, cộng chuỗi lương nằm trong **title** (moi từ `payload`):
+
+| Nhãn thật | nguồn | `main` | branch |
+|---|---|---|---|
+| `20 - 60 triệu` | TopCV | 20tr–60tr | 20tr–60tr |
+| `$ 1,500-2,500 /tháng` | VietnamWorks | 1500–2500 | 1500–2500 |
+| `IT Salary Report 2024-2025` | ITviec | `None` | `None` |
+| `$42/hr` | WWR (title) | 42, hour | 42, hour |
+| **`Up to $3500`** | **ITviec (title `SA Java - Up to $3500`)** | **3500–3500** ❌ | **None–3500** ✅ |
+
+⇒ **Có một ca thật sự sai trên `main` và branch sửa đúng**: `$` nằm **giữa keyword và con số**, mà
+pattern cũ đòi ngay sau `up to` phải là chữ số ⇒ rơi xuống nhánh một-số và **bịa ra một cái sàn**
+cho tin vốn không hề nói sàn — vi phạm chính luật ghi ở đầu module. Đây là **format có thật**, không
+phải nhãn tôi nghĩ ra. Đã thêm test `test_salary_shapes_seen_in_the_live_database` ghim đúng 4 nhãn
+thật này, có ghi rõ xuất xứ.
+
+Bốn nhãn còn lại **giống hệt nhau** ở hai bên ⇒ branch **không phá** nhãn thật nào.
+
+**Nói thẳng về mức độ ảnh hưởng thực tế**: corpus local hiện chỉ có **2 nhãn lương parse được**
+trên **196 job** (57% là LinkedIn — không có lương; ITviec giấu lương sau login; TopCV 403), và
+cả hai nhãn đó **không dính** bug nào trong bảng trên. Nên `/market` ở máy này **chưa hề vẽ sai** —
+guardrail `covered/total` đang báo đúng *"Only 2 job(s) list a parsable salary"*. Phần lớn bug đã
+sửa vẫn **đang tiềm ẩn**; chỉ ca `Up to $3500` là đã quan sát được ngoài đời. Không có chuyện
+"chart đang sai và giờ đã đúng".
 
 ⚠️ **`salary_range` là dữ liệu đã ghi trong `payload`, không tính lại lúc đọc.** Sửa parser xong
 **bắt buộc `backfill --force`** (đã chạy: 181 job), nếu không `/market` vẫn vẽ bằng số cũ và mọi
