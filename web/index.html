@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,6 +16,16 @@
         var t = localStorage.getItem("jobpilot-theme");
         if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
           document.documentElement.classList.add("dark");
+        }
+      })();
+      // Same for the language. The provider also sets this, but it does so in an
+      // effect — one paint too late for Chrome, which reads `lang` early and
+      // offers to translate a page that is already in the user's language.
+      // Vietnamese is the default, so the attribute above only needs correcting
+      // when English is the stored preference.
+      (function () {
+        if (localStorage.getItem("jobpilot-lang") === "en") {
+          document.documentElement.lang = "en";
         }
       })();
     </script>

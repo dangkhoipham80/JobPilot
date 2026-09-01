@@ -52,9 +52,13 @@ export function useTask(taskId: string | null, version: number): Task | null {
         // leaving the caller's spinner up forever waiting on a ghost.
         if (e instanceof ApiError && e.status === 404) {
           settled.current = taskId;
+          // `error` is left empty and `error_kind` carries the meaning. This
+          // sentence is the frontend's own, not the server's, so it has to be
+          // translatable — and a data hook has no business reaching into the
+          // i18n context to do that. `TaskProgress` renders the copy per kind.
           setTask((prev) =>
             prev && isActive(prev)
-              ? { ...prev, status: "failed", error: "lost track of this task", error_kind: "Evicted" }
+              ? { ...prev, status: "failed", error: "", error_kind: "Evicted" }
               : prev,
           );
           return;

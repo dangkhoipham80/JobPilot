@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { AutoTextarea, BulletList, IconButton, ReorderHandle, TagsField, TextField } from "@/components/cv/fields";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { CvEducationEntry, CvEntry, CvSection } from "@/types";
 
@@ -14,23 +15,41 @@ const EMPTY_EDUCATION: CvEducationEntry = {
   items: [],
 };
 
-const TYPE_LABEL: Record<CvSection["type"], string> = {
-  paragraph: "Paragraph",
-  bullets: "Bullets",
-  education: "Education",
-  experience: "Experience",
-  projects: "Projects",
-};
+/** Section type → key in the `cv` namespace, resolved at render. */
+const TYPE_LABEL = {
+  paragraph: "typeParagraph",
+  bullets: "typeBullets",
+  education: "typeEducation",
+  experience: "typeExperience",
+  projects: "typeProjects",
+} as const satisfies Record<CvSection["type"], string>;
 
-function summarize(section: CvSection): string {
+/**
+ * "3 entries" / "120 words" for the collapsed header.
+ *
+ * A component rather than a helper so it can call `useT` itself: a plain
+ * function would have to take the translator as an argument, which loses the
+ * compile-time key checking that is the point of the typed dictionary.
+ */
+function SectionSummary({ section }: { section: CvSection }) {
+  const t = useT("cv");
+  const count = (n: number, one: "wordsOne" | "itemsOne" | "entriesOne") => {
+    const many = one.replace("One", "Many") as "wordsMany" | "itemsMany" | "entriesMany";
+    return t(n === 1 ? one : many, { n });
+  };
+
+  let text: string;
   switch (section.type) {
     case "paragraph":
-      return `${section.text.trim().split(/\s+/).filter(Boolean).length} words`;
+      text = count(section.text.trim().split(/\s+/).filter(Boolean).length, "wordsOne");
+      break;
     case "bullets":
-      return `${section.items.length} item${section.items.length === 1 ? "" : "s"}`;
+      text = count(section.items.length, "itemsOne");
+      break;
     default:
-      return `${section.entries.length} entr${section.entries.length === 1 ? "y" : "ies"}`;
+      text = count(section.entries.length, "entriesOne");
   }
+  return <span className="shrink-0 text-xs text-ink-muted">{text}</span>;
 }
 
 export function SectionEditor({
@@ -48,6 +67,7 @@ export function SectionEditor({
   disableUp: boolean;
   disableDown: boolean;
 }) {
+  const t = useT("cv");
   // Collapsed by default: six expanded sections make the page ~10,000px tall,
   // which hides the one thing this screen is for — seeing the CV's shape. The
   // collapsed header carries the title, type and item count, so you can tell
@@ -71,17 +91,17 @@ export function SectionEditor({
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           <span className="truncate font-display text-sm font-semibold">{section.title || section.key}</span>
           <span className="shrink-0 rounded border px-1.5 py-px font-mono text-[10px] uppercase tracking-wide text-ink-muted">
-            {TYPE_LABEL[section.type]}
+            {t(TYPE_LABEL[section.type])}
           </span>
-          <span className="shrink-0 text-xs text-ink-muted">{summarize(section)}</span>
+          <SectionSummary section={section} />
         </button>
         <IconButton
-          label={section.enabled ? "Hide from PDF" : "Show in PDF"}
+          label={section.enabled ? t("hideFromPdf") : t("showInPdf")}
           onClick={() => onChange({ ...section, enabled: !section.enabled })}
         >
           {section.enabled ? <Eye size={15} /> : <EyeOff size={15} />}
         </IconButton>
-        <IconButton label="Delete section" onClick={onRemove} danger>
+        <IconButton label={t("deleteSection")} onClick={onRemove} danger>
           <Trash2 size={15} />
         </IconButton>
       </div>
@@ -90,13 +110,13 @@ export function SectionEditor({
         <div className="flex flex-col gap-4 border-t px-5 py-4">
           <div className="grid grid-cols-2 gap-4">
             <TextField
-              label="Section title"
+              label={t("sectionTitle")}
               value={section.title}
               onChange={(v) => onChange({ ...section, title: v })}
             />
             <TextField
-              label="Key"
-              hint="file name"
+              label={t("sectionKey")}
+              hint={t("sectionKeyHint")}
               value={section.key}
               onChange={(v) => onChange({ ...section, key: v })}
             />
@@ -115,12 +135,13 @@ function SectionBody({
   section: CvSection;
   onChange: (s: CvSection) => void;
 }) {
+  const t = useT("cv");
   switch (section.type) {
     case "paragraph":
       return (
         <AutoTextarea
           value={section.text}
-          placeholder="A short professional summary…"
+          placeholder={t("summaryPlaceholder")}
           onChange={(text) => onChange({ ...section, text })}
         />
       );
@@ -132,7 +153,7 @@ function SectionBody({
             <div key={i} className="group flex items-start gap-1.5">
               <Input
                 className="w-44 shrink-0"
-                placeholder="Label (optional)"
+                placeholder={t("labelOptional")}
                 value={item.label ?? ""}
                 onChange={(e) =>
                   onChange({
@@ -155,7 +176,7 @@ function SectionBody({
               />
               <Input
                 className="w-32 shrink-0"
-                placeholder="Date"
+                placeholder={t("datePlaceholder")}
                 value={item.date ?? ""}
                 onChange={(e) =>
                   onChange({
@@ -167,7 +188,7 @@ function SectionBody({
                 }
               />
               <IconButton
-                label="Remove item"
+                label={t("removeItem")}
                 danger
                 onClick={() => onChange({ ...section, items: section.items.filter((_, j) => j !== i) })}
               >
@@ -183,7 +204,7 @@ function SectionBody({
               onChange({ ...section, items: [...section.items, { label: null, text: "", date: null }] })
             }
           >
-            <Plus size={14} /> Add item
+            <Plus size={14} /> {t("addItem")}
           </Button>
         </div>
       );
@@ -193,21 +214,21 @@ function SectionBody({
         <EntryList
           entries={section.entries}
           empty={EMPTY_EDUCATION}
-          addLabel="Add education"
+          addLabel={t("addEducation")}
           onChange={(entries) => onChange({ ...section, entries })}
           render={(entry, set) => (
             <>
               <div className="grid grid-cols-2 gap-4">
-                <TextField label="Degree" value={entry.degree} onChange={(v) => set({ degree: v })} />
+                <TextField label={t("degree")} value={entry.degree} onChange={(v) => set({ degree: v })} />
                 <TextField
-                  label="Institution"
+                  label={t("institution")}
                   value={entry.institution}
                   onChange={(v) => set({ institution: v })}
                 />
-                <TextField label="Location" value={entry.location} onChange={(v) => set({ location: v })} />
+                <TextField label={t("location")} value={entry.location} onChange={(v) => set({ location: v })} />
                 <TextField
-                  label="Date"
-                  hint="use -- for the dash"
+                  label={t("date")}
+                  hint={t("dashHint")}
                   value={entry.date}
                   onChange={(v) => set({ date: v })}
                 />
@@ -224,26 +245,26 @@ function SectionBody({
         <EntryList
           entries={section.entries}
           empty={EMPTY_ENTRY}
-          addLabel={section.type === "projects" ? "Add project" : "Add role"}
+          addLabel={section.type === "projects" ? t("addProject") : t("addRole")}
           onChange={(entries) => onChange({ ...section, entries } as CvSection)}
           render={(entry, set) => (
             <>
               <div className="grid grid-cols-2 gap-4">
                 <TextField
-                  label="Title"
+                  label={t("entryTitle")}
                   value={entry.title}
                   onChange={(v) => set({ title: v })}
                   className="col-span-2"
                 />
                 <TextField
-                  label="Date"
-                  hint="use -- for the dash"
+                  label={t("date")}
+                  hint={t("dashHint")}
                   value={entry.date}
                   onChange={(v) => set({ date: v })}
                 />
                 <TextField
-                  label="Link"
-                  hint="optional"
+                  label={t("link")}
+                  hint={t("optional")}
                   value={entry.url ?? ""}
                   onChange={(v) => set({ url: v || null })}
                 />
@@ -251,13 +272,13 @@ function SectionBody({
               <BulletList items={entry.items} onChange={(items) => set({ items })} />
               <div className="grid grid-cols-3 gap-4">
                 <TextField
-                  label="Role"
-                  hint="optional"
+                  label={t("role")}
+                  hint={t("optional")}
                   value={entry.role ?? ""}
                   onChange={(v) => set({ role: v || null })}
                 />
                 <TagsField
-                  label="Tech stack"
+                  label={t("techStack")}
                   value={entry.tech_stack}
                   onChange={(tech_stack) => set({ tech_stack })}
                 />
@@ -283,6 +304,7 @@ function EntryList<T>({
   onChange: (entries: T[]) => void;
   render: (entry: T, set: (patch: Partial<T>) => void) => React.ReactNode;
 }) {
+  const t = useT("cv");
   const move = (i: number, delta: number) => {
     const next = [...entries];
     const j = i + delta;
@@ -307,7 +329,7 @@ function EntryList<T>({
             )}
           </div>
           <IconButton
-            label="Remove entry"
+            label={t("removeEntry")}
             danger
             onClick={() => onChange(entries.filter((_, j) => j !== i))}
           >

@@ -1,23 +1,30 @@
 import { AlertTriangle, Check, Minus } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { RequirementStatus, TailorRequirement } from "@/types";
 
 /**
  * The honest half of the review. Missing requirements are shown first and never
  * softened — SKILL.md §0 forbids putting them on the CV, so the only useful
- * thing to do with them is tell the user plainly.
+ * thing to do with them is tell the user plainly. The Vietnamese copy says the
+ * same thing just as bluntly; a gentler translation would be a different,
+ * worse product.
+ *
+ * `req.text` and `req.evidence` are the agent's own words about this posting
+ * and this CV — rendered as-is, never routed through the dictionary.
  */
 
-const STATUS: Record<RequirementStatus, { icon: typeof Check; className: string; label: string }> = {
-  HAVE: { icon: Check, className: "text-good", label: "in your CV" },
-  PARTIAL: { icon: Minus, className: "text-accent", label: "related experience" },
-  MISSING: { icon: AlertTriangle, className: "text-critical", label: "not in your CV" },
+const STATUS: Record<RequirementStatus, { icon: typeof Check; className: string }> = {
+  HAVE: { icon: Check, className: "text-good" },
+  PARTIAL: { icon: Minus, className: "text-accent" },
+  MISSING: { icon: AlertTriangle, className: "text-critical" },
 };
 
 const ORDER: RequirementStatus[] = ["MISSING", "PARTIAL", "HAVE"];
 
 export function GapReport({ requirements }: { requirements: TailorRequirement[] }) {
+  const t = useT("review");
   const sorted = [...requirements].sort(
     (a, b) =>
       ORDER.indexOf(a.status) - ORDER.indexOf(b.status) ||
@@ -28,16 +35,18 @@ export function GapReport({ requirements }: { requirements: TailorRequirement[] 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Requirements</CardTitle>
+        <CardTitle>{t("requirements")}</CardTitle>
         {missing.length > 0 ? (
-          <span className="font-mono text-[11px] text-critical">{missing.length} gap{missing.length === 1 ? "" : "s"}</span>
+          <span className="font-mono text-[11px] text-critical">
+            {t(missing.length === 1 ? "gapCountOne" : "gapCountMany", { count: missing.length })}
+          </span>
         ) : (
-          <span className="font-mono text-[11px] text-good">no gaps</span>
+          <span className="font-mono text-[11px] text-good">{t("noGaps")}</span>
         )}
       </CardHeader>
       <CardBody className="pt-3">
         {sorted.length === 0 ? (
-          <p className="text-sm text-ink-muted">No requirements were extracted from this posting.</p>
+          <p className="text-sm text-ink-muted">{t("noRequirements")}</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {sorted.map((req, i) => {
@@ -50,11 +59,11 @@ export function GapReport({ requirements }: { requirements: TailorRequirement[] 
                     <span className={cn(req.status === "MISSING" && "font-medium")}>{req.text}</span>
                     {req.kind === "must_have" && (
                       <span className="ml-1.5 rounded border border-ink-muted/30 px-1 py-px text-[10px] uppercase tracking-wide text-ink-muted">
-                        must
+                        {t("must")}
                       </span>
                     )}
                     <div className="text-xs text-ink-muted">
-                      {meta.label}
+                      {t(`req_${req.status}`)}
                       {req.evidence && ` · ${req.evidence}`}
                     </div>
                   </div>
@@ -66,9 +75,7 @@ export function GapReport({ requirements }: { requirements: TailorRequirement[] 
 
         {missing.length > 0 && (
           <p className="mt-3 rounded-lg border border-critical/30 bg-critical/6 px-3 py-2 text-xs leading-relaxed text-ink-muted">
-            These were deliberately left off the CV — claiming them would be untrue. Decide
-            whether to learn them, mention willingness to learn in the cover letter, or skip
-            this job.
+            {t("missingNote")}
           </p>
         )}
       </CardBody>

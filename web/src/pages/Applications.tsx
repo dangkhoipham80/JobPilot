@@ -19,12 +19,13 @@ import { FollowUps } from "@/components/FollowUps";
 import { OutcomeTracker } from "@/components/OutcomeTracker";
 import { InboxReplies } from "@/components/InboxReplies";
 import { isActive, useTask } from "@/hooks/useTask";
-import { relativeTime } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useT } from "@/i18n";
 import { TaskProgress } from "@/components/TaskProgress";
 import { CompactPager, PageSizeSelect, Pagination } from "@/components/Pagination";
 import { Badge, Button, Card, CardBody, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { Application, ApplyResult, ApplySettings } from "@/types";
+import type { Application, ApplyChannel, ApplySettings } from "@/types";
 
 /**
  * Applications board (PLAN.md §5.6). Columns are what happened, not where the
@@ -33,24 +34,45 @@ import type { Application, ApplyResult, ApplySettings } from "@/types";
  * currently open.
  */
 
-const COLUMNS: { key: ApplyResult; title: string; hint: string; accent: string }[] = [
+// Titles and hints are dictionary keys, resolved at render so they follow the
+// language switch — a module-scope string would freeze at first evaluation.
+const COLUMNS = [
   {
     key: "dry_run",
-    title: "Prepared",
-    hint: "Built but not sent — dry run is on",
+    titleKey: "colPrepared",
+    hintKey: "colPreparedHint",
     accent: "border-t-ink-muted/40",
   },
   {
     key: "awaiting_user",
-    title: "Your turn",
-    hint: "Submit it yourself, then confirm",
+    titleKey: "colYourTurn",
+    hintKey: "colYourTurnHint",
     accent: "border-t-accent",
   },
-  { key: "success", title: "Submitted", hint: "Delivered", accent: "border-t-good" },
-  { key: "failed", title: "Failed", hint: "Needs another look", accent: "border-t-critical" },
-];
+  {
+    key: "success",
+    titleKey: "colSubmitted",
+    hintKey: "colSubmittedHint",
+    accent: "border-t-good",
+  },
+  {
+    key: "failed",
+    titleKey: "colFailed",
+    hintKey: "colFailedHint",
+    accent: "border-t-critical",
+  },
+] as const;
+
+/** Channel badges: `email` and `portal` read the same in both languages — that
+ *  is what people call them — but `external` needs saying. */
+const CHANNEL_KEY = {
+  email: "channelEmail",
+  portal: "channelPortal",
+  external: "channelExternal",
+} as const satisfies Record<ApplyChannel, string>;
 
 export function Applications({ version }: { version: number }) {
+  const t = useT("applications");
   // Each column owns its own query now, so "reload the board" is a counter the
   // columns depend on rather than one refetch the parent can call. Same shape
   // as the global `version` in App.tsx, one level down.
@@ -97,25 +119,28 @@ export function Applications({ version }: { version: number }) {
         await fn();
         reloadBoard();
       } catch (e) {
-        setActionError(e instanceof ApiError ? e.message : "Request failed");
+        setActionError(e instanceof ApiError ? e.message : t("requestFailed"));
       } finally {
         setBusy(null);
       }
     },
-    [reloadBoard],
+    [reloadBoard, t],
   );
 
   /** Re-dispatching is queued, so the card stays busy until the task lands. */
-  const retry = useCallback(async (app: Application) => {
-    setBusy(app.id);
-    setActionError(null);
-    try {
-      setTaskId((await api.applyJob(app.job_id)).id);
-    } catch (e) {
-      setBusy(null);
-      setActionError(e instanceof ApiError ? e.message : "Request failed");
-    }
-  }, []);
+  const retry = useCallback(
+    async (app: Application) => {
+      setBusy(app.id);
+      setActionError(null);
+      try {
+        setTaskId((await api.applyJob(app.job_id)).id);
+      } catch (e) {
+        setBusy(null);
+        setActionError(e instanceof ApiError ? e.message : t("requestFailed"));
+      }
+    },
+    [t],
+  );
 
   const landed = useRef<string | null>(null);
   useEffect(() => {
@@ -129,10 +154,8 @@ export function Applications({ version }: { version: number }) {
   return (
     <div className="animate-fade-up space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Applications</h1>
-        <p className="text-sm text-ink-muted">
-          Every dispatch, including the ones that never left the machine.
-        </p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <p className="text-sm text-ink-muted">{t("subtitle")}</p>
       </div>
 
       {settings.data && <GateBanner settings={settings.data} />}
@@ -157,7 +180,7 @@ export function Applications({ version }: { version: number }) {
             total={suggestions.data?.total ?? 0}
             onPage={suggestionPaging.setPage}
             onSize={suggestionPaging.setSize}
-            noun="replies"
+            noun={t("nounReplies")}
           />
         }
       />
@@ -173,14 +196,14 @@ export function Applications({ version }: { version: number }) {
             total={followups.data?.total ?? 0}
             onPage={followupPaging.setPage}
             onSize={followupPaging.setSize}
-            noun="follow-ups"
+            noun={t("nounFollowups")}
           />
         }
       />
 
       {error ? (
         <Card className="p-6 text-sm">
-          <span className="font-medium text-critical">Couldn't load applications.</span> {error}
+          <span className="font-medium text-critical">{t("loadFailed")}</span> {error}
         </Card>
       ) : loading && !board.data ? (
         <div className="grid gap-3 lg:grid-cols-4">
@@ -190,9 +213,7 @@ export function Applications({ version }: { version: number }) {
         </div>
       ) : board.data?.total === 0 ? (
         <Card>
-          <CardBody className="py-16 text-center text-sm text-ink-muted">
-            Nothing dispatched yet. Approve a tailored CV, then hit Apply on the job.
-          </CardBody>
+          <CardBody className="py-16 text-center text-sm text-ink-muted">{t("empty")}</CardBody>
         </Card>
       ) : (
         <>
@@ -200,7 +221,7 @@ export function Applications({ version }: { version: number }) {
             <PageSizeSelect
               size={boardPaging.size}
               onSize={boardPaging.setSize}
-              label="Cards per column"
+              label={t("cardsPerColumn")}
             />
           </div>
           <div className="grid gap-3 lg:grid-cols-4">
@@ -213,7 +234,7 @@ export function Applications({ version }: { version: number }) {
                 busy={busy}
                 onConfirm={(app) => act(app, () => api.confirmSubmit(app.job_id))}
                 onFail={(app) => {
-                  const reason = window.prompt("What went wrong?") ?? "";
+                  const reason = window.prompt(t("failPrompt")) ?? "";
                   if (reason.trim()) act(app, () => api.reportFailure(app.job_id, reason));
                 }}
                 onRetry={retry}
@@ -256,6 +277,7 @@ function BoardColumn({
   onRetry: (app: Application) => void;
   onOutcome: () => void;
 }) {
+  const t = useT("applications");
   const [page, setPage] = useState(0);
 
   // The size lives in the parent (one picker for all four columns) but the page
@@ -277,10 +299,10 @@ function BoardColumn({
     <section className="flex flex-col gap-2">
       <header className={cn("rounded-t-card border-t-2 px-1 pt-2", col.accent)}>
         <div className="flex items-baseline justify-between">
-          <h2 className="font-display text-sm font-semibold">{col.title}</h2>
+          <h2 className="font-display text-sm font-semibold">{t(col.titleKey)}</h2>
           <span className="font-mono text-[11px] text-ink-muted">{data?.total ?? "\u2013"}</span>
         </div>
-        <p className="text-[11px] leading-tight text-ink-muted">{col.hint}</p>
+        <p className="text-[11px] leading-tight text-ink-muted">{t(col.hintKey)}</p>
       </header>
       <div className="flex flex-col gap-2">
         {items.map((app) => (
@@ -301,6 +323,7 @@ function BoardColumn({
 }
 
 function GateBanner({ settings }: { settings: ApplySettings }) {
+  const t = useT("applications");
   const sending = settings.email_enabled && !settings.email_dry_run;
   const redirected = sending && !!settings.email_test_recipient;
 
@@ -314,28 +337,28 @@ function GateBanner({ settings }: { settings: ApplySettings }) {
       <CardBody className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm">
         <span className="inline-flex items-center gap-1.5 font-medium">
           <ShieldCheck size={15} className={sending && !redirected ? "text-critical" : "text-good"} />
-          Email channel
+          {t("gateTitle")}
         </span>
         {!settings.email_enabled ? (
+          // `email_blocker` is the backend's own sentence about why the gate is
+          // shut; only the frame around it is ours to translate.
           <span className="text-ink-muted">
-            off — nothing can be sent ({settings.email_blocker || "apply.email.enabled is false"})
+            {t("gateOff", { reason: settings.email_blocker || t("gateOffReason") })}
           </span>
         ) : settings.email_dry_run ? (
-          <span className="text-ink-muted">
-            dry run — messages are built and recorded, never sent
-          </span>
+          <span className="text-ink-muted">{t("gateDryRun")}</span>
         ) : redirected ? (
           <span className="text-ink-muted">
-            live, but redirected to{" "}
-            <span className="font-mono text-ink">{settings.email_test_recipient}</span> instead of
-            employers
+            {t("gateRedirectedPre")}{" "}
+            <span className="font-mono text-ink">{settings.email_test_recipient}</span>{" "}
+            {t("gateRedirectedPost")}
           </span>
         ) : (
           <span className="font-medium text-critical">
-            live — applications really go to employers from {settings.email_from}
+            {t("gateLive", { from: settings.email_from })}
           </span>
         )}
-        <span className="ml-auto text-xs text-ink-muted">edit config.yaml → apply.email</span>
+        <span className="ml-auto text-xs text-ink-muted">{t("gateConfig")}</span>
       </CardBody>
     </Card>
   );
@@ -356,6 +379,9 @@ function ApplicationCard({
   onRetry: () => void;
   onOutcome: () => void;
 }) {
+  const t = useT("applications");
+  const tc = useT("common");
+  const fmt = useFormat();
   const email = app.meta.email;
   const handoff = app.meta.handoff;
   const letter = app.meta.letter;
@@ -373,10 +399,10 @@ function ApplicationCard({
         {app.channel && (
           <Badge className="border-ink/10 text-ink-muted">
             {app.channel === "email" ? <Mail size={10} /> : <ExternalLink size={10} />}
-            {app.channel}
+            {t(CHANNEL_KEY[app.channel])}
           </Badge>
         )}
-        <span>{relativeTime(app.submitted_at ?? app.created_at)}</span>
+        <span>{fmt.relativeTime(app.submitted_at ?? app.created_at)}</span>
       </div>
 
       {/* Only when there is an address to show: an empty arrow reads as a
@@ -386,7 +412,9 @@ function ApplicationCard({
           {email.redirected ? (
             <>
               → <span className="font-mono text-ink">{email.to}</span>{" "}
-              <span className="opacity-70">(test redirect from {email.intended_to})</span>
+              <span className="opacity-70">
+                {t("testRedirect", { to: email.intended_to ?? "" })}
+              </span>
             </>
           ) : (
             <>
@@ -406,7 +434,8 @@ function ApplicationCard({
       {letter?.pdf_error && (
         <p className="mt-2 rounded-md border bg-surface-2/60 px-2 py-1 text-[11px] leading-relaxed text-ink-muted">
           <FileWarning size={11} className="mr-1 inline align-[-2px]" />
-          Cover letter sent as text — the PDF didn’t build.{" "}
+          {t("letterPdfFailed")}{" "}
+          {/* The LaTeX tail is a build log, not copy — it stays as emitted. */}
           <span className="opacity-70">{letter.pdf_error.slice(-120)}</span>
         </p>
       )}
@@ -431,11 +460,12 @@ function ApplicationCard({
                 rel="noreferrer"
                 className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[12px] font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
               >
-                <ExternalLink size={12} /> Open form
+                <ExternalLink size={12} /> {t("openForm")}
               </a>
             )}
             <Button size="sm" className="h-7 px-2 text-[12px]" onClick={onConfirm} disabled={busy}>
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} I sent it
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}{" "}
+              {t("iSentIt")}
             </Button>
             <Button
               size="sm"
@@ -444,7 +474,7 @@ function ApplicationCard({
               onClick={onFail}
               disabled={busy}
             >
-              <X size={12} /> Failed
+              <X size={12} /> {t("markFailed")}
             </Button>
           </>
         )}
@@ -457,7 +487,7 @@ function ApplicationCard({
             disabled={busy}
           >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            {app.result === "dry_run" ? "Run again" : "Retry"}
+            {app.result === "dry_run" ? t("runAgain") : tc("retry")}
           </Button>
         )}
         <a

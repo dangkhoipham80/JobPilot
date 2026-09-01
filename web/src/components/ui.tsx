@@ -52,7 +52,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+        // `whitespace-nowrap`: a button label is a phrase, not a paragraph, and
+        // a fixed-height button has nowhere to put a second line — "Bỏ qua" was
+        // breaking into "Bỏ" / "qua" and spilling out of its own border. English
+        // labels are mostly one word so this never showed; most Vietnamese ones
+        // are two.
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
         size === "sm" ? "h-8 px-3 text-[13px]" : "h-9 px-4 text-sm",
         buttonVariants[variant],
         className,

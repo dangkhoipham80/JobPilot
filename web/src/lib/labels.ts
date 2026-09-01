@@ -12,6 +12,10 @@
  * has added it to a map.
  */
 
+import { useMemo } from "react";
+import { useI18n } from "@/i18n";
+import { dict } from "@/i18n/dict";
+
 const SOURCE_NAMES: Record<string, string> = {
   itviec: "ITviec",
   topcv: "TopCV",
@@ -49,22 +53,6 @@ const SOURCE_HOMES: Record<string, string> = {
 export function sourceHome(key: string): string | null {
   return SOURCE_HOMES[key.toLowerCase()] ?? null;
 }
-
-const QUALITY_NAMES: Record<string, string> = {
-  clean: "Clean",
-  no_jd: "No description",
-  thin_jd: "Thin description",
-  stale: "Stale posting",
-  undated: "No posting date",
-};
-
-const LEVEL_NAMES: Record<string, string> = {
-  intern: "Intern",
-  fresher: "Fresher",
-  junior: "Junior",
-  middle: "Mid-level",
-  senior: "Senior",
-};
 
 // Technologies whose casing is not title case. Everything else — react, docker,
 // kafka — title-cases correctly, so the map only carries the exceptions.
@@ -107,7 +95,36 @@ function titleCase(key: string): string {
 const lookup = (map: Record<string, string>) => (key: string) =>
   map[key.toLowerCase()] ?? titleCase(key);
 
+/**
+ * Source and skill names are proper nouns — "ITviec" and "PostgreSQL" read the
+ * same in both languages — so they need no language and stay plain functions.
+ */
 export const sourceLabel = lookup(SOURCE_NAMES);
-export const qualityLabel = lookup(QUALITY_NAMES);
-export const levelLabel = lookup(LEVEL_NAMES);
 export const skillLabel = lookup(SKILL_NAMES);
+
+/**
+ * Quality flags and seniority *are* prose, so they go through the dictionary.
+ *
+ * Exported as a hook rather than as `qualityLabel(key, lang)` so that a call
+ * site cannot forget to pass the language and silently render English inside a
+ * Vietnamese page. The old language-free `qualityLabel`/`levelLabel` exports are
+ * gone on purpose: removing them turns every stale call site into a compile
+ * error instead of a translation gap nobody notices.
+ */
+export function useLabels() {
+  const { lang } = useI18n();
+  return useMemo(() => {
+    const table = dict.labels[lang] as Record<string, string>;
+    // Same fallback the file has always promised: a quality flag or a level
+    // that lands before anyone adds it to the dictionary must still be
+    // readable, so an unknown key title-cases instead of vanishing.
+    const prefixed = (prefix: string) => (key: string) =>
+      table[`${prefix}_${key.toLowerCase()}`] ?? titleCase(key);
+    return {
+      sourceLabel,
+      skillLabel,
+      qualityLabel: prefixed("quality"),
+      levelLabel: prefixed("level"),
+    };
+  }, [lang]);
+}

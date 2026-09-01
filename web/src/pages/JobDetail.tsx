@@ -4,7 +4,9 @@ import { ArrowLeft, Building2, Check, ExternalLink, MapPin, Sparkles, Wallet } f
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import type { JobStatus } from "@/types";
-import { relativeTime } from "@/lib/format";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
+import { skillLabel } from "@/lib/labels";
 import { StatusPill } from "@/components/StatusPill";
 import { MatchMeter, QualityFlags } from "@/components/MatchMeter";
 import { FreshBeacon } from "@/components/FreshBeacon";
@@ -18,6 +20,8 @@ const EARLY = new Set<JobStatus>(["DISCOVERED", "SHORTLISTED", "SKIPPED"]);
 const TAILORABLE = new Set<JobStatus>(["SHORTLISTED", "TAILORING", "REVIEW", "APPROVED", "FAILED"]);
 
 export function JobDetail({ version }: { version: number }) {
+  const t = useT("jobs");
+  const fmt = useFormat();
   const { id = "" } = useParams();
   const [pending, setPending] = useState(false);
   const { data: job, loading, error, refetch } = useApi(() => api.job(id), [id, version]);
@@ -38,12 +42,12 @@ export function JobDetail({ version }: { version: number }) {
         to="/jobs"
         className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
       >
-        <ArrowLeft size={15} /> Back to jobs
+        <ArrowLeft size={15} /> {t("back")}
       </Link>
 
       {error ? (
         <Card className="p-6 text-sm text-ink-muted">
-          <span className="font-medium text-critical">Couldn't load this job.</span> {error}
+          <span className="font-medium text-critical">{t("detailLoadFailed")}</span> {error}
         </Card>
       ) : loading || !job ? (
         <Skeleton className="h-72 rounded-card" />
@@ -80,7 +84,7 @@ export function JobDetail({ version }: { version: number }) {
                       className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
                       style={{ background: sourceColor(job.source) }}
                     />
-                    {job.id} · posted {relativeTime(job.posted_at)}
+                    {job.id} · {t("posted")} {fmt.relativeTime(job.posted_at)}
                   </div>
                 </div>
 
@@ -90,19 +94,19 @@ export function JobDetail({ version }: { version: number }) {
                   <div className="flex items-center gap-1.5">
                     {EARLY.has(job.status) && job.status !== "SHORTLISTED" && (
                       <Button size="sm" onClick={() => act("shortlist")} disabled={pending}>
-                        <Check size={14} /> Shortlist
+                        <Check size={14} /> {t("shortlist")}
                       </Button>
                     )}
                     {EARLY.has(job.status) && job.status !== "SKIPPED" && (
                       <Button size="sm" variant="ghost" onClick={() => act("skip")} disabled={pending}>
-                        Skip
+                        {t("skip")}
                       </Button>
                     )}
                     {TAILORABLE.has(job.status) && (
                       <Link to={`/jobs/${encodeURIComponent(job.id)}/review`}>
                         <Button size="sm" variant={job.status === "REVIEW" ? "primary" : "outline"}>
                           <Sparkles size={14} />
-                          {job.status === "REVIEW" ? "Review CV" : "Tailor CV"}
+                          {job.status === "REVIEW" ? t("reviewCv") : t("tailorCv")}
                         </Button>
                       </Link>
                     )}
@@ -112,7 +116,7 @@ export function JobDetail({ version }: { version: number }) {
                       rel="noreferrer"
                       className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
                     >
-                      <ExternalLink size={14} /> Original
+                      <ExternalLink size={14} /> {t("original")}
                     </a>
                   </div>
                 </div>
@@ -120,9 +124,11 @@ export function JobDetail({ version }: { version: number }) {
 
               {job.skills.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 border-t pt-4">
+                  {/* A technology name, not copy: `skillLabel` only fixes the
+                      casing the crawler stored it in. */}
                   {job.skills.map((skill) => (
                     <Badge key={skill} className="border-ink/10 text-ink-muted">
-                      {skill}
+                      {skillLabel(skill)}
                     </Badge>
                   ))}
                 </div>

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
+import { useT } from "@/i18n";
 import { isActive, useTask } from "@/hooks/useTask";
 import { MatchMeter } from "@/components/MatchMeter";
 import { StatusPill } from "@/components/StatusPill";
@@ -35,6 +36,7 @@ type Action = "tailor" | "edit" | "approve" | "reject" | "apply";
  * reject are still plain state changes and answer inside the request.
  */
 export function CvReview({ version }: { version: number }) {
+  const t = useT("review");
   const { id = "" } = useParams();
   const job = useApi(() => api.job(id), [id, version]);
   const review = useApi(() => api.review(id), [id, version]);
@@ -77,12 +79,13 @@ export function CvReview({ version }: { version: number }) {
         await fn();
         await Promise.all([job.refetch(), review.refetch()]);
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : "Request failed");
+        // `ApiError.message` is the backend's own words — a log line, not copy.
+        setError(e instanceof ApiError ? e.message : t("requestFailed"));
       } finally {
         setBusy(null);
       }
     },
-    [job, review],
+    [job, review, t],
   );
 
   /**
@@ -100,10 +103,10 @@ export function CvReview({ version }: { version: number }) {
         setTaskId((await fn()).id);
       } catch (e) {
         setBusy(null);
-        setError(e instanceof ApiError ? e.message : "Request failed");
+        setError(e instanceof ApiError ? e.message : t("requestFailed"));
       }
     },
-    [],
+    [t],
   );
 
   // Land the finished task: refetch explicitly rather than lean on the WS nudge,
@@ -128,7 +131,7 @@ export function CvReview({ version }: { version: number }) {
   if (job.error) {
     return (
       <Card className="p-6 text-sm">
-        <span className="font-medium text-critical">Couldn't load this job.</span> {job.error}
+        <span className="font-medium text-critical">{t("loadJobFailed")}</span> {job.error}
       </Card>
     );
   }
@@ -143,7 +146,7 @@ export function CvReview({ version }: { version: number }) {
         to={`/jobs/${encodeURIComponent(id)}`}
         className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink"
       >
-        <ArrowLeft size={15} /> Back to job
+        <ArrowLeft size={15} /> {t("backToJob")}
       </Link>
 
       <Header
@@ -163,7 +166,7 @@ export function CvReview({ version }: { version: number }) {
           <CardBody className="flex items-center justify-between gap-3 py-3 text-sm">
             <span>{applied}</span>
             <Link to="/applications" className="shrink-0 text-ink-muted hover:text-ink">
-              Applications board →
+              {t("applicationsBoard")}
             </Link>
           </CardBody>
         </Card>
@@ -185,20 +188,20 @@ export function CvReview({ version }: { version: number }) {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <Card className="xl:sticky xl:top-20 xl:self-start">
             <CardHeader className="items-center">
-              <CardTitle>Tailored CV</CardTitle>
+              <CardTitle>{t("tailoredCv")}</CardTitle>
               <PageBadge pages={r?.pages ?? null} />
             </CardHeader>
             <CardBody className="pt-3">
               {pdfUrl ? (
                 <iframe
-                  title="Tailored CV"
+                  title={t("tailoredCv")}
                   src={`${pdfUrl}#toolbar=0&view=FitH`}
                   className="h-[820px] w-full rounded-lg border bg-white"
                 />
               ) : (
                 <div className="grid h-[820px] place-items-center rounded-lg border border-dashed text-sm text-ink-muted">
                   <span className="flex items-center gap-2">
-                    <FileText size={18} className="opacity-60" /> PDF not available
+                    <FileText size={18} className="opacity-60" /> {t("pdfUnavailable")}
                   </span>
                 </div>
               )}
@@ -240,6 +243,7 @@ function Header({
   onReject: () => void;
   onApply: () => void;
 }) {
+  const t = useT("review");
   const canApprove = job.status === "REVIEW";
   const canTailor = ["SHORTLISTED", "REVIEW", "FAILED"].includes(job.status);
   const canApply = ["APPROVED", "FAILED", "SUBMITTING"].includes(job.status);
@@ -259,7 +263,7 @@ function Header({
             {review && review.version > 0 && (
               <span className="font-mono text-[11px]">
                 v{review.version}
-                {review.round > 0 && ` · edit round ${review.round}`}
+                {review.round > 0 && ` · ${t("editRound", { round: review.round })}`}
               </span>
             )}
             <MatchMeter score={review?.match_score ?? job.match_score} />
@@ -269,22 +273,22 @@ function Header({
         <div className="flex flex-wrap items-center gap-2">
           <Link to={`/cv/${encodeURIComponent(job.id)}`}>
             <Button variant="outline" size="sm" disabled={!review || review.version === 0}>
-              <PenSquare size={14} /> Open in CV Studio
+              <PenSquare size={14} /> {t("openInStudio")}
             </Button>
           </Link>
           {canTailor && (
             <Button variant="outline" size="sm" onClick={onTailor} disabled={!!busy}>
               {busy === "tailor" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {review && review.version > 0 ? "Re-tailor" : "Tailor"}
+              {review && review.version > 0 ? t("retailor") : t("tailor")}
             </Button>
           )}
           <Button variant="danger" size="sm" onClick={onReject} disabled={!!busy}>
-            <X size={14} /> Skip
+            <X size={14} /> {t("skip")}
           </Button>
           {canApply ? (
             <Button size="sm" onClick={onApply} disabled={!!busy}>
               {busy === "apply" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              Apply
+              {t("applyJob")}
             </Button>
           ) : (
             <Button size="sm" onClick={onApprove} disabled={!!busy || !canApprove}>
@@ -293,7 +297,7 @@ function Header({
               ) : (
                 <Check size={14} />
               )}
-              Approve
+              {t("approve")}
             </Button>
           )}
         </div>
@@ -303,6 +307,8 @@ function Header({
 }
 
 function PageBadge({ pages }: { pages: number | null }) {
+  // Hook before the early return — `pages` is null whenever pypdf is missing.
+  const t = useT("review");
   if (pages === null) return null;
   return (
     <span
@@ -310,26 +316,23 @@ function PageBadge({ pages }: { pages: number | null }) {
         "rounded-md border px-2 py-0.5 font-mono text-[11px]",
         pages === 1 ? "border-good/40 text-good" : "border-critical/40 text-critical",
       )}
-      title={pages === 1 ? "Fits on one page" : "A CV should fit on one page — hide a section"}
+      title={pages === 1 ? t("pagesFit") : t("pagesOver")}
     >
-      {pages} page{pages === 1 ? "" : "s"}
+      {t(pages === 1 ? "pageCountOne" : "pageCountMany", { count: pages })}
     </span>
   );
 }
 
 function NotTailoredYet({ busy, onTailor }: { busy: boolean; onTailor: () => void }) {
+  const t = useT("review");
   return (
     <Card>
       <CardBody className="flex flex-col items-center gap-3 py-16 text-center">
         <Sparkles size={22} className="text-ink-muted opacity-60" />
-        <p className="max-w-md text-sm leading-relaxed text-ink-muted">
-          Not tailored yet. Tailoring reorders and trims your Master CV for this posting — it
-          never adds a skill you don't have. Takes about a minute: a Claude call plus a LaTeX
-          build. It runs in the background, so you can go and do something else.
-        </p>
+        <p className="max-w-md text-sm leading-relaxed text-ink-muted">{t("notTailoredBody")}</p>
         <Button onClick={onTailor} disabled={busy}>
           {busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-          {busy ? "Tailoring…" : "Tailor for this job"}
+          {busy ? t("tailoring") : t("tailorForJob")}
         </Button>
       </CardBody>
     </Card>
@@ -350,28 +353,28 @@ function EditBox({
   round: number;
   onSubmit: () => void;
 }) {
+  const t = useT("review");
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ask for a change</CardTitle>
-        {round > 0 && <span className="font-mono text-[11px] text-ink-muted">round {round}</span>}
+        <CardTitle>{t("askForChange")}</CardTitle>
+        {round > 0 && (
+          <span className="font-mono text-[11px] text-ink-muted">{t("roundN", { round })}</span>
+        )}
       </CardHeader>
       <CardBody className="flex flex-col gap-2 pt-3">
         <textarea
           rows={2}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. shorten the summary, put Food Forum last, lead with Docker"
+          placeholder={t("editPlaceholder")}
           className="w-full resize-none rounded-lg border bg-surface px-3 py-2 text-sm leading-relaxed text-ink placeholder:text-ink-muted/70 focus:border-accent focus:outline-none"
         />
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-ink-muted">
-            The agent re-plans within the same rules — it will refuse anything that would
-            claim experience you don't have.
-          </p>
+          <p className="text-xs text-ink-muted">{t("editHint")}</p>
           <Button size="sm" onClick={onSubmit} disabled={busy || !value.trim()}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : <PenSquare size={14} />}
-            {busy ? "Re-tailoring…" : "Send"}
+            {busy ? t("retailoring") : t("send")}
           </Button>
         </div>
       </CardBody>

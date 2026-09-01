@@ -1,5 +1,6 @@
 import { ArrowRight, Eye, EyeOff, MoveVertical, PenLine, Plus, Scissors } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { CvDiff, DiffStatus, TailorChange } from "@/types";
 
@@ -10,24 +11,29 @@ import type { CvDiff, DiffStatus, TailorChange } from "@/types";
  *
  * Shared with CV Studio's version compare, which passes no `changes` (there is
  * no tailor plan behind a hand edit) and its own `title`.
+ *
+ * Only the *frame* is translated. Section titles, the per-section notes (which
+ * `tailor/diff.py` picks from `TAILOR_LABELS` / `VERSION_LABELS`) and the
+ * before/after prose are CV content and agent output: they render exactly as
+ * the API sent them, in whatever language the CV is written in.
  */
 
-const STATUS: Record<DiffStatus, { label: string; icon: typeof PenLine; className: string }> = {
-  rewritten: { label: "Rewritten", icon: PenLine, className: "text-accent border-accent/40 bg-accent/10" },
-  trimmed: { label: "Trimmed", icon: Scissors, className: "text-critical border-critical/40 bg-critical/8" },
+const STATUS: Record<DiffStatus, { icon: typeof PenLine; className: string }> = {
+  rewritten: { icon: PenLine, className: "text-accent border-accent/40 bg-accent/10" },
+  trimmed: { icon: Scissors, className: "text-critical border-critical/40 bg-critical/8" },
   // Content the CV did not have before. Given the accent rather than a quiet
   // colour deliberately: this is the one status under which a fabricated claim
   // would appear, so it is the one a reviewer must not skim past.
-  expanded: { label: "Added", icon: Plus, className: "text-accent border-accent/40 bg-accent/10" },
-  hidden: { label: "Hidden", icon: EyeOff, className: "text-ink-muted border-border bg-surface-2" },
-  reordered: { label: "Reordered", icon: MoveVertical, className: "text-good border-good/40 bg-good/8" },
-  unchanged: { label: "Unchanged", icon: Eye, className: "text-ink-muted border-border" },
+  expanded: { icon: Plus, className: "text-accent border-accent/40 bg-accent/10" },
+  hidden: { icon: EyeOff, className: "text-ink-muted border-border bg-surface-2" },
+  reordered: { icon: MoveVertical, className: "text-good border-good/40 bg-good/8" },
+  unchanged: { icon: Eye, className: "text-ink-muted border-border" },
 };
 
 export function DiffPanel({
   diff,
   changes = [],
-  title = "What changed",
+  title,
   action,
 }: {
   diff: CvDiff;
@@ -35,15 +41,17 @@ export function DiffPanel({
   title?: string;
   action?: React.ReactNode;
 }) {
+  const t = useT("review");
   const touched = diff.sections.filter((s) => s.status !== "unchanged");
   const untouched = diff.sections.filter((s) => s.status === "unchanged");
 
   return (
     <Card>
       <CardHeader className="gap-3">
-        <CardTitle>{title}</CardTitle>
+        {/* CV Studio passes a version pair ("v3 → v7") — data, not copy. */}
+        <CardTitle>{title ?? t("whatChanged")}</CardTitle>
         <span className="ml-auto font-mono text-[11px] text-ink-muted">
-          {touched.length} of {diff.sections.length} sections
+          {t("sectionsChanged", { changed: touched.length, total: diff.sections.length })}
         </span>
         {action}
       </CardHeader>
@@ -65,7 +73,7 @@ export function DiffPanel({
         {diff.order_changed && (
           <div className="rounded-lg border bg-surface-2/60 px-3 py-2 text-xs">
             <span className="font-semibold uppercase tracking-[0.1em] text-ink-muted">
-              Section order
+              {t("sectionOrder")}
             </span>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono">
               {diff.order_after.map((key, i) => (
@@ -98,7 +106,7 @@ export function DiffPanel({
                       meta.className,
                     )}
                   >
-                    <Icon size={11} /> {meta.label}
+                    <Icon size={11} /> {t(`status_${section.status}`)}
                   </span>
                   <span className="text-sm font-medium">{section.title}</span>
                 </div>
@@ -128,7 +136,7 @@ export function DiffPanel({
 
         {untouched.length > 0 && (
           <p className="text-xs text-ink-muted">
-            Unchanged: {untouched.map((s) => s.title).join(", ")}
+            {t("unchangedList", { list: untouched.map((s) => s.title).join(", ") })}
           </p>
         )}
       </CardBody>

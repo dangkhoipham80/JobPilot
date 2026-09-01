@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { TooltipBox, surfaceColor } from "@/components/charts/ChartFrame";
 import { MUTED, sourceColor, sourceSlot } from "@/components/charts/palette";
+import { useT } from "@/i18n";
 import { sourceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import type { FacetRow } from "@/types";
@@ -15,7 +16,16 @@ const MAX_SLICES = 6;
 type Slice = { key: string; label: string; count: number; color: string; slot: number };
 type LegendRow = Slice & { folded: boolean };
 
-function build(rows: FacetRow[]): { slices: Slice[]; legend: LegendRow[] } {
+/**
+ * `otherLabel` is passed in already bound to a language. `build` is a plain
+ * function, not a component, so it cannot call `useT` itself; it stays a
+ * function of the fold size because only `build` knows how long the tail is.
+ * Source names need no such treatment — "ITviec" is "ITviec" in both languages.
+ */
+function build(
+  rows: FacetRow[],
+  otherLabel: (n: number) => string,
+): { slices: Slice[]; legend: LegendRow[] } {
   const ranked = [...rows].sort((a, b) => b.count - a.count);
   const folds = ranked.length > MAX_SLICES;
   const head = ranked.slice(0, folds ? MAX_SLICES - 1 : MAX_SLICES);
@@ -33,7 +43,7 @@ function build(rows: FacetRow[]): { slices: Slice[]; legend: LegendRow[] } {
   if (tail.length) {
     slices.push({
       key: "_other",
-      label: `Other (${tail.length})`,
+      label: otherLabel(tail.length),
       count: tail.reduce((n, r) => n + r.count, 0),
       color: MUTED,
       // Sorts last on the ring: grey is the absence of an identity hue, so it
@@ -67,13 +77,19 @@ function build(rows: FacetRow[]): { slices: Slice[]; legend: LegendRow[] } {
  * ranking people actually want is in the legend, where it is read as numbers.
  */
 export function SourceDonut({ rows, total }: { rows: FacetRow[]; total: number }) {
-  const { slices, legend } = useMemo(() => build(rows), [rows]);
+  const t = useT("dashboard");
+  // `t` is in the deps: the folded slice carries a translated label, so the
+  // memo has to be rebuilt when the language flips.
+  const { slices, legend } = useMemo(
+    () => build(rows, (n) => t("otherSources", { n })),
+    [rows, t],
+  );
   const ring = useMemo(() => [...slices].sort((a, b) => a.slot - b.slot), [slices]);
 
   if (!ring.length) {
     return (
       <div className="grid h-40 place-items-center text-sm text-muted-foreground">
-        Nothing crawled yet.
+        {t("nothingCrawled")}
       </div>
     );
   }
@@ -110,7 +126,9 @@ export function SourceDonut({ rows, total }: { rows: FacetRow[]; total: number }
                     label={String(payload[0].payload.label)}
                     rows={[
                       {
-                        key: `jobs · ${share(Number(payload[0].payload.count))}%`,
+                        key: t("tipJobsShare", {
+                          pct: share(Number(payload[0].payload.count)),
+                        }),
                         value: String(payload[0].payload.count),
                         color: String(payload[0].payload.color),
                       },
@@ -126,7 +144,7 @@ export function SourceDonut({ rows, total }: { rows: FacetRow[]; total: number }
           <div className="text-center">
             <div className="text-2xl font-semibold leading-none">{total}</div>
             <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-              postings
+              {t("postings")}
             </div>
           </div>
         </div>

@@ -15,7 +15,17 @@ import { useApi } from "@/hooks/useApi";
 import { isActive, useTask } from "@/hooks/useTask";
 import { Button, Card, CardBody, CardHeader, CardTitle, Skeleton } from "@/components/ui";
 import { TaskProgress } from "@/components/TaskProgress";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
 import type { BackupFile } from "@/types";
+
+/**
+ * Why the banner holds a key instead of a sentence: two of the three failures
+ * are our own copy and must follow the language switch, while `task.error` is a
+ * backend log line that must not be translated. Keeping both shapes in one
+ * state lets the render decide which is which.
+ */
+type Failure = { key: "alreadyRunning" | "startFailed" | "taskFailed" } | { raw: string };
 
 /**
  * Backup (deploy/). Shows what exists, runs a new one, and — the part people
@@ -27,9 +37,11 @@ import type { BackupFile } from "@/types";
  * this page opens on a phone.
  */
 export function Backup({ version }: { version: number }) {
+  const t = useT("backup");
+  const fmt = useFormat();
   const { data, loading, error, refetch } = useApi(() => api.backups(), [version]);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Failure | null>(null);
   // useRef, not state: two clicks in one tick both read a stale `false` and
   // queue two backups racing on the same directory (web/src/CLAUDE.md).
   const busy = useRef(false);
@@ -43,7 +55,8 @@ export function Backup({ version }: { version: number }) {
     if (!task || isActive(task) || landed.current === task.id) return;
     landed.current = task.id;
     busy.current = false;
-    if (task.status === "failed") setFailed(task.error ?? "backup failed");
+    if (task.status === "failed")
+      setFailed(task.error ? { raw: task.error } : { key: "taskFailed" });
     else refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task]);
@@ -57,7 +70,9 @@ export function Backup({ version }: { version: number }) {
     } catch (e) {
       busy.current = false;
       // 409 means one is already running — not an error worth a red banner.
-      setFailed(e instanceof ApiError && e.status === 409 ? "A backup is already running." : "Could not start the backup.");
+      setFailed({
+        key: e instanceof ApiError && e.status === 409 ? "alreadyRunning" : "startFailed",
+      });
     }
   }, []);
 
@@ -65,7 +80,7 @@ export function Backup({ version }: { version: number }) {
   if (error)
     return (
       <Card className="p-6 text-sm">
-        <span className="font-medium text-critical">Couldn't read the backup directory.</span> {error}
+        <span className="font-medium text-critical">{t("dirUnreadable")}</span> {error}
       </Card>
     );
   if (!data) return null;
@@ -77,10 +92,10 @@ export function Backup({ version }: { version: number }) {
     <div className="space-y-4">
       <Card>
         <CardHeader className="flex items-center justify-between gap-4">
-          <CardTitle>Backup</CardTitle>
+          <CardTitle>{t("title")}</CardTitle>
           <Button onClick={start} disabled={running}>
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? "Backing up..." : "Back up now"}
+            {running ? t("backingUp") : t("backUpNow")}
           </Button>
         </CardHeader>
         <CardBody className="space-y-4">
@@ -88,36 +103,35 @@ export function Backup({ version }: { version: number }) {
           {failed && (
             <p className="flex items-start gap-2 rounded-lg border border-critical/40 bg-critical/8 px-3 py-2 text-xs text-critical">
               <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>{failed}</span>
+              <span>{"raw" in failed ? failed.raw : t(failed.key)}</span>
             </p>
           )}
 
           <Health dumps={dumps.length} newest={dumps[0]} remote={data.remote} />
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label="Backups" value={`${data.items.length} files`} icon={HardDrive} />
-            <Stat label="Total size" value={humanSize(data.total_bytes)} icon={Database} />
             <Stat
-              label="Off this machine"
-              value={data.remote || "not configured"}
+              label={t("statBackups")}
+              value={t("filesCount", { count: data.items.length })}
+              icon={HardDrive}
+            />
+            <Stat label={t("statSize")} value={humanSize(data.total_bytes)} icon={Database} />
+            <Stat
+              label={t("statRemote")}
+              value={data.remote || t("remoteNone")}
               icon={data.remote ? Cloud : CloudOff}
               warn={!data.remote}
             />
           </div>
 
+          {/* The retention numbers used to be mono spans inside the sentence.
+              They are interpolated now: splitting one sentence into five JSX
+              fragments to keep a font is how a translation ends up with the
+              clauses in English word order. */}
           <p className="text-xs text-ink-muted">
-            Kept <span className="font-mono text-ink">{data.keep_days}d</span> or the last{" "}
-            <span className="font-mono text-ink">{data.keep_last}</span> of each kind here,
-            whichever bites first — age alone never prunes files made on the same day
-            {data.remote && (
-              <>
-                {" "}
-                and <span className="font-mono text-ink">{data.remote_keep_days}d</span> on the
-                remote — longer on purpose, so a bug in local pruning can't delete the surviving
-                copies too
-              </>
-            )}
-            . Directory: <code className="font-mono">{data.directory}</code>
+            {t("retentionLocal", { days: data.keep_days, last: data.keep_last })}
+            {data.remote && ` ${t("retentionRemote", { days: data.remote_keep_days })}`}{" "}
+            {t("directoryLabel")} <code className="font-mono">{data.directory}</code>
           </p>
         </CardBody>
       </Card>
@@ -125,13 +139,10 @@ export function Backup({ version }: { version: number }) {
       {data.restore_hint && (
         <Card>
           <CardHeader>
-            <CardTitle>Restore</CardTitle>
+            <CardTitle>{t("restoreTitle")}</CardTitle>
           </CardHeader>
           <CardBody className="space-y-2">
-            <p className="text-xs text-ink-muted">
-              A backup nobody knows how to restore is a backup nobody has. Run this at least once
-              against a scratch database, before you need it.
-            </p>
+            <p className="text-xs text-ink-muted">{t("restoreBody")}</p>
             <pre className="overflow-x-auto rounded-lg border bg-surface-2 px-3 py-2 font-mono text-[11px]">
               {data.restore_hint}
             </pre>
@@ -141,14 +152,11 @@ export function Backup({ version }: { version: number }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent runs</CardTitle>
+          <CardTitle>{t("runsTitle")}</CardTitle>
         </CardHeader>
         <CardBody>
           {data.runs.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              Nothing has run yet. The nightly job records itself here, so an empty list after a
-              night means it didn't fire.
-            </p>
+            <p className="text-sm text-ink-muted">{t("runsEmpty")}</p>
           ) : (
             <ul className="divide-y text-sm">
               {data.runs.map((r) => (
@@ -159,16 +167,19 @@ export function Backup({ version }: { version: number }) {
                     <AlertTriangle size={14} className="shrink-0 text-critical" />
                   )}
                   <span className="shrink-0 text-xs text-ink-muted">
-                    {r.started_at ? new Date(r.started_at).toLocaleString() : "-"}
+                    {fmt.clockTime(r.started_at)}
                   </span>
                   <span className="truncate text-xs">
                     {r.ok ? (
                       <>
-                        {r.mirrored_to ? `uploaded to ${r.mirrored_to}` : "local only"}
-                        {r.pruned > 0 && ` · pruned ${r.pruned}`}
+                        {r.mirrored_to
+                          ? t("runUploaded", { remote: r.mirrored_to })
+                          : t("runLocalOnly")}
+                        {r.pruned > 0 && ` · ${t("runPruned", { count: r.pruned })}`}
                       </>
                     ) : (
-                      <span className="text-critical">{r.error ?? "failed"}</span>
+                      // `r.error` is the backend's own message — a log line, not copy.
+                      <span className="text-critical">{r.error ?? t("runFailed")}</span>
                     )}
                   </span>
                   <span className="ml-auto shrink-0 text-xs text-ink-muted">
@@ -183,13 +194,11 @@ export function Backup({ version }: { version: number }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Files</CardTitle>
+          <CardTitle>{t("filesTitle")}</CardTitle>
         </CardHeader>
         <CardBody>
           {data.items.length === 0 ? (
-            <p className="text-sm text-ink-muted">
-              No backups yet. The scheduled job runs nightly; the button above runs one now.
-            </p>
+            <p className="text-sm text-ink-muted">{t("filesEmpty")}</p>
           ) : (
             <ul className="divide-y text-sm">
               {data.items.map((f) => (
@@ -207,7 +216,7 @@ export function Backup({ version }: { version: number }) {
                     {/* The filename is stamped in local time and this field is
                         UTC; formatting through the locale keeps one instant
                         from reading as two different clock times side by side. */}
-                    {new Date(f.created_at).toLocaleString()}
+                    {fmt.clockTime(f.created_at)}
                   </span>
                 </li>
               ))}
@@ -229,10 +238,14 @@ function Health({
   newest?: BackupFile;
   remote: string;
 }) {
+  // Hooks before the early returns, not after — `newest` is data-dependent.
+  const t = useT("backup");
+  const fmt = useFormat();
+
   if (!newest)
     return (
       <Banner tone="critical" icon={AlertTriangle}>
-        No database backup exists yet. Everything lives on this one machine.
+        {t("healthNone")}
       </Banner>
     );
 
@@ -242,21 +255,21 @@ function Health({
   if (ageHours > 48)
     return (
       <Banner tone="critical" icon={AlertTriangle}>
-        Newest backup is {Math.floor(ageHours / 24)} days old — the scheduled job may not be
-        running.
+        {t("healthStale", { days: Math.floor(ageHours / 24) })}
       </Banner>
     );
   if (!remote)
     return (
       <Banner tone="warn" icon={CloudOff}>
-        {dumps} backup{dumps === 1 ? "" : "s"} here, but none off this machine. A backup on the
-        same disk as the data doesn't survive losing the machine — which is the case it's for.
+        {t("healthNoRemote", {
+          // Vietnamese has no plural inflection, so only English needs the fork.
+          files: dumps === 1 ? t("dumpCountOne") : t("dumpCount", { count: dumps }),
+        })}
       </Banner>
     );
   return (
     <Banner tone="good" icon={ShieldCheck}>
-      Backed up {ageHours < 1 ? "just now" : `${Math.floor(ageHours)}h ago`}, with a copy on{" "}
-      {remote}.
+      {t("healthOk", { when: fmt.relativeTime(newest.created_at), remote })}
     </Banner>
   );
 }

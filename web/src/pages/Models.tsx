@@ -14,26 +14,20 @@ import {
   Skeleton,
 } from "@/components/ui";
 import { providerColor } from "@/components/charts/palette";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { LlmSettings, LlmTask, Settings as SettingsData } from "@/types";
 
-const TASKS: { key: LlmTask; label: string; blurb: string }[] = [
-  {
-    key: "tailor",
-    label: "Tailor",
-    blurb: "Reorders numbered CV items and writes one summary. Sends your whole Master CV.",
-  },
-  {
-    key: "letter",
-    label: "Cover letter",
-    blurb: "300 words a stranger judges you on. Also sends your whole Master CV.",
-  },
-  {
-    key: "classify",
-    label: "Classify reply",
-    blurb: "One employer email into one of six labels. The easy one — try a cheap model here.",
-  },
-];
+/**
+ * The three call sites, in dictionary keys rather than prose: the copy has to
+ * follow the language switch, and a module-scope constant is evaluated once,
+ * long before any hook could read the current language.
+ */
+const TASKS = [
+  { key: "tailor", label: "taskTailor", blurb: "taskTailorBlurb" },
+  { key: "letter", label: "taskLetter", blurb: "taskLetterBlurb" },
+  { key: "classify", label: "taskClassify", blurb: "taskClassifyBlurb" },
+] as const satisfies readonly { key: LlmTask; label: string; blurb: string }[];
 
 /** "—" for a number nobody can know, never a zero standing in for one. */
 function money(v: number | null): string {
@@ -61,6 +55,8 @@ function ms(v: number): string {
  * the guardrails; splitting them would leave the choice to be made from memory.
  */
 export function Models({ version }: { version: number }) {
+  const t = useT("models");
+  const tc = useT("common");
   // `live` asks each provider for its current model list — one round-trip per
   // provider, so it is a button rather than something the page does on load.
   const [live, setLive] = useState(false);
@@ -85,11 +81,11 @@ export function Models({ version }: { version: number }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setSaveError(e instanceof ApiError ? e.message : "Save failed");
+      setSaveError(e instanceof ApiError ? e.message : t("saveFailed"));
     } finally {
       setSaving(false);
     }
-  }, [draft, settings, stats]);
+  }, [draft, settings, stats, t]);
 
   const d = stats.data;
 
@@ -162,11 +158,8 @@ export function Models({ version }: { version: number }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Models</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Which model runs which call, and what each one has cost. Defaults change nothing
-          until you save.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("intro")}</p>
       </div>
 
       {/* A stale environment variable beating .env looks exactly like a bad key,
@@ -177,13 +170,14 @@ export function Models({ version }: { version: number }) {
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
             <div className="text-sm">
               <p className="font-medium">
-                {d?.shadowed_env.join(", ")} is set as an environment variable and in{" "}
-                <code className="rounded bg-muted px-1">.env</code>, with different values.
+                {t("envShadowA", { names: d?.shadowed_env.join(", ") ?? "" })}{" "}
+                <code className="rounded bg-muted px-1">.env</code>
+                {t("envShadowB")}
               </p>
               <p className="mt-1 text-muted-foreground">
-                The environment variable wins, so your <code>.env</code> edit is being ignored.
-                On Windows: <code className="rounded bg-muted px-1">setx NAME ""</code>, then open
-                a new terminal.
+                {t("envShadowBodyA")} <code>.env</code> {t("envShadowBodyB")}{" "}
+                <code className="rounded bg-muted px-1">setx NAME ""</code>
+                {t("envShadowBodyC")}
               </p>
             </div>
           </CardBody>
@@ -195,29 +189,31 @@ export function Models({ version }: { version: number }) {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardBody className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Recorded spend</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("kpiSpend")}</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {totals.anyPriced ? money(totals.spend) : "—"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               {totals.unpriced > 0
-                ? `${totals.unpriced} round(s) had no price — estimate excludes them`
-                : "across every recorded round"}
+                ? t("kpiSpendUnpriced", { count: totals.unpriced })
+                : t("kpiSpendAll")}
             </p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Model calls</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("kpiCalls")}</p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">{totals.calls}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              rates appear from {d?.min_sample ?? 10} calls per backend
+              {t("kpiCallsNote", { count: d?.min_sample ?? 10 })}
             </p>
           </CardBody>
         </Card>
         <Card>
           <CardBody className="py-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Providers ready</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              {t("kpiProviders")}
+            </p>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {Object.values(d?.providers ?? {}).filter(Boolean).length}
               <span className="text-base font-normal text-muted-foreground">
@@ -227,8 +223,8 @@ export function Models({ version }: { version: number }) {
             <p className="mt-1 text-xs text-muted-foreground">
               {Object.entries(d?.providers ?? {})
                 .filter(([, ok]) => !ok)
-                .map(([n]) => `${n}: no key`)
-                .join(", ") || "all keys present"}
+                .map(([n]) => t("providerNoKey", { provider: n }))
+                .join(", ") || t("allKeys")}
             </p>
           </CardBody>
         </Card>
@@ -238,22 +234,16 @@ export function Models({ version }: { version: number }) {
               target, three times over. ---- */}
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Credit used and left</CardTitle>
-          <Button
-            variant="ghost"
-            onClick={() => setLive((v) => !v)}
-            title="Ask each provider which models your key can use"
-          >
+          <CardTitle>{t("creditTitle")}</CardTitle>
+          <Button variant="ghost" onClick={() => setLive((v) => !v)} title={t("liveHint")}>
             <RefreshCw className={cn("h-4 w-4", stats.loading && "animate-spin")} />
-            {live ? "Live models on" : "Fetch live models"}
+            {live ? t("liveOn") : t("liveFetch")}
           </Button>
         </CardHeader>
         <CardBody className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            “Left” is your budget minus what <em>JobPilot</em> recorded spending — not a balance
-            read from the vendor. Every provider’s spend endpoint needs an <em>Admin</em> key,
-            which this app deliberately does not hold, so usage from anywhere else is invisible
-            here.
+            {t("creditNoteA")} <em>JobPilot</em> {t("creditNoteB")} <em>Admin</em>{" "}
+            {t("creditNoteC")}
           </p>
           {(d?.spend ?? []).map((s) => {
             const pct =
@@ -270,18 +260,24 @@ export function Models({ version }: { version: number }) {
                       style={{ background: providerColor(s.provider) }}
                     />
                     {s.provider}
-                    {!s.has_key && <span className="text-muted-foreground">(no key)</span>}
+                    {!s.has_key && <span className="text-muted-foreground">{t("noKey")}</span>}
                     {live && (
                       <span className="text-xs font-normal text-muted-foreground">
                         {s.models.length
-                          ? `${s.models.length} models offered`
-                          : "model list unavailable"}
+                          ? t("modelsOffered", { count: s.models.length })
+                          : t("modelListUnavailable")}
                       </span>
                     )}
                   </span>
                   <span className="tabular-nums text-muted-foreground">
-                    <span className="font-medium text-foreground">{money(s.spent_usd)}</span> used
-                    {s.remaining_usd !== null && <> · {money(s.remaining_usd)} left</>}
+                    <span className="font-medium text-foreground">{money(s.spent_usd)}</span>{" "}
+                    {t("used")}
+                    {s.remaining_usd !== null && (
+                      <>
+                        {" "}
+                        · {money(s.remaining_usd)} {t("left")}
+                      </>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -292,7 +288,7 @@ export function Models({ version }: { version: number }) {
                     />
                   </span>
                   <label className="flex items-center gap-1 text-xs text-muted-foreground">
-                    budget $
+                    {t("budget")}
                     <Input
                       type="number"
                       step="1"
@@ -305,32 +301,29 @@ export function Models({ version }: { version: number }) {
                 </div>
                 {s.unpriced_rounds > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {s.unpriced_rounds} round(s) ran on a model with no price on file — not
-                    counted above.
+                    {t("unpricedRounds", { count: s.unpriced_rounds })}
                   </p>
                 )}
               </div>
             );
           })}
-          <p className="text-xs text-muted-foreground">
-            Budgets save with the button below.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("budgetsSave")}</p>
         </CardBody>
       </Card>
 
       {/* ---- The picker ---- */}
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Which model runs which call</CardTitle>
+          <CardTitle>{t("pickerTitle")}</CardTitle>
           <div className="flex items-center gap-2">
             {saved && (
               <span className="flex items-center gap-1 text-sm text-emerald-600 dark:text-emerald-500">
-                <Check className="h-4 w-4" /> Saved
+                <Check className="h-4 w-4" /> {t("saved")}
               </span>
             )}
             <Button onClick={save} disabled={saving || !draft}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save
+              {saving ? tc("saving") : tc("save")}
             </Button>
           </div>
         </CardHeader>
@@ -350,14 +343,18 @@ export function Models({ version }: { version: number }) {
                     className="h-2.5 w-2.5 rounded-full"
                     style={{ background: providerColor(provider) }}
                   />
-                  <span className="font-medium">{label}</span>
-                  {!reachable && <Badge className="border-amber-500/50 text-amber-700 dark:text-amber-500">no API key</Badge>}
+                  <span className="font-medium">{t(label)}</span>
+                  {!reachable && (
+                    <Badge className="border-amber-500/50 text-amber-700 dark:text-amber-500">
+                      {t("badgeNoKey")}
+                    </Badge>
+                  )}
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">{blurb}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t(blurb)}</p>
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="text-sm">
-                    <span className="text-muted-foreground">Provider</span>
+                    <span className="text-muted-foreground">{t("provider")}</span>
                     <Select
                       className="mt-1"
                       value={provider}
@@ -366,33 +363,39 @@ export function Models({ version }: { version: number }) {
                       {Object.keys(d?.providers ?? {}).map((p) => (
                         <option key={p} value={p}>
                           {p}
-                          {d?.providers?.[p] ? "" : " (no key)"}
+                          {d?.providers?.[p] ? "" : ` ${t("noKey")}`}
                         </option>
                       ))}
                     </Select>
                   </label>
 
                   <label className="text-sm">
-                    <span className="text-muted-foreground">Model</span>
+                    <span className="text-muted-foreground">{t("model")}</span>
                     <Select
                       className="mt-1"
                       value={modelOf(key)}
                       onChange={(e) => setModel(key, e.target.value)}
                     >
-                      <option value="">provider default</option>
+                      <option value="">{t("providerDefault")}</option>
                       {(byProvider[provider] ?? []).map((m, i) => (
                         <option key={m.model} value={m.model}>
-                          {m.model} — ${m.input}/${m.output} per Mtok
+                          {m.model} — ${m.input}/${m.output} {t("perMtok")}
                           {/* The API returns each provider's models cheapest
                               first, so index 0 is the cheapest on offer. */}
-                          {i === 0 ? " · cheapest" : ""}
-                          {m.available ? "" : " (not offered to your key)"}
+                          {i === 0 ? ` · ${t("cheapest")}` : ""}
+                          {m.available ? "" : ` ${t("notOffered")}`}
                         </option>
                       ))}
                     </Select>
                   </label>
                 </div>
 
+                {/* `blockers` and `warnings` are composed by the backend
+                    (`llm.blocker()` / `llm.warnings()`) and render in whatever
+                    language it emitted — including the Gemini free-tier terms
+                    warning, which quotes Google's own wording. Paraphrasing a
+                    terms-of-service quote in the UI would be worse than leaving
+                    it in English. */}
                 {blocker && (
                   <p className="mt-2 flex items-start gap-1.5 text-sm text-amber-700 dark:text-amber-500">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -420,7 +423,7 @@ export function Models({ version }: { version: number }) {
       {costRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Cost so far, by backend</CardTitle>
+            <CardTitle>{t("costTitle")}</CardTitle>
           </CardHeader>
           <CardBody>
             <div className="mb-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -465,26 +468,26 @@ export function Models({ version }: { version: number }) {
               also the accessible fallback the palette check requires. ---- */}
       <Card>
         <CardHeader>
-          <CardTitle>Every backend that has run</CardTitle>
+          <CardTitle>{t("tableTitle")}</CardTitle>
         </CardHeader>
         <CardBody>
           {(d?.backends?.length ?? 0) === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No model calls recorded yet. Run{" "}
-              <code className="rounded bg-muted px-1">jobpilot llm bench --task classify</code> or
-              tailor a job.
+              {t("emptyA")}{" "}
+              <code className="rounded bg-muted px-1">jobpilot llm bench --task classify</code>{" "}
+              {t("emptyB")}
             </p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr className="border-b">
-                    <th className="py-2 pr-3 font-medium">Task</th>
-                    <th className="py-2 pr-3 font-medium">Model</th>
-                    <th className="py-2 pr-3 text-right font-medium">Calls</th>
-                    <th className="py-2 pr-3 text-right font-medium">Cost</th>
-                    <th className="py-2 pr-3 text-right font-medium">1st try</th>
-                    <th className="py-2 pr-3 text-right font-medium">OK</th>
+                    <th className="py-2 pr-3 font-medium">{t("colTask")}</th>
+                    <th className="py-2 pr-3 font-medium">{t("colModel")}</th>
+                    <th className="py-2 pr-3 text-right font-medium">{t("colCalls")}</th>
+                    <th className="py-2 pr-3 text-right font-medium">{t("colCost")}</th>
+                    <th className="py-2 pr-3 text-right font-medium">{t("colFirstTry")}</th>
+                    <th className="py-2 pr-3 text-right font-medium">{t("colOk")}</th>
                     <th className="py-2 pr-3 text-right font-medium">p50</th>
                     <th className="py-2 text-right font-medium">p95</th>
                   </tr>
@@ -528,10 +531,7 @@ export function Models({ version }: { version: number }) {
                 </tbody>
               </table>
               <p className="mt-3 text-xs text-muted-foreground">
-                “1st try” is the share of calls the guardrails accepted without a corrective
-                round — the quality number. Rates are withheld below {d?.min_sample ?? 10} calls
-                and shown as a count instead. “—” under Cost means the model is not in the price
-                table, which is not the same as free.
+                {t("tableNote", { count: d?.min_sample ?? 10 })}
               </p>
             </div>
           )}

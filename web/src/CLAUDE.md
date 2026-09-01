@@ -4,6 +4,11 @@
 > Dữ liệu đằng sau các chart ở `jobpilot/analytics/CLAUDE.md`; hợp đồng phân trang của API ở
 > `jobpilot/api/CLAUDE.md`.
 
+⚠️ **UI là song ngữ Việt/Anh, mặc định Tiếng Việt.** Thêm bất kỳ chuỗi nào hiện ra màn hình thì
+đọc `web/src/i18n/CLAUDE.md` trước: chuỗi cứng trong JSX là bug, không phải style nit. Ngày giờ /
+nhãn quality / trạng thái job phải đi qua `useFormat()` / `useLabels()` / `useStatuses()` —
+bản không-tham-số-ngôn-ngữ của chúng đã bị xoá nên call-site cũ sẽ **fail biên dịch**, đó là cố ý.
+
 ### Chart + màu — đọc trước khi thêm biểu đồ
 
 - **Màu theo *việc* nó làm** (skill `dataviz`, đọc trước khi thêm chart). Mọi chart đếm job dùng

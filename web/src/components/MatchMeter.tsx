@@ -1,24 +1,16 @@
+import { useT } from "@/i18n";
 import { matchPercent } from "@/lib/format";
+import { useLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import type { JobQuality } from "@/types";
-
-/** The arithmetic behind the number, as a tooltip. */
-function explain(quality?: JobQuality | null): string | undefined {
-  const matched = quality?.matched ?? [];
-  const missing = quality?.missing ?? [];
-  if (!matched.length && !missing.length) return undefined;
-  const lines: string[] = [];
-  if (matched.length) lines.push(`Mentions: ${matched.join(", ")}`);
-  if (missing.length) lines.push(`Doesn't mention: ${missing.join(", ")}`);
-  return lines.join("\n");
-}
 
 // Sequential magnitude (0..100%) as a single-hue meter — blue, light→dark by
 // value. Tabular figure so rows align.
 //
 // The tooltip carries the reasons: a bare "25%" is a verdict with no argument
 // attached, and the score comes from a list you configured, so naming that list
-// is what makes it reviewable.
+// is what makes it reviewable. The skill names inside it come from the crawler
+// and stay as stored — the prose around them is what gets translated.
 export function MatchMeter({
   score,
   quality,
@@ -28,13 +20,21 @@ export function MatchMeter({
   quality?: JobQuality | null;
   className?: string;
 }) {
+  const t = useT("jobs");
   const pct = matchPercent(score);
   const hue = pct >= 66 ? "#256abf" : pct >= 33 ? "#3987e5" : "#86b6ef";
-  const why = explain(quality);
+
+  const matched = quality?.matched ?? [];
+  const missing = quality?.missing ?? [];
+  const reasons: string[] = [];
+  if (matched.length) reasons.push(t("mentions", { list: matched.join(", ") }));
+  if (missing.length) reasons.push(t("doesntMention", { list: missing.join(", ") }));
+
+  const label = t("match", { pct });
   return (
     <div
       className={cn("flex items-center gap-2", className)}
-      title={why ? `Match ${pct}%\n${why}` : `Match ${pct}%`}
+      title={reasons.length ? `${label}\n${reasons.join("\n")}` : label}
     >
       <div className="h-1.5 w-16 overflow-hidden rounded-full bg-ink/10">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: hue }} />
@@ -44,20 +44,15 @@ export function MatchMeter({
   );
 }
 
-const FLAG_LABEL: Record<string, { short: string; why: string }> = {
-  no_jd: { short: "no JD", why: "No description — paste one in before tailoring." },
-  thin_jd: {
-    short: "thin JD",
-    why: "Very short description; there may not be enough here to tailor against.",
-  },
-  stale: { short: "old", why: "Posted a while ago; the role may already be filled." },
-  undated: { short: "undated", why: "The source didn't publish a date, so freshness is unknown." },
-};
-
 /**
  * Advisory badges. These never hide a job — they annotate it and leave the
  * decision with you, the same way the crawler surfaces a gap rather than
  * quietly closing it.
+ *
+ * The badge text is a deliberately terser wording than `useLabels().qualityLabel`
+ * ("no JD" vs "No description") because it has to fit a chip in a table row —
+ * but a flag nobody has written copy for yet falls back to the shared label, so
+ * a new one out of the crawler still reads in the right language on day one.
  */
 export function QualityFlags({
   quality,
@@ -66,12 +61,21 @@ export function QualityFlags({
   quality?: JobQuality | null;
   className?: string;
 }) {
+  const t = useT("jobs");
+  const labels = useLabels();
   const flags = quality?.flags ?? [];
+  const known: Record<string, { short: string; why: string }> = {
+    no_jd: { short: t("flagNoJd"), why: t("flagNoJdWhy") },
+    thin_jd: { short: t("flagThinJd"), why: t("flagThinJdWhy") },
+    stale: { short: t("flagStale"), why: t("flagStaleWhy") },
+    undated: { short: t("flagUndated"), why: t("flagUndatedWhy") },
+  };
   if (!flags.length) return null;
   return (
     <div className={cn("flex flex-wrap items-center gap-1", className)}>
       {flags.map((f) => {
-        const meta = FLAG_LABEL[f] ?? { short: f, why: f };
+        const fallback = labels.qualityLabel(f);
+        const meta = known[f] ?? { short: fallback, why: fallback };
         return (
           <span
             key={f}

@@ -181,13 +181,15 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | deploy | FastAPI serve `web/dist` **same-origin** (API xuống `/api`), siết token + khoá gate email, systemd/timer + backup, CI/CD | `api/static.py`, `api/security.py`, `deploy/`, `.github/workflows/ci.yml`, `DEPLOY.md` |
 | cv-A | Template thứ hai **`plain`** (ATS-first, bỏ `.cls`) + picker trong Studio; template tự khai `template.json` | `cv/templates/plain/`, `cv/render.py`, `web/src/components/cv/TemplatePicker.tsx` |
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
+| i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 17 namespace / 751 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 
 844 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
 6 model, tailor 2/2 qua guardrail vòng đầu. Trang `/models` đổi model từ UI ghi xuống
-`config.local.yaml` và CLI chạy đúng backend mới.
+`config.local.yaml` và CLI chạy đúng backend mới. UI song ngữ đã đi thật qua Deck/Jobs/CV Studio/
+Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error.
 
 **Bài học xuyên suốt** (ca cụ thể ở `PHASES.md`):
 - **Test xanh không chứng minh parser đúng.** Mỗi phase crawl đều có bug chỉ lộ ra khi
@@ -216,6 +218,15 @@ Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `ll
   app-level token `connections:write`, bật **Interactivity** (quên thì tin nhắn vẫn hiện mà bấm
   nút im lặng), và `/invite @jobpilot` vào channel. Lỗi hay gặp: channel **riêng tư** mà bot chưa
   được mời trả `channel_not_found`, không phải `not_in_channel` — hai lỗi đó phân biệt public/private.
+- **i18n mới phủ frontend.** Chuỗi do **backend soạn** vẫn ra tiếng Anh giữa trang tiếng Việt:
+  `facet.note` (Market), `split.note` (Dashboard), `llm.blocker()`/`warnings()` (Models), các
+  `*_hint` (Applications), `description` của template (CV Studio). **Đừng vá ở frontend** —
+  dịch chúng nghĩa là pattern-match chính câu tiếng Anh của mình, mong manh và sai chỗ. Muốn
+  phủ hết thì backend phải trả **key + số** (hoặc nhận tham số ngôn ngữ), là một phase riêng.
+- **`edit_guard._NUMBER_WORDS` chỉ có tiếng Anh** và `_WORD_RE` là `[a-zA-Z]+`, nên số bịa viết
+  bằng chữ tiếng Việt ("mười hai", "gấp đôi") lọt qua — chữ **số** thì vẫn bị bắt, và provenance
+  (`textnorm.quote_appears_in`) xử lý tiếng Việt đúng + fail-closed. Vì lỗ này mà ba chip gợi ý
+  trong `InstructionBox` **cố ý giữ tiếng Anh ở cả hai ngôn ngữ** (lý do đầy đủ ở `i18n/dict/cv.ts`).
 
 ## Quyết định đã chốt (không tự đổi nếu user không yêu cầu)
 

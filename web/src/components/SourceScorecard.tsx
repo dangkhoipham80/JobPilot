@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { AlertTriangle, Clock, Repeat } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
+import { useT } from "@/i18n";
 import { titleCase } from "@/lib/format";
+import { useLabels } from "@/lib/labels";
 import type { OutcomeAnalytics, OutcomeBucket, OutcomeSplit } from "@/types";
 
 /**
@@ -19,21 +21,35 @@ import type { OutcomeAnalytics, OutcomeBucket, OutcomeSplit } from "@/types";
  * and dividing `answered / sent` in the view would put back exactly the
  * percentage the suppression exists to prevent.
  */
+// The second element is a dictionary key, not a visible string: the tab and the
+// first column head must resolve at render time so they follow the language
+// switch (see `i18n/CLAUDE.md`).
 const DIMENSIONS = [
-  ["by_source", "Source"],
-  ["by_channel", "Channel"],
-  ["by_level", "Level"],
+  ["by_source", "dimSource"],
+  ["by_channel", "dimChannel"],
+  ["by_level", "dimLevel"],
 ] as const;
 
 type Dimension = (typeof DIMENSIONS)[number][0];
 
 export function SourceScorecard({ data }: { data: OutcomeAnalytics }) {
+  const t = useT("dashboard");
   const [dimension, setDimension] = useState<Dimension>("by_source");
   const split = data[dimension];
   // The header follows the tab. It used to be the literal "Source", so
   // switching to Channel showed `email`/`portal` rows under a column headed
   // "Source" — right numbers, wrong label, which is worse than either.
-  const label = DIMENSIONS.find(([key]) => key === dimension)![1];
+  const label = t(DIMENSIONS.find(([key]) => key === dimension)![1]);
+  // How to spell a row key depends on which tab you are on: board names have
+  // their own capitalisation, the seniority ladder has a canonical form, and a
+  // channel is a plain lowercase word the dispatcher wrote.
+  const labels = useLabels();
+  const keyLabel =
+    dimension === "by_source"
+      ? labels.sourceLabel
+      : dimension === "by_level"
+        ? labels.levelLabel
+        : titleCase;
 
   // A repeat posting is a fact about the crawled corpus, not about applying —
   // "this ad has been reposted five times in four months" is worth knowing
@@ -47,10 +63,11 @@ export function SourceScorecard({ data }: { data: OutcomeAnalytics }) {
       <Card>
         <CardHeader className="flex-wrap gap-2">
           <div>
-            <CardTitle>Where the answers come from</CardTitle>
+            <CardTitle>{t("scorecardTitle")}</CardTitle>
             <p className="mt-0.5 text-xs text-ink-muted">
-              {data.total_sent} real application{data.total_sent === 1 ? "" : "s"} · dry runs
-              excluded · rates need {data.min_sample}+ per row
+              {data.total_sent === 1
+                ? t("scorecardMetaOne", { min: data.min_sample })
+                : t("scorecardMeta", { n: data.total_sent, min: data.min_sample })}
             </p>
           </div>
           <div className="flex gap-1 rounded-lg bg-surface-2 p-0.5">
@@ -64,13 +81,13 @@ export function SourceScorecard({ data }: { data: OutcomeAnalytics }) {
                     : "text-ink-muted hover:text-ink"
                 }`}
               >
-                {tab}
+                {t(tab)}
               </button>
             ))}
           </div>
         </CardHeader>
         <CardBody>
-          <SplitTable split={split} minSample={data.min_sample} label={label} />
+          <SplitTable split={split} minSample={data.min_sample} label={label} keyLabel={keyLabel} />
         </CardBody>
       </Card>
 
@@ -86,13 +103,23 @@ function SplitTable({
   split,
   minSample,
   label,
+  keyLabel,
 }: {
   split: OutcomeSplit;
   minSample: number;
   label: string;
+  keyLabel: (key: string) => string;
 }) {
+  const t = useT("dashboard");
+  const common = useT("common");
   if (split.rows.length === 0) {
-    return <p className="py-6 text-center text-sm text-ink-muted">{split.note || "Nothing yet."}</p>;
+    // `split.note` is a sentence the analytics backend composed; it is data
+    // about this corpus, not UI copy, so it is printed as it arrived.
+    return (
+      <p className="py-6 text-center text-sm text-ink-muted">
+        {split.note || common("noData")}
+      </p>
+    );
   }
 
   return (
@@ -102,16 +129,16 @@ function SplitTable({
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
               <th className="pb-2 font-medium">{label}</th>
-              <th className="pb-2 text-right font-medium">Sent</th>
-              <th className="pb-2 text-right font-medium">Answered</th>
-              <th className="pb-2 text-right font-medium">Interviews</th>
-              <th className="pb-2 text-right font-medium">Offers</th>
-              <th className="pb-2 pl-4 font-medium">Reply rate</th>
+              <th className="pb-2 text-right font-medium">{t("colSent")}</th>
+              <th className="pb-2 text-right font-medium">{t("colAnswered")}</th>
+              <th className="pb-2 text-right font-medium">{t("colInterviews")}</th>
+              <th className="pb-2 text-right font-medium">{t("colOffers")}</th>
+              <th className="pb-2 pl-4 font-medium">{t("colReplyRate")}</th>
             </tr>
           </thead>
           <tbody>
             {split.rows.map((row) => (
-              <Row key={row.key} row={row} minSample={minSample} />
+              <Row key={row.key} row={row} minSample={minSample} keyLabel={keyLabel} />
             ))}
           </tbody>
         </table>
@@ -126,10 +153,24 @@ function SplitTable({
   );
 }
 
-function Row({ row, minSample }: { row: OutcomeBucket; minSample: number }) {
+function Row({
+  row,
+  minSample,
+  keyLabel,
+}: {
+  row: OutcomeBucket;
+  minSample: number;
+  keyLabel: (key: string) => string;
+}) {
+  const t = useT("dashboard");
   return (
     <tr className="border-b border-line/50 last:border-0">
-      <td className="py-2.5 font-medium">{titleCase(row.key)}</td>
+      {/* Untranslated by design — a board name, `email`/`portal` as the
+          dispatcher records it, and a seniority ladder the Vietnamese market
+          advertises in English. But *spelling* is not translation: title-casing
+          a raw key writes "Itviec" and "Wework remotely", names no board uses,
+          so the row goes through the label helper for its dimension. */}
+      <td className="py-2.5 font-medium">{keyLabel(row.key)}</td>
       <td className="py-2.5 text-right tabular-nums">{row.sent}</td>
       <td className="py-2.5 text-right tabular-nums">{row.answered}</td>
       <td className="py-2.5 text-right tabular-nums">{row.interviewed}</td>
@@ -141,7 +182,7 @@ function Row({ row, minSample }: { row: OutcomeBucket; minSample: number }) {
           // The honest cell. Not "0%", not blank — the sample is stated so the
           // reader can see how far it is from being readable.
           <span className="text-xs text-ink-muted">
-            n={row.sent} · needs {minSample}
+            {t("needsSample", { n: row.sent, min: minSample })}
           </span>
         ) : (
           <RateBar value={row.reply_rate} />
@@ -169,33 +210,35 @@ function RateBar({ value }: { value: number }) {
 }
 
 function TimingCard({ data }: { data: OutcomeAnalytics }) {
-  const t = data.timing;
+  const t = useT("dashboard");
+  const timing = data.timing;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Clock size={15} /> How long an answer takes
+          <Clock size={15} /> {t("timingTitle")}
         </CardTitle>
       </CardHeader>
       <CardBody className="space-y-2">
-        {t.median_days === null ? (
-          <p className="text-sm text-ink-muted">
-            Nobody has answered yet, so there is nothing to time.
-          </p>
+        {timing.median_days === null ? (
+          <p className="text-sm text-ink-muted">{t("timingEmpty")}</p>
         ) : (
           <>
             <div className="flex items-baseline gap-2">
               <span className="font-display text-3xl font-semibold tabular-nums">
-                {t.median_days}
+                {timing.median_days}
               </span>
-              <span className="text-sm text-ink-muted">days, typically</span>
+              <span className="text-sm text-ink-muted">{t("timingUnit")}</span>
             </div>
             {/* `?? "?"`: the three come from the same list so the backend never
                 splits them, but the type says nullable and "fastest nulld" is a
                 worse way to learn that than a question mark. */}
             <p className="text-xs text-ink-muted">
-              fastest {t.fastest_days ?? "?"}d · slowest {t.slowest_days ?? "?"}d · from{" "}
-              {t.answered} answered
+              {t("timingRange", {
+                fast: timing.fastest_days ?? "?",
+                slow: timing.slowest_days ?? "?",
+                n: timing.answered,
+              })}
             </p>
           </>
         )}
@@ -203,18 +246,19 @@ function TimingCard({ data }: { data: OutcomeAnalytics }) {
             slow reply, and counting it would make this number drift worse every
             day nothing happens. */}
         <p className="text-xs text-ink-muted">
-          {t.still_waiting} still waiting — not counted above
-          {t.undated > 0 && ` · ${t.undated} with no send date`}
+          {t("timingWaiting", { n: timing.still_waiting })}
+          {timing.undated > 0 && t("timingUndated", { n: timing.undated })}
           {/* Dropped, not clamped to 0: an answer dated before the send means one
               of the two timestamps is wrong, and a 0-day reply would read as the
               fastest one in the corpus. */}
-          {t.inconsistent > 0 && ` · ${t.inconsistent} answered before the send date`}
+          {timing.inconsistent > 0 && t("timingInconsistent", { n: timing.inconsistent })}
         </p>
-        {t.thin && t.median_days !== null && (
+        {timing.thin && timing.median_days !== null && (
           <p className="flex items-start gap-1.5 text-xs text-ink-muted">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            Only {t.answered} answer{t.answered === 1 ? "" : "s"} — read this as a hint, not a
-            typical wait.
+            {timing.answered === 1
+              ? t("timingThinOne")
+              : t("timingThin", { n: timing.answered })}
           </p>
         )}
       </CardBody>
@@ -223,23 +267,24 @@ function TimingCard({ data }: { data: OutcomeAnalytics }) {
 }
 
 function RepeatsCard({ data }: { data: OutcomeAnalytics }) {
+  const t = useT("dashboard");
   const { rows, total_groups, shown, min_postings } = data.repeats;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Repeat size={15} /> Ads that keep coming back
+          <Repeat size={15} /> {t("repeatsTitle")}
         </CardTitle>
         {total_groups > shown && (
           <span className="text-xs text-ink-muted">
-            {shown} of {total_groups}
+            {t("repeatsShown", { shown, total: total_groups })}
           </span>
         )}
       </CardHeader>
       <CardBody className="space-y-3">
         {rows.length === 0 ? (
           <p className="text-sm text-ink-muted">
-            No company has posted the same title {min_postings}+ times.
+            {t("repeatsEmpty", { min: min_postings })}
           </p>
         ) : (
           <>
@@ -249,12 +294,12 @@ function RepeatsCard({ data }: { data: OutcomeAnalytics }) {
                   <span className="font-medium">{r.title}</span>
                   <span className="text-ink-muted"> · {r.company}</span>
                   <div className="text-xs text-ink-muted">
-                    {r.postings} postings
+                    {t("repeatsPostings", { n: r.postings })}
                     {/* null, not 0 — an unknown spread is not a same-day spread. */}
                     {r.span_days !== null
-                      ? ` over ${r.span_days} days`
-                      : " · dates unknown"}
-                    {r.undated_postings > 0 && ` · ${r.undated_postings} undated`}
+                      ? t("repeatsSpan", { n: r.span_days })
+                      : t("repeatsNoDates")}
+                    {r.undated_postings > 0 && t("repeatsUndated", { n: r.undated_postings })}
                   </div>
                 </li>
               ))}
@@ -262,10 +307,7 @@ function RepeatsCard({ data }: { data: OutcomeAnalytics }) {
             {/* The wording is deliberate. Two openings with the same title at one
                 company are ordinary hiring; this evidence cannot tell that apart
                 from an ad nobody ever fills, so it reports and does not judge. */}
-            <p className="text-xs text-ink-muted">
-              A repeat can mean steady hiring or a posting nobody fills — worth a look, not a
-              verdict.
-            </p>
+            <p className="text-xs text-ink-muted">{t("repeatsFootnote")}</p>
           </>
         )}
       </CardBody>

@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select } from "@/components/ui";
 import { SourceIcon } from "@/components/SourceIcon";
+import { useT } from "@/i18n";
 import { sourceHome, sourceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,8 @@ export function CrawlSetup({
   blocked: boolean;
   onCrawl: (body: { query?: string; sources?: string[]; limit?: number }) => Promise<void>;
 }) {
+  const t = useT("runs");
+  const nav = useT("nav");
   const { data: setup } = useApi(() => api.crawlSetup(), [version]);
 
   const [query, setQuery] = useState("");
@@ -84,20 +87,20 @@ export function CrawlSetup({
         limit: typeof limit === "number" ? limit : undefined,
       });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not start the crawl");
+      setError(e instanceof ApiError ? e.message : t("crawlFailed"));
     }
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Crawl setup</CardTitle>
-        <span className="text-[11px] text-ink-muted">applies to this run only</span>
+        <CardTitle>{t("setupTitle")}</CardTitle>
+        <span className="text-[11px] text-ink-muted">{t("setupScope")}</span>
       </CardHeader>
       <CardBody className="space-y-4 pt-4">
         {/* Sources */}
         <div>
-          <Label>Sources</Label>
+          <Label>{t("sources")}</Label>
           <div className="flex flex-wrap gap-2">
             {runnable.map((key) => {
               const on = selected.includes(key);
@@ -145,9 +148,9 @@ export function CrawlSetup({
             })}
             {!runnable.length && (
               <p className="text-sm text-ink-muted">
-                No source is ready to crawl. Turn one on in{" "}
+                {t("noSourceReady")}{" "}
                 <Link to="/settings" className="text-accent hover:underline">
-                  Settings
+                  {nav("settings")}
                 </Link>
                 .
               </p>
@@ -156,30 +159,33 @@ export function CrawlSetup({
           {notReady.length > 0 && (
             <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
               <AlertTriangle size={11} className="text-accent" />
-              On in Settings but not implemented yet:{" "}
-              {notReady.map((s) => sourceLabel(s.key)).join(", ")} — they'd crawl nothing.
+              {t("notReady", { names: notReady.map((s) => sourceLabel(s.key)).join(", ") })}
             </p>
           )}
           {off.length > 0 && (
             <p className="mt-1 text-[11px] text-ink-muted">
-              Off in Settings: {off.map((s) => sourceLabel(s.key)).join(", ")}
+              {t("off", { names: off.map((s) => sourceLabel(s.key)).join(", ") })}
             </p>
           )}
         </div>
 
         {/* Query + CV-derived suggestions */}
         <div>
-          <Label>Search for</Label>
+          <Label>{t("searchFor")}</Label>
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={setup?.default_query ? `${setup.default_query} (from Settings)` : "keywords"}
+            placeholder={
+              setup?.default_query
+                ? t("queryFromSettings", { query: setup.default_query })
+                : t("queryPlaceholder")
+            }
           />
           {suggestions.length > 0 && (
             <>
               <p className="mb-1.5 mt-2.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
                 <Sparkles size={12} className="text-accent" />
-                From your CV — click to add
+                {t("fromCv")}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {suggestions.map((term) => {
@@ -207,11 +213,11 @@ export function CrawlSetup({
           )}
           {setup && suggestions.length === 0 && (
             <p className="mt-2 text-[11px] text-ink-muted">
-              No suggestions yet — fill in your skills and tech stack in{" "}
+              {t("noSuggestions")}{" "}
               <Link to="/cv" className="text-accent hover:underline">
-                CV Studio
+                {nav("cv")}
               </Link>{" "}
-              and they'll show up here.
+              {t("noSuggestionsEnd")}
             </p>
           )}
         </div>
@@ -219,16 +225,16 @@ export function CrawlSetup({
         {/* Depth + go */}
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <Label>Jobs per site</Label>
+            <Label>{t("jobsPerSite")}</Label>
             <Select
               value={String(limit)}
               onChange={(e) => setLimit(e.target.value ? Number(e.target.value) : "")}
               className="w-44"
             >
-              <option value="">Default ({setup?.jobs_per_site ?? "—"})</option>
+              <option value="">{t("limitDefault", { count: setup?.jobs_per_site ?? "—" })}</option>
               {[10, 25, 50, 100].map((n) => (
                 <option key={n} value={n}>
-                  {n} {n >= 50 ? "(slow)" : ""}
+                  {n} {n >= 50 ? t("limitSlow") : ""}
                 </option>
               ))}
             </Select>
@@ -240,16 +246,11 @@ export function CrawlSetup({
             className="ml-auto"
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-            Crawl now
+            {t("crawlNow")}
           </Button>
         </div>
 
-        {blocked && (
-          <p className="text-xs text-ink-muted">
-            A crawl is already running. One at a time — a second would race the same sites and
-            trip their rate limits.
-          </p>
-        )}
+        {blocked && <p className="text-xs text-ink-muted">{t("crawlBlocked")}</p>}
         {error && (
           <p className="flex items-start gap-2 rounded-lg border border-critical/40 bg-critical/5 px-3 py-2 text-sm">
             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-critical" />

@@ -27,7 +27,9 @@ import { Card, CardBody, CardHeader, CardTitle, Skeleton } from "@/components/ui
 import { TooltipBox, axisColor, gridColor } from "@/components/charts/ChartFrame";
 import { SourceDonut } from "@/components/charts/SourceDonut";
 import { MUTED, STATUS, categorical, ordinalRamp } from "@/components/charts/palette";
-import { levelLabel, qualityLabel, skillLabel } from "@/lib/labels";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
+import { skillLabel, useLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import type { Facet, FacetRow } from "@/types";
 
@@ -49,17 +51,20 @@ const QUALITY_TONE: Record<string, { color: string; icon: LucideIcon }> = {
   undated: { color: MUTED, icon: CalendarOff },
 };
 
+/** Section ids paired with their dictionary key. `as const` is load-bearing:
+ *  it keeps `s.key` a union of literal keys, so a typo here is a compile error
+ *  in `t(s.key)` rather than a nav item that renders its own key name. */
 const SECTIONS = [
-  { id: "overview", label: "Overview" },
-  { id: "skills", label: "Skills" },
-  { id: "salary", label: "Salary" },
-  { id: "cities", label: "Locations" },
-  { id: "levels", label: "Seniority" },
-  { id: "match", label: "Match score" },
-  { id: "quality", label: "Posting quality" },
-  { id: "sources", label: "Sources" },
-  { id: "calendar", label: "Posting calendar" },
-];
+  { id: "overview", key: "navOverview" },
+  { id: "skills", key: "navSkills" },
+  { id: "salary", key: "navSalary" },
+  { id: "cities", key: "navCities" },
+  { id: "levels", key: "navLevels" },
+  { id: "match", key: "navMatch" },
+  { id: "quality", key: "navQuality" },
+  { id: "sources", key: "navSources" },
+  { id: "calendar", key: "navCalendar" },
+] as const;
 
 /**
  * How much of the corpus a chart actually saw.
@@ -70,13 +75,17 @@ const SECTIONS = [
  * describing a minority of the market and have to say so.
  */
 function Coverage({ facet }: { facet: Facet }) {
+  const t = useT("market");
   return (
     <span className="text-xs font-normal text-muted-foreground">
-      {facet.covered} of {facet.total} jobs
+      {t("coverage", { covered: facet.covered, total: facet.total })}
     </span>
   );
 }
 
+/** The analytics layer's own sentence about why a facet is thin. It is a
+ *  backend value like `task.progress`, so it renders in whatever language the
+ *  API emitted rather than going through the dictionary. */
 function Note({ facet }: { facet: Facet }) {
   if (!facet.note) return null;
   return (
@@ -113,9 +122,11 @@ function FacetBars({
   label?: (key: string) => string;
   color?: (key: string, index: number, total: number) => string;
 }) {
+  // Above the early return: hooks cannot be conditional on the row count.
+  const t = useT("market");
   const source = facet.rows.filter((r) => r.key !== "_summary");
   const rows = source.map((r) => ({ ...r, label: label(r.key) }));
-  if (!rows.length) return <Empty>Nothing to show yet.</Empty>;
+  if (!rows.length) return <Empty>{t("emptyRows")}</Empty>;
   const measure = MEASURE();
   return (
     <ResponsiveContainer width="100%" height={Math.max(rows.length * 28, 88)}>
@@ -135,7 +146,7 @@ function FacetBars({
             payload?.length ? (
               <TooltipBox
                 label={String(payload[0].payload.label)}
-                rows={[{ key: "jobs", value: String(payload[0].payload.count) }]}
+                rows={[{ key: t("tipJobs"), value: String(payload[0].payload.count) }]}
               />
             ) : null
           }
@@ -159,12 +170,13 @@ function FacetBars({
 /** Quality flags: the bars plus the icon-and-word key the status scale is only
  *  allowed to be used with. */
 function QualityChart({ facet }: { facet: Facet }) {
+  const labels = useLabels();
   const rows = facet.rows.filter((r) => r.key !== "_summary");
   return (
     <>
       <FacetBars
         facet={facet}
-        label={qualityLabel}
+        label={labels.qualityLabel}
         color={(key) => QUALITY_TONE[key]?.color ?? MUTED}
       />
       <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
@@ -174,7 +186,7 @@ function QualityChart({ facet }: { facet: Facet }) {
           return (
             <li key={r.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Icon className="h-3.5 w-3.5" style={{ color: tone?.color ?? MUTED }} />
-              {qualityLabel(r.key)}
+              {labels.qualityLabel(r.key)}
             </li>
           );
         })}
@@ -188,8 +200,9 @@ function QualityChart({ facet }: { facet: Facet }) {
  *  in order along the axis, so the bars are one measure in one colour — a ramp
  *  here would encode the x position a second time, in hue. */
 function FacetHistogram({ facet }: { facet: Facet }) {
+  const t = useT("market");
   const rows = facet.rows.filter((r) => r.key !== "_summary");
-  if (!rows.length || rows.every((r) => !r.count)) return <Empty>Nothing to show yet.</Empty>;
+  if (!rows.length || rows.every((r) => !r.count)) return <Empty>{t("emptyRows")}</Empty>;
   return (
     <ResponsiveContainer width="100%" height={190}>
       <BarChart data={rows} margin={{ left: 0, right: 8, top: 8, bottom: 4 }}>
@@ -213,7 +226,7 @@ function FacetHistogram({ facet }: { facet: Facet }) {
             payload?.length ? (
               <TooltipBox
                 label={String(label)}
-                rows={[{ key: "jobs", value: String(payload[0].value) }]}
+                rows={[{ key: t("tipJobs"), value: String(payload[0].value) }]}
               />
             ) : null
           }
@@ -236,13 +249,6 @@ function FacetHistogram({ facet }: { facet: Facet }) {
 const usd = (n: number | undefined) =>
   n === undefined ? "—" : `$${Math.round(n).toLocaleString("en-US")}`;
 
-const DAY_FMT = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" });
-const FULL_FMT = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" });
-const asDay = (iso: string, fmt: Intl.DateTimeFormat) => {
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? iso : fmt.format(d);
-};
-
 /**
  * Postings per day, as a time series.
  *
@@ -253,12 +259,26 @@ const asDay = (iso: string, fmt: Intl.DateTimeFormat) => {
  * which is the one thing this facet is for.
  */
 function PostingTrend({ facet }: { facet: Facet }) {
+  const t = useT("market");
+  const fmt = useFormat();
+  // Axis ticks want the short form; the tooltip is the one place worth spending
+  // the room on a year, since a corpus can span a new year's boundary and
+  // "Jan 3" alone would then be ambiguous against "Dec 30". Built here, at the
+  // top of a component, so the recharts callbacks below only close over it —
+  // `useFormat` is a hook and must not be called inside a formatter.
+  const fullDay = (iso: string) => {
+    const day = fmt.shortDay(iso);
+    // `shortDay` echoes its input back when the date does not parse; appending
+    // a "year" sliced off a non-date would manufacture nonsense.
+    if (day === iso || !/^\d{4}-/.test(iso)) return day;
+    return t("dayWithYear", { day, year: iso.slice(0, 4) });
+  };
   const rows = facet.rows.filter((r) => r.key !== "_summary");
   // No all-zero early return, deliberately — unlike the histogram. A flat line
   // across thirty days means nobody posted for a month, which is a fact about
   // the market and belongs on the chart. An empty histogram means the bands
   // have nothing to divide, which is not.
-  if (!rows.length) return <Empty>No posting dates yet.</Empty>;
+  if (!rows.length) return <Empty>{t("emptyDates")}</Empty>;
   const measure = MEASURE();
   return (
     <ResponsiveContainer width="100%" height={200}>
@@ -272,7 +292,7 @@ function PostingTrend({ facet }: { facet: Facet }) {
         <CartesianGrid vertical={false} stroke={gridColor()} strokeDasharray="0" />
         <XAxis
           dataKey="key"
-          tickFormatter={(v) => asDay(String(v), DAY_FMT)}
+          tickFormatter={(v) => fmt.shortDay(String(v))}
           // Let recharts drop ticks rather than overlap them: 26 dates in a
           // card this wide collided into a grey smear.
           minTickGap={28}
@@ -292,8 +312,8 @@ function PostingTrend({ facet }: { facet: Facet }) {
           content={({ payload, label }) =>
             payload?.length ? (
               <TooltipBox
-                label={asDay(String(label), FULL_FMT)}
-                rows={[{ key: "posted", value: String(payload[0].value), color: measure }]}
+                label={fullDay(String(label))}
+                rows={[{ key: t("tipPosted"), value: String(payload[0].value), color: measure }]}
               />
             ) : null
           }
@@ -350,6 +370,8 @@ function Section({
  * the market, and only the denominator tells them apart.
  */
 export function Market({ version }: { version: number }) {
+  const t = useT("market");
+  const labels = useLabels();
   const { data, loading, error } = useApi(() => api.market(), [version]);
   const [active, setActive] = useState("overview");
 
@@ -393,7 +415,7 @@ export function Market({ version }: { version: number }) {
     return (
       <Card>
         <CardBody className="py-6 text-sm text-red-600 dark:text-red-400">
-          Couldn't load market data: {error}
+          {t("loadFailed", { error: error ?? "" })}
         </CardBody>
       </Card>
     );
@@ -405,7 +427,9 @@ export function Market({ version }: { version: number }) {
           sidebar — Layout already owns one, and adding another there would
           reshape every page to serve this one. */}
       <nav className="sticky top-20 hidden h-fit w-40 shrink-0 lg:block">
-        <p className="px-3 pb-2 text-xs uppercase tracking-wide text-muted-foreground">Sections</p>
+        <p className="px-3 pb-2 text-xs uppercase tracking-wide text-muted-foreground">
+          {t("sections")}
+        </p>
         <ul className="space-y-0.5">
           {SECTIONS.map((s) => (
             <li key={s.id}>
@@ -419,7 +443,7 @@ export function Market({ version }: { version: number }) {
                     : "text-muted-foreground hover:bg-ink/5 hover:text-foreground",
                 )}
               >
-                {s.label}
+                {t(s.key)}
               </a>
             </li>
           ))}
@@ -428,61 +452,63 @@ export function Market({ version }: { version: number }) {
 
       <div className="min-w-0 flex-1 space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Market</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            What the {data.total_jobs} crawled postings look like. These describe the ads
-            JobPilot collected — not the market as a whole. Each card says how many jobs it saw.
+            {t("intro", { count: data.total_jobs })}
           </p>
         </div>
 
         <div id="overview" className="grid gap-4 scroll-mt-20 sm:grid-cols-3">
           <Card>
             <CardBody className="py-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Postings</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t("statPostings")}
+              </p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{data.total_jobs}</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                across {data.sources.rows.length} source(s)
+                {t("statSources", { count: data.sources.rows.length })}
               </p>
             </CardBody>
           </Card>
           <Card>
             <CardBody className="py-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Median pay (est.)
+                {t("statMedian")}
               </p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">
                 {usd(salarySummary?.median_usd_month)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {salarySummary
-                  ? `per month, from ${data.salary.covered} job(s)`
-                  : "no parsable salary yet"}
+                  ? t("statMedianFrom", { count: data.salary.covered })
+                  : t("statMedianNone")}
               </p>
             </CardBody>
           </Card>
           <Card>
             <CardBody className="py-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Clean ads</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t("statClean")}
+              </p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">
                 {data.quality.rows.find((r) => r.key === "clean")?.count ?? 0}
                 <span className="text-base font-normal text-muted-foreground">
                   /{data.total_jobs}
                 </span>
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">no missing-JD or stale flag</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("statCleanHint")}</p>
             </CardBody>
           </Card>
         </div>
 
-        <Section id="skills" title="Most requested skills" facet={data.skills}>
+        <Section id="skills" title={t("skillsTitle")} facet={data.skills}>
+          {/* Skill names are proper nouns out of the corpus (`PostgreSQL`,
+              `CI/CD`), so `skillLabel` stays a plain, language-free function. */}
           <FacetBars facet={data.skills} label={skillLabel} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Counted once per job from the canonical form, so “Spring Boot” and “Spring” are one
-            thing. LinkedIn alerts carry no tags at all, which is most of what is missing here.
-          </p>
+          <p className="mt-3 text-xs text-muted-foreground">{t("skillsNote")}</p>
         </Section>
 
-        <Section id="salary" title="Pay distribution" facet={data.salary}>
+        <Section id="salary" title={t("salaryTitle")} facet={data.salary}>
           {/* Under the sample floor the bands are a single bar in an empty
               grid — the "one-bar bar chart" that should have been a number.
               Show the number, and say what it is drawn from. */}
@@ -492,71 +518,69 @@ export function Market({ version }: { version: number }) {
             <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2 py-2">
               <div>
                 <p className="text-2xl font-semibold">{usd(salarySummary.median_usd_month)}</p>
-                <p className="text-xs text-muted-foreground">median / month</p>
+                <p className="text-xs text-muted-foreground">{t("salaryMedian")}</p>
               </div>
               <div className="text-sm text-muted-foreground">
-                from {data.salary.covered} of {data.salary.total} postings — not yet a
-                distribution.
+                {t("salaryThin", { covered: data.salary.covered, total: data.salary.total })}
               </div>
             </div>
           ) : (
-            <Empty>No posting carried a salary this parser could read.</Empty>
+            <Empty>{t("emptySalary")}</Empty>
           )}
           {salarySummary && (
             <p className="mt-3 text-xs text-muted-foreground">
-              Range {usd(salarySummary.min_usd_month)}–{usd(salarySummary.max_usd_month)}/month. Converted
-              at {salarySummary.fx_rate?.toLocaleString()} VND/USD (checked{" "}
-              {salarySummary.fx_checked_on}) — an estimate, not a quote.
+              {t("salaryRange", {
+                min: usd(salarySummary.min_usd_month),
+                max: usd(salarySummary.max_usd_month),
+                rate: salarySummary.fx_rate?.toLocaleString() ?? "—",
+                date: salarySummary.fx_checked_on ?? "—",
+              })}
             </p>
           )}
         </Section>
 
-        <Section id="cities" title="Where the jobs are" facet={data.cities}>
+        {/* No `label` prop: city names come from the corpus and are proper
+            nouns, so the raw key is already the right display string. */}
+        <Section id="cities" title={t("citiesTitle")} facet={data.cities}>
           <FacetBars facet={data.cities} />
         </Section>
 
-        <Section id="levels" title="Seniority mix" facet={data.levels}>
+        <Section id="levels" title={t("levelsTitle")} facet={data.levels}>
           {/* The one bar chart here whose rows are an ordered scale, so the one
               that earns a ramp: junior → senior darkens. */}
           <FacetBars
             facet={data.levels}
-            label={levelLabel}
+            label={labels.levelLabel}
             color={(_key, i, total) => ordinalRamp(total)[i]}
           />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Level is inferred from the title and description, so an ad with neither is unknown
-            rather than junior.
-          </p>
+          <p className="mt-3 text-xs text-muted-foreground">{t("levelsNote")}</p>
         </Section>
 
-        <Section id="match" title="Match against your stacks" facet={data.match_scores}>
+        <Section id="match" title={t("matchTitle")} facet={data.match_scores}>
           <FacetHistogram facet={data.match_scores} />
           <p className="mt-3 text-xs text-muted-foreground">
-            Scored at crawl time against <code>crawl.stacks</code>. A corpus bunched to the left
-            means the search queries need work, not that the market does.
+            {t("matchNoteBefore")}
+            <code>crawl.stacks</code>
+            {t("matchNoteAfter")}
           </p>
         </Section>
 
-        <Section id="quality" title="Posting quality" facet={data.quality}>
+        <Section id="quality" title={t("qualityTitle")} facet={data.quality}>
           <QualityChart facet={data.quality} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            A posting can carry more than one flag, so these add up past the corpus.
-          </p>
+          <p className="mt-3 text-xs text-muted-foreground">{t("qualityNote")}</p>
         </Section>
 
-        <Section id="sources" title="Where they came from" facet={data.sources}>
+        <Section id="sources" title={t("sourcesTitle")} facet={data.sources}>
           <SourceDonut rows={data.sources.rows} total={data.total_jobs} />
-          <p className="mt-4 text-xs text-muted-foreground">
-            The denominator behind every other card on this page: a facet LinkedIn can't fill —
-            skills, salary, tags — is missing most of this ring.
-          </p>
+          <p className="mt-4 text-xs text-muted-foreground">{t("sourcesNote")}</p>
         </Section>
 
-        <Section id="calendar" title="Posted per day" facet={data.calendar}>
+        <Section id="calendar" title={t("calendarTitle")} facet={data.calendar}>
           <PostingTrend facet={data.calendar} />
           <p className="mt-3 text-xs text-muted-foreground">
-            By <em>posting</em> date, not crawl date — the deck's “crawled per day” chart measures
-            your habits, this measures the market's.
+            {t("calendarNoteBefore")}
+            <em>{t("calendarNoteEm")}</em>
+            {t("calendarNoteAfter")}
           </p>
         </Section>
       </div>
