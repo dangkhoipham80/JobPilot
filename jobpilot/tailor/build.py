@@ -87,11 +87,19 @@ class BuildResult:
     engine: str = ""
 
 
-def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -> str:
-    """Which engine to build with, or raise explaining how to get one.
+def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -> tuple[str, str]:
+    """The engine to build with and the executable to run it, or raise saying how
+    to get one.
 
     ``auto`` prefers tectonic purely on install cost -- the two produce the same
     PDF, so there is nothing else to choose on.
+
+    Returns the *resolved* executable rather than the configured name, because
+    the tectonic build runs with ``cwd`` set to the build dir. A relative
+    ``cv.tectonic_bin`` like ``./tools/tectonic`` would then be looked up here
+    against the process's directory (found) and executed against the build dir
+    (not found) -- an exec failure rather than a BuildError, some directories
+    away from anything that explains it.
     """
     cfg = get_config().cv
     choice = (engine or cfg.engine or "auto").strip().lower()
@@ -102,7 +110,7 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
 
     binary = tectonic_bin or cfg.tectonic_bin
     # shutil.which also accepts a path with a directory component, so
-    # cv.tectonic_bin works as either a command name or an absolute path.
+    # cv.tectonic_bin works as either a command name or a path.
     found = {"tectonic": shutil.which(binary), "docker": shutil.which("docker")}
 
     if choice != "auto":
@@ -112,11 +120,11 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
                 f"{choice} not found on PATH (cv.engine = {choice!r}) — "
                 f"{_INSTALL_HINT[choice]}. Or set cv.engine to {other!r} or 'auto'."
             )
-        return choice
+        return choice, found[choice]
 
     for name in ENGINES:
         if found[name]:
-            return name
+            return name, found[name]
     raise BuildError(
         "no LaTeX engine found — a CV cannot be built without one of:\n"
         f"  tectonic (recommended) — {_INSTALL_HINT['tectonic']}\n"
@@ -207,12 +215,13 @@ def _docker_invocation(work_dir: Path, entry: str, image: str | None) -> _Invoca
     ])  # fmt: skip
 
 
-def _tectonic_invocation(work_dir: Path, entry: str) -> _Invocation:
+def _tectonic_invocation(work_dir: Path, entry: str, binary: str) -> _Invocation:
     """Run in ``work_dir``, which is what makes the relative paths resolve.
 
     The generated project reaches its sections as ``\\input{resume/...}`` and its
     fonts as ``Path=fonts/``, both relative to the working directory — Docker got
-    that from the bind mount, tectonic gets it from ``cwd``.
+    that from the bind mount, tectonic gets it from ``cwd``. ``binary`` is the
+    path :func:`resolve_engine` already resolved, for the same reason.
 
     ``--untrusted`` disables \\write18 for the same reason ``compile.check_override``
     validates paths: raw-LaTeX overrides come from a text box, and a `.tex` file
@@ -220,7 +229,7 @@ def _tectonic_invocation(work_dir: Path, entry: str) -> _Invocation:
     `.log` that :func:`_pages_from_log` needs when pypdf is missing.
     """
     cmd = [
-        get_config().cv.tectonic_bin,
+        binary,
         "-X", "compile",
         "--untrusted",
         "--keep-logs",
@@ -237,12 +246,17 @@ def build_cv(
     timeout: int = 300,
     engine: str | None = None,
 ) -> BuildResult:
+    """Build ``entry`` in ``work_dir``; see :func:`resolve_engine` for the choice.
+
+    ``image`` names the Docker image and is ignored when tectonic runs, which is
+    the default — pass ``engine="docker"`` alongside it to be sure it applies.
+    """
     work_dir = Path(work_dir).resolve()
     stem = Path(entry).stem
     if not (work_dir / entry).is_file():
         raise BuildError(f"entry not found: {work_dir / entry}")
 
-    engine = resolve_engine(engine)
+    engine, binary = resolve_engine(engine)
     pdf = work_dir / f"{stem}.pdf"
     log = work_dir / f"{stem}.log"
     # Drop the previous PDF first. The Docker image's command is
@@ -260,7 +274,7 @@ def build_cv(
     log.unlink(missing_ok=True)
 
     run = (
-        _tectonic_invocation(work_dir, entry)
+        _tectonic_invocation(work_dir, entry, binary)
         if engine == "tectonic"
         else _docker_invocation(work_dir, entry, image)
     )
@@ -274,6 +288,12 @@ def build_cv(
         )
     except subprocess.TimeoutExpired as exc:  # pragma: no cover - env dependent
         raise BuildError(f"LaTeX build timed out after {timeout}s ({engine})") from exc
+    except OSError as exc:
+        # resolve_engine() found the executable a moment ago, so reaching here
+        # means it went away, is not executable, or is the wrong architecture.
+        # Without this the caller gets a bare OSError from deep inside a build
+        # helper; the API route turns that into a naked 500.
+        raise BuildError(f"could not run {engine} ({run.cmd[0]}): {exc}") from exc
 
     if proc.returncode != 0 or not pdf.is_file():
         # Which engine failed decides what the fix is, so it leads the message:

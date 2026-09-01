@@ -2,7 +2,7 @@
 
 > Agent tự động **crawl job lập trình** (ITviec, TopCV, VietnamWorks) → quản lý qua **Web Dashboard local** (control plane chính: dashboard, filter, funnel, duyệt/sửa CV) với **Slack** làm kênh thông báo + thao tác nhanh → **tự tailor CV (LaTeX)** cho job đã chọn → bạn duyệt/sửa → **nộp đơn theo kênh (hybrid)** → báo kết quả/lỗi.
 
-Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex`, build bằng Docker) thành một pipeline agentic hoàn chỉnh.
+Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex`, build bằng LaTeX) thành một pipeline agentic hoàn chỉnh.
 
 ---
 
@@ -44,7 +44,7 @@ Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex
  │ CRAWLERS  │  │ TAILOR    │      │ APPLY DISPATCH│   │  PostgreSQL (JSONB) │
  │ itviec/   │  │ Claude→   │      │ email:auto    │   │  jobs·applications· │
  │ topcv/    │  │ resume/tex│      │ portal:prefill│   │  edits·status·runs  │
- │ vnworks   │  │ →Docker CV│      │ →success/fail │   └────────────────────┘
+ │ vnworks   │  │ →build CV │      │ →success/fail │   └────────────────────┘
  └─────┬─────┘  └───────────┘      └───────────────┘
        │ Playwright+stealth → Job Normalizer (schema chung) → Postgres
        ▼
@@ -162,7 +162,7 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - **Input**: `Job.description_md` + **Master CV** (`resume/*.tex` hiện tại là nguồn sự thật).
 - **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) rewrite có kiểm soát các section (`summary`, `skill`, thứ tự/nhấn mạnh `experience`/`project`) → (4) sinh **cover letter** → (5) build PDF.
 - **Guardrail**: không bịa; mọi thay đổi phải map về dữ kiện có thật. Output kèm **diff giải thích** để user duyệt.
-- **Build**: tạo bản sao `resume/` theo job (thư mục `out/<job_id>/`), render biến, gọi Docker LaTeX (tái dùng lệnh trong `README.md`), lấy `cv.pdf`.
+- **Build**: tạo bản sao `resume/` theo job (thư mục `out/<job_id>/`), render biến, gọi engine LaTeX (`cv.engine`: tectonic mặc định, docker là đường lui), lấy `cv.pdf`.
 - **ATS**: chèn keyword từ JD một cách tự nhiên vào phần có thật; giữ format sạch để ATS đọc được.
 
 ### 5.4 `apply/` — dispatcher nộp đơn (hybrid)
@@ -199,7 +199,7 @@ Layout 2 cột: **trái = editor**, **phải = preview** (như Overleaf nhưng t
 
 **Preview — dual mode (giải quyết độ trễ compile LaTeX):**
 - **⚡ HTML preview (tức thì)**: render CV từ JSON structured bằng React component mô phỏng layout Awesome-CV (font, màu theme, cấu trúc cột). <100ms, cập nhật theo từng phím gõ. Ghi rõ nhãn *"xấp xỉ"*.
-- **📄 PDF thật (chính xác)**: nút "Compile" (hoặc auto debounce ~3s sau khi ngừng gõ) → API gọi Docker LaTeX build → render bằng **PDF.js** ngay trong trang, báo lỗi compile inline. Đây là bản dùng để Approve/nộp.
+- **📄 PDF thật (chính xác)**: nút "Compile" (hoặc auto debounce ~3s sau khi ngừng gõ) → API gọi engine LaTeX build → render bằng **PDF.js** ngay trong trang, báo lỗi compile inline. Đây là bản dùng để Approve/nộp.
 
 **Template & theme gallery:**
 - Gallery thumbnail các biến thể: **theme màu Awesome-CV** (`awesome-red` hiện tại, `skyblue`, `emerald`, `orange`, `nephritis`, `darknight`, custom HEX), photo on/off, header align (C/L/R), thứ tự section. Click → apply → preview ngay.
@@ -243,7 +243,7 @@ Rà soát nhanh `resume/*.tex` — các cải thiện đề xuất (làm ở Pha
 | Store | **PostgreSQL** (JSONB) + Alembic | Quan hệ cho funnel/filter + JSONB cho JD; migrations. |
 | Slack | slack-bolt (Socket Mode) | Kênh **phụ**: thông báo + thao tác nhanh. Không cần public URL. |
 | LLM | **Claude API** mặc định; openai / gemini chọn được theo từng việc (Phase 20b) | Tailor CV + cover letter + đọc thư NTD. |
-| CV build | Docker `csmith/awesome-cv-builder` | Đã có sẵn, tái dùng. |
+| CV build | `tectonic` (mặc định) — Docker `csmith/awesome-cv-builder` là đường lui | Binary tĩnh ~10 MB, không daemon; đổi qua `cv.engine`. |
 | Email | Gmail API hoặc SMTP | Kênh apply full-auto. |
 | Config | `.env` + `config.yaml` | Secrets tách khỏi code. |
 | Chạy local | `docker-compose` (Postgres) + `make dev` | 1 lệnh dựng Postgres + API + web. |
@@ -278,7 +278,7 @@ JobPilot/
 ## 9. Roadmap / Milestones
 
 - **Phase 0 — Docs & setup** *(file này)*: PLAN, SKILL, CLAUDE + scaffolding, `.env.example`, config schema, `docker-compose` (Postgres).
-- **Phase 1 — CV foundation**: cải thiện Master CV (§6); wrapper build PDF từ Python + verify Docker chạy được.
+- **Phase 1 — CV foundation**: cải thiện Master CV (§6); wrapper build PDF từ Python + verify engine LaTeX chạy được.
 - **Phase 2 — Data + API skeleton**: Postgres schema + Alembic + SQLAlchemy models; FastAPI khung + `GET /jobs` + `GET /stats` + WebSocket.
 - **Phase 3 — Crawler MVP**: ITviec trước → Job schema → Postgres + dedup (`id` và `(company,title)`). Sau đó TopCV, VietnamWorks, TopDev. Config `stacks` + sort freshness (🔥 <48h). Tier 2/ATS adapter (§5.1.1) để sau.
 - **Phase 4 — Web Dashboard MVP**: React app — trang Dashboard (KPI+funnel), Jobs (filter/search), Job detail, chọn/shortlist job. Realtime qua WS.

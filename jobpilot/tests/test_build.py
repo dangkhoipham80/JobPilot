@@ -37,14 +37,14 @@ def test_build_raises_when_docker_absent(tmp_path, monkeypatch):
 
 def test_auto_prefers_tectonic_when_both_are_installed(monkeypatch):
     monkeypatch.setattr(build_mod.shutil, "which", _installed("tectonic", "docker"))
-    assert resolve_engine("auto") == "tectonic"
+    assert resolve_engine("auto")[0] == "tectonic"
 
 
 def test_auto_falls_back_to_docker(monkeypatch):
     """Docker is the fallback, not dead weight: it is what every PDF in this
     repo's history was built with, so it stays the reference implementation."""
     monkeypatch.setattr(build_mod.shutil, "which", _installed("docker"))
-    assert resolve_engine("auto") == "docker"
+    assert resolve_engine("auto")[0] == "docker"
 
 
 def test_no_engine_at_all_explains_how_to_install_either(monkeypatch):
@@ -70,6 +70,39 @@ def test_an_unknown_engine_is_rejected_rather_than_silently_defaulted(monkeypatc
     monkeypatch.setattr(build_mod.shutil, "which", _installed("tectonic", "docker"))
     with pytest.raises(BuildError, match="unknown cv.engine"):
         resolve_engine("tectonik")
+
+
+def test_the_resolved_executable_is_used_not_the_configured_name(tmp_path, monkeypatch):
+    """The tectonic build runs with cwd set to the build dir. A relative
+    cv.tectonic_bin would be looked up against the process's directory (found)
+    and executed against the build dir (not found) — an exec failure several
+    directories away from anything that explains it."""
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "cv.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    monkeypatch.setattr(build_mod.shutil, "which", lambda cmd: "/opt/bin/tectonic" if cmd else None)
+    seen, fake_run = _tectonic_run(work)
+    monkeypatch.setattr(build_mod.subprocess, "run", fake_run)
+
+    build_cv(work, entry="cv.tex", engine="tectonic")
+    assert seen[0]["cmd"][0] == "/opt/bin/tectonic"
+
+
+def test_an_engine_that_cannot_be_executed_is_a_builderror_not_an_oserror(tmp_path, monkeypatch):
+    """resolve_engine() found it a moment ago, so this means it went away, is not
+    executable, or is the wrong architecture. A bare OSError out of a build
+    helper reaches the compile route as a naked 500."""
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "cv.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    monkeypatch.setattr(build_mod.shutil, "which", _installed("tectonic"))
+
+    def boom(*_a, **_k):
+        raise OSError(8, "Exec format error")
+
+    monkeypatch.setattr(build_mod.subprocess, "run", boom)
+    with pytest.raises(BuildError, match="could not run tectonic"):
+        build_cv(work, entry="cv.tex", engine="tectonic")
 
 
 # --------------------------------------------------------------------------- #

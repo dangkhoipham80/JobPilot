@@ -89,7 +89,10 @@ def cmd_build(args: argparse.Namespace) -> int:
     except BuildError as exc:
         print(f"BUILD FAILED: {exc}", file=sys.stderr)
         return 1
-    print(f"Built {result.pdf}  [{page_summary(result.pages)}]")
+    # Naming the engine is not cosmetic: the two are interchangeable enough that
+    # you cannot tell from the PDF which one ran, and ats.py's `ligatures` finding
+    # differs between them on the `plain` template.
+    print(f"Built {result.pdf}  [{page_summary(result.pages)}]  via {result.engine}")
     return 0
 
 
@@ -154,7 +157,10 @@ def cmd_cv(args: argparse.Namespace) -> int:
     except BuildError as exc:
         print(f"BUILD FAILED: {exc}", file=sys.stderr)
         return 1
-    print(f"Built {result.pdf}  [{page_summary(result.pages)}]")
+    # Naming the engine is not cosmetic: the two are interchangeable enough that
+    # you cannot tell from the PDF which one ran, and ats.py's `ligatures` finding
+    # differs between them on the `plain` template.
+    print(f"Built {result.pdf}  [{page_summary(result.pages)}]  via {result.engine}")
     return 0
 
 
@@ -491,8 +497,14 @@ def cmd_backup(args: argparse.Namespace) -> int:
     try:
         if args.dir:
             r = run_backup(args.dir, progress=step)
-            result = {"dump": r.dump.name, "cv": r.cv.name, "size": r.size,
-                      "mirrored_to": r.mirrored_to, "pruned": len(r.pruned), "notes": r.notes}
+            result = {
+                "dump": r.dump.name,
+                "cv": r.cv.name,
+                "size": r.size,
+                "mirrored_to": r.mirrored_to,
+                "pruned": len(r.pruned),
+                "notes": r.notes,
+            }
         else:
             result = backup_body(step or (lambda _m: None))
     except BackupError as exc:
@@ -559,7 +571,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_backfill.set_defaults(func=cmd_backfill)
 
-    p_build = sub.add_parser("build", help="compile a CV to PDF (tectonic or docker, see cv.engine)")
+    p_build = sub.add_parser(
+        "build", help="compile a CV to PDF (tectonic or docker, see cv.engine)"
+    )
     p_build.add_argument("dir", nargs="?", default=None, help="work dir (default: repo root)")
     p_build.add_argument("--entry", default="cv.tex", help="LaTeX entry file")
     p_build.set_defaults(func=cmd_build)

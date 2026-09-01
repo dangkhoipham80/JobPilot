@@ -8,6 +8,7 @@ in once per build dir and reused.
 
 from __future__ import annotations
 
+import filecmp
 import re
 import shutil
 from pathlib import Path, PurePosixPath
@@ -51,18 +52,44 @@ def template_assets(template: str = DEFAULT_TEMPLATE) -> tuple[str, ...]:
     return describe_template(template).assets or ASSETS
 
 
+def _sync_file(src: Path, dst: Path) -> None:
+    """Copy ``src`` over ``dst`` unless the contents already match."""
+    if dst.is_file() and filecmp.cmp(src, dst, shallow=False):
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+
+
 def sync_assets(dest: Path, source: Path | None = None, template: str = DEFAULT_TEMPLATE) -> None:
-    """Copy the LaTeX class/fonts ``template`` needs into ``dest`` (skipping what's there)."""
+    """Copy the LaTeX class/fonts ``template`` needs into ``dest``, refreshing stale ones.
+
+    Compares contents rather than skipping whatever already exists. That
+    distinction is the whole point of this function being written twice: build
+    dirs under ``out/cv/<scope>/`` are long-lived and reused, so a skip-if-exists
+    copy pins each one to the version of ``awesome-cv.cls`` that happened to be
+    checked out the first time it was built. When the tectonic engine landed and
+    both that file and ``fontawesome.sty`` had to change to compile under a
+    non-Docker engine, every previously-built scope kept the old pair and died on
+    ``The font "FontAwesome" cannot be found`` — while the repo held the fix and
+    a freshly-built scope worked, which makes the error point at the wrong thing.
+
+    Not mtime-based: a `git checkout` stamps files with the checkout time, so
+    mtime says "changed" for files that did not and can say "unchanged" for a
+    vendored file restored from an older commit. Contents are what the build
+    actually depends on, and these are a handful of small files.
+    """
     source = source or REPO_ROOT
     dest.mkdir(parents=True, exist_ok=True)
     for name in template_assets(template):
         src, dst = source / name, dest / name
-        if not src.exists() or dst.exists():
+        if not src.exists():
             continue
         if src.is_dir():
-            shutil.copytree(src, dst)
+            for item in src.rglob("*"):
+                if item.is_file():
+                    _sync_file(item, dst / item.relative_to(src))
         else:
-            shutil.copy2(src, dst)
+            _sync_file(src, dst)
 
 
 class UnsafeTexPath(ValueError):

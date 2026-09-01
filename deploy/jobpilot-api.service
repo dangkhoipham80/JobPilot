@@ -1,12 +1,14 @@
 [Unit]
 Description=JobPilot API + dashboard
-# Docker is a hard dependency, not a nicety: the LaTeX build shells out to
-# `docker run`, and tailor/build.py raises BuildError with no fallback when the
-# socket is missing. Starting before dockerd means every CV build fails until
-# something restarts this.
+# Docker is NOT a dependency any more. The default LaTeX engine is tectonic, a
+# plain binary with no daemon (cv.engine = auto|tectonic|docker), so a box built
+# from DEPLOY.md has no docker.service at all — and `Requires=` on a unit that
+# does not exist makes systemd refuse to start *this* one, taking the entire API
+# and dashboard down over a PDF builder. Left as a soft `Wants=` so a box
+# deliberately set to cv.engine: docker still gets dockerd ordered first, without
+# that being fatal for everyone else.
 After=network-online.target postgresql.service docker.service
-Wants=network-online.target
-Requires=docker.service
+Wants=network-online.target docker.service
 
 [Service]
 Type=exec

@@ -112,9 +112,16 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt in
 
 # tectonic — engine build PDF. Một binary tĩnh, không daemon, không nhóm user,
 # không image. Cài vào /usr/local/bin cho cả `jobpilot` lẫn root cùng thấy.
-curl -fsSL https://github.com/tectonic-typesetting/tectonic/releases/latest/download/tectonic-0.17.0-x86_64-unknown-linux-musl.tar.gz \
-  | sudo tar xz -C /usr/local/bin tectonic
-tectonic --version    # phải in ra "Tectonic 0.17.x"
+#
+# Ghim hẳn tag, ĐỪNG dùng `releases/latest/download/<tên-có-version>`: hai thứ đó
+# mâu thuẫn nhau — khi upstream lên 0.18 thì asset tên 0.17.0 không còn nằm trong
+# `latest` nữa, curl trả rỗng, và lỗi hiện ra dưới dạng `tar: unexpected EOF`.
+# Tải rồi mới giải nén (không pipe thẳng): pipe thì curl fail nhưng tar vẫn chạy.
+ARCH=$(uname -m)   # x86_64 hoặc aarch64
+curl -fsSL -o /tmp/tectonic.tar.gz \
+  "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.17.0/tectonic-0.17.0-${ARCH}-unknown-linux-musl.tar.gz"
+sudo tar xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic && rm /tmp/tectonic.tar.gz
+tectonic --version    # phải in ra "Tectonic 0.17.0"
 
 sudo -u postgres psql -c "CREATE DATABASE jobpilot;"
 sudo -u postgres psql -c "CREATE USER jobpilot WITH PASSWORD '<đặt-mật-khẩu>';"
