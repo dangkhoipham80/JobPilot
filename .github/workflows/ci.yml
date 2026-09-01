@@ -95,10 +95,51 @@ jobs:
       group: deploy-production
       cancel-in-progress: false # never interrupt a half-applied migration
     steps:
+      # Deploying needs a VPS that may not exist yet. Until the five secrets
+      # below are set, this job used to fail on every single merge to main —
+      # which trained everyone to ignore a red CI, so a real backend/frontend
+      # break would have looked exactly like the noise.
+      #
+      # Skipping is therefore the right behaviour, but a green tick that quietly
+      # shipped nothing is worse than the red one. The step writes to the run
+      # summary and raises a notice, so "not configured" is visible on the run
+      # page rather than inferred from an absence.
+      #
+      # Checked in a step, not in the job-level `if:` — the `secrets` context is
+      # not available there.
+      - name: Is deployment configured?
+        id: cfg
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          missing=""
+          for name in TS_OAUTH_CLIENT_ID TS_OAUTH_SECRET DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_USER; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::No VPS configured. Missing secrets:$missing"
+            {
+              echo "### ⏭️ Deploy skipped — not configured"
+              echo
+              echo "Nothing was shipped. Missing repository secrets:"
+              for name in $missing; do echo "- \`$name\`"; done
+              echo
+              echo "See \`DEPLOY.md\`. Set all five and this job starts deploying on its own."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # The VPS has no public SSH port — it is only reachable on the Tailnet, so
       # the runner has to join it. This is what replaces "open port 22 to
       # 0.0.0.0/0 and hope fail2ban keeps up".
       - name: Join the Tailnet
+        if: steps.cfg.outputs.ready == 'true'
         uses: tailscale/github-action@v3
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -107,6 +148,7 @@ jobs:
           tags: tag:ci
 
       - name: Deploy
+        if: steps.cfg.outputs.ready == 'true'
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOST: ${{ secrets.DEPLOY_HOST }} # e.g. jobpilot-vps (a Tailnet name)
