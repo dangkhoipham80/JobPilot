@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ArrowRight, Bot, GitCompare, RotateCcw, User } from "lucide-react";
 import { Button, Card, CardBody, CardHeader, CardTitle, Select, Skeleton } from "@/components/ui";
-import { relativeTime } from "@/lib/format";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { CvVersion } from "@/types";
 
@@ -32,12 +33,14 @@ export function VersionHistory({
   onCompare: (base: number, target: number) => void;
   pager?: React.ReactNode;
 }) {
+  const t = useT("cv");
+  const fmt = useFormat();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>History</CardTitle>
+        <CardTitle>{t("history")}</CardTitle>
         <span className="font-mono text-[11px] text-ink-muted">
-          {total} version{total === 1 ? "" : "s"}
+          {t(total === 1 ? "versionCountOne" : "versionCountMany", { n: total })}
         </span>
       </CardHeader>
       <CardBody className="pt-3">
@@ -47,7 +50,7 @@ export function VersionHistory({
             <Skeleton className="h-9" />
           </div>
         ) : !versions?.length ? (
-          <p className="text-sm text-ink-muted">No versions yet.</p>
+          <p className="text-sm text-ink-muted">{t("noVersions")}</p>
         ) : (
           <ol className="flex flex-col gap-1 pr-1">
             {versions.map((v) => {
@@ -71,11 +74,11 @@ export function VersionHistory({
                   </span>
                   <Icon size={13} className="shrink-0 text-ink-muted" aria-label={v.author} />
                   <span className="min-w-0 flex-1 truncate text-xs text-ink-muted">
-                    {v.created_at ? relativeTime(v.created_at) : "—"}
+                    {v.created_at ? fmt.relativeTime(v.created_at) : "—"}
                   </span>
                   {isCurrent ? (
                     <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-accent">
-                      current
+                      {t("currentVersion")}
                     </span>
                   ) : (
                     <Button
@@ -85,7 +88,7 @@ export function VersionHistory({
                       className="h-7 shrink-0 px-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                       onClick={() => onRollback(v.version)}
                     >
-                      <RotateCcw size={12} /> Restore
+                      <RotateCcw size={12} /> {t("restore")}
                     </Button>
                   )}
                 </li>
@@ -118,6 +121,7 @@ function CompareRow({
   total: number;
   onCompare: (base: number, target: number) => void;
 }) {
+  const t = useT("cv");
   // null = "follow the newest versions"; an explicit pick overrides it.
   const [base, setBase] = useState<number | null>(null);
   const [target, setTarget] = useState<number | null>(null);
@@ -142,7 +146,7 @@ function CompareRow({
   return (
     <div className="mt-3 flex items-center gap-1.5 border-t pt-3">
       <Select
-        aria-label="Compare from"
+        aria-label={t("compareFrom")}
         className="h-8 min-w-0 flex-1 text-xs"
         value={effBase}
         onChange={(e) => setBase(Number(e.target.value))}
@@ -151,7 +155,7 @@ function CompareRow({
       </Select>
       <ArrowRight size={13} className="shrink-0 text-ink-muted" />
       <Select
-        aria-label="Compare to"
+        aria-label={t("compareTo")}
         className="h-8 min-w-0 flex-1 text-xs"
         value={effTarget}
         onChange={(e) => setTarget(Number(e.target.value))}
@@ -164,7 +168,7 @@ function CompareRow({
         className="h-8 shrink-0"
         onClick={() => onCompare(effBase, effTarget)}
       >
-        <GitCompare size={13} /> Compare
+        <GitCompare size={13} /> {t("compare")}
       </Button>
     </div>
   );

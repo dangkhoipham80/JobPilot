@@ -5,7 +5,10 @@ import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import type { Job, JobStatus, JobsQuery } from "@/types";
-import { relativeTime, titleCase } from "@/lib/format";
+import { useT } from "@/i18n";
+import { titleCase, useFormat } from "@/lib/format";
+import { useLabels } from "@/lib/labels";
+import { useStatuses } from "@/lib/statuses";
 import { StatusPill } from "@/components/StatusPill";
 import { MatchMeter, QualityFlags } from "@/components/MatchMeter";
 import { FreshBeacon } from "@/components/FreshBeacon";
@@ -16,15 +19,25 @@ import { Pagination } from "@/components/Pagination";
 
 const EARLY = new Set<JobStatus>(["DISCOVERED", "SHORTLISTED", "SKIPPED"]);
 
-/** Crawl-time windows. `hours: null` means "any time". */
-const WINDOWS: { key: string; label: string; hours: number | null }[] = [
-  { key: "", label: "Any time", hours: null },
-  { key: "24h", label: "Last 24h", hours: 24 },
-  { key: "7d", label: "Last 7 days", hours: 24 * 7 },
-  { key: "30d", label: "Last 30 days", hours: 24 * 30 },
-];
+/**
+ * Crawl-time windows. `hours: null` means "any time".
+ *
+ * The visible name is a dictionary key, resolved at render, so the dropdown
+ * follows the language switch instead of freezing whatever was current when the
+ * module first evaluated.
+ */
+const WINDOWS = [
+  { key: "", label: "windowAny", hours: null },
+  { key: "24h", label: "window24h", hours: 24 },
+  { key: "7d", label: "window7d", hours: 24 * 7 },
+  { key: "30d", label: "window30d", hours: 24 * 30 },
+] as const;
 
 export function Jobs({ version }: { version: number }) {
+  const t = useT("jobs");
+  const common = useT("common");
+  const labels = useLabels();
+  const statusInfo = useStatuses();
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
   const [level, setLevel] = useState("");
@@ -104,14 +117,14 @@ export function Jobs({ version }: { version: number }) {
     <div className="animate-fade-up space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Jobs</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">{t("title")}</h1>
           <p className="mt-0.5 text-sm text-ink-muted">
             {/* Everything the filters matched, not this page. `jobs.length`
                 used to be the same number; now it would say "25 matched" for a
                 search with 83 hits, and the pager below already reports the
                 window. */}
-            {data ? `${data.total} matching` : "Loading…"} ·{" "}
-            {query.order === "crawled" ? "most recently crawled first" : "newest postings first"}
+            {data ? t("matching", { count: data.total }) : common("loading")} ·{" "}
+            {query.order === "crawled" ? t("orderCrawled") : t("orderPosted")}
           </p>
         </div>
         <AddJobForm onCreated={() => refetch()} />
@@ -121,7 +134,9 @@ export function Jobs({ version }: { version: number }) {
         <Card className="flex items-center gap-2 px-3 py-2 text-sm">
           <History size={14} className="text-accent" />
           <span>
-            Showing only what <span className="font-medium">crawl #{runId}</span> discovered.
+            {t("runFilterPrefix")}{" "}
+            <span className="font-medium">{t("runFilterCrawl", { id: runId })}</span>{" "}
+            {t("runFilterSuffix")}
           </span>
           <Button
             variant="ghost"
@@ -129,7 +144,7 @@ export function Jobs({ version }: { version: number }) {
             className="ml-auto"
             onClick={() => setParams({}, { replace: true })}
           >
-            <X size={14} /> Show all
+            <X size={14} /> {t("showAll")}
           </Button>
         </Card>
       )}
@@ -141,38 +156,38 @@ export function Jobs({ version }: { version: number }) {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search title or company"
+            placeholder={t("searchPlaceholder")}
             className="pl-8"
           />
         </div>
         <Select value={source} onChange={(e) => setSource(e.target.value)}>
-          <option value="">All sources</option>
+          <option value="">{t("allSources")}</option>
           {sources.map((s) => (
             <option key={s} value={s}>
-              {titleCase(s)}
+              {labels.sourceLabel(s)}
             </option>
           ))}
         </Select>
         <Select value={level} onChange={(e) => setLevel(e.target.value)}>
-          <option value="">All levels</option>
+          <option value="">{t("allLevels")}</option>
           {levels.map((l) => (
             <option key={l} value={l}>
-              {titleCase(l)}
+              {labels.levelLabel(l)}
             </option>
           ))}
         </Select>
         <Select value={status} onChange={(e) => setParam("status", e.target.value)}>
-          <option value="">All statuses</option>
+          <option value="">{t("allStatuses")}</option>
           {statuses.map((s) => (
             <option key={s} value={s}>
-              {titleCase(s.toLowerCase())}
+              {titleCase(statusInfo.info(s).label)}
             </option>
           ))}
         </Select>
-        <Select value={win} onChange={(e) => setWin(e.target.value)} title="When it was crawled">
+        <Select value={win} onChange={(e) => setWin(e.target.value)} title={t("windowTitle")}>
           {WINDOWS.map((w) => (
             <option key={w.key} value={w.key}>
-              {w.label}
+              {t(w.label)}
             </option>
           ))}
         </Select>
@@ -183,7 +198,7 @@ export function Jobs({ version }: { version: number }) {
             (fresh ? "border-accent bg-accent/10 text-accent" : "text-ink-muted hover:bg-surface-2")
           }
         >
-          <FreshBeacon /> Fresh
+          <FreshBeacon /> {t("freshOnly")}
         </button>
         {hasFilters && (
           <Button
@@ -198,14 +213,14 @@ export function Jobs({ version }: { version: number }) {
               setParams({}, { replace: true });
             }}
           >
-            <X size={14} /> Clear
+            <X size={14} /> {t("clear")}
           </Button>
         )}
       </Card>
 
       {error ? (
         <Card className="p-6 text-sm text-ink-muted">
-          <span className="font-medium text-critical">Couldn't load jobs.</span> {error}
+          <span className="font-medium text-critical">{t("loadFailed")}</span> {error}
         </Card>
       ) : loading || !jobs ? (
         <TableSkeleton />
@@ -216,13 +231,13 @@ export function Jobs({ version }: { version: number }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-4 py-2.5 font-medium">Role</th>
-                <th className="px-2 py-2.5 font-medium">Source</th>
-                <th className="px-2 py-2.5 font-medium">Match</th>
-                <th className="px-2 py-2.5 font-medium">Status</th>
-                <th className="px-2 py-2.5 font-medium">Posted</th>
-                <th className="px-2 py-2.5 font-medium">Crawled</th>
-                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+                <th className="px-4 py-2.5 font-medium">{t("colRole")}</th>
+                <th className="px-2 py-2.5 font-medium">{t("colSource")}</th>
+                <th className="px-2 py-2.5 font-medium">{t("colMatch")}</th>
+                <th className="px-2 py-2.5 font-medium">{t("colStatus")}</th>
+                <th className="px-2 py-2.5 font-medium">{t("colPosted")}</th>
+                <th className="px-2 py-2.5 font-medium">{t("colCrawled")}</th>
+                <th className="px-4 py-2.5 text-right font-medium">{t("colActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -238,7 +253,7 @@ export function Jobs({ version }: { version: number }) {
             total={data?.total ?? 0}
             onPage={setPage}
             onSize={paging.setSize}
-            noun="jobs"
+            noun={t("jobsNoun")}
           />
         </Card>
       )}
@@ -255,6 +270,9 @@ function Row({
   pending: boolean;
   onAct: (id: string, action: "shortlist" | "skip") => void;
 }) {
+  const t = useT("jobs");
+  const fmt = useFormat();
+  const labels = useLabels();
   const isFresh =
     !!job.posted_at && Date.now() - new Date(job.posted_at).getTime() < 48 * 3600 * 1000;
   return (
@@ -278,7 +296,7 @@ function Row({
       <td className="px-2 py-3">
         <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
           <span className="h-2 w-2 rounded-sm" style={{ background: sourceColor(job.source) }} />
-          {titleCase(job.source)}
+          {labels.sourceLabel(job.source)}
         </span>
       </td>
       <td className="px-2 py-3">
@@ -289,31 +307,31 @@ function Row({
         <StatusPill status={job.status} />
       </td>
       <td className="whitespace-nowrap px-2 py-3 font-mono text-xs tabular-nums text-ink-muted">
-        {relativeTime(job.posted_at)}
+        {fmt.relativeTime(job.posted_at)}
       </td>
       <td className="whitespace-nowrap px-2 py-3 font-mono text-xs tabular-nums text-ink-muted">
         {job.run_id ? (
           <Link
             to={`/jobs?run=${job.run_id}`}
             className="hover:text-accent"
-            title={`Only jobs from crawl #${job.run_id}`}
+            title={t("onlyFromCrawl", { id: job.run_id })}
           >
-            {relativeTime(job.crawled_at)}
+            {fmt.relativeTime(job.crawled_at)}
           </Link>
         ) : (
-          <span title="Added by hand">{relativeTime(job.crawled_at)}</span>
+          <span title={t("addedByHand")}>{fmt.relativeTime(job.crawled_at)}</span>
         )}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
           {EARLY.has(job.status) && job.status !== "SHORTLISTED" && (
             <Button size="sm" onClick={() => onAct(job.id, "shortlist")} disabled={pending}>
-              <Check size={14} /> Shortlist
+              <Check size={14} /> {t("shortlist")}
             </Button>
           )}
           {EARLY.has(job.status) && job.status !== "SKIPPED" && (
             <Button size="sm" variant="ghost" onClick={() => onAct(job.id, "skip")} disabled={pending}>
-              Skip
+              {t("skip")}
             </Button>
           )}
           <a
@@ -321,7 +339,7 @@ function Row({
             target="_blank"
             rel="noreferrer"
             className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-ink"
-            title="Open original posting"
+            title={t("openOriginal")}
           >
             <ExternalLink size={14} />
           </a>
@@ -346,13 +364,19 @@ function TableSkeleton() {
 }
 
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+  const t = useT("jobs");
   return (
     <Card className="grid place-items-center gap-1 py-16 text-center">
-      <p className="font-medium text-ink">{hasFilters ? "No jobs match these filters." : "No jobs yet."}</p>
+      <p className="font-medium text-ink">{hasFilters ? t("emptyFiltered") : t("empty")}</p>
       <p className="text-sm text-ink-muted">
-        {hasFilters
-          ? "Try clearing a filter."
-          : "Run a crawl: python -m jobpilot.cli crawl"}
+        {hasFilters ? (
+          t("emptyFilteredHint")
+        ) : (
+          // The command is the same in every language — it is what you type.
+          <>
+            {t("emptyHint")} <code className="font-mono">python -m jobpilot.cli crawl</code>
+          </>
+        )}
       </p>
     </Card>
   );

@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { Button, Card, CardBody, CardHeader, CardTitle, Skeleton } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,6 +25,8 @@ export function RawLatexEditor({
   version: number;
   onSaved: () => void;
 }) {
+  // Before the early returns below — rules of hooks (web/src/i18n/CLAUDE.md).
+  const t = useT("cv");
   const { data, loading, error, refetch } = useApi(() => api.cvTex(scope), [scope, version]);
   const [path, setPath] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -48,7 +51,7 @@ export function RawLatexEditor({
   if (error || !data) {
     return (
       <Card>
-        <CardBody className="text-sm text-critical">{error ?? "Could not load the LaTeX."}</CardBody>
+        <CardBody className="text-sm text-critical">{error ?? t("latexLoadFailed")}</CardBody>
       </Card>
     );
   }
@@ -67,7 +70,7 @@ export function RawLatexEditor({
       await refetch();
       onSaved();
     } catch (e) {
-      setActionError(e instanceof ApiError ? e.message : "Failed");
+      setActionError(e instanceof ApiError ? e.message : t("latexActionFailed"));
     } finally {
       setBusy(null);
     }
@@ -76,7 +79,7 @@ export function RawLatexEditor({
   return (
     <Card className="flex min-w-0 flex-col">
       <CardHeader className="items-center">
-        <CardTitle>Raw LaTeX</CardTitle>
+        <CardTitle>{t("rawLatex")}</CardTitle>
         <div className="flex items-center gap-2">
           {actionError && <span className="text-xs text-critical">{actionError}</span>}
           {data.overridden && (
@@ -85,15 +88,15 @@ export function RawLatexEditor({
               variant="ghost"
               onClick={() => run("reset")}
               disabled={busy !== null}
-              title="Build from the structured document again"
+              title={t("revertHint")}
             >
               {busy === "reset" ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-              Revert to generated
+              {t("revertToGenerated")}
             </Button>
           )}
           <Button size="sm" onClick={() => run("save")} disabled={busy !== null || !dirty}>
             {busy === "save" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            Save LaTeX
+            {t("saveLatex")}
           </Button>
         </div>
       </CardHeader>
@@ -115,7 +118,7 @@ export function RawLatexEditor({
             >
               {p}
               {data.generated[p] !== undefined && drafts[p] !== data.generated[p] && (
-                <span className="ml-1.5 text-accent" title="Differs from the generated file">
+                <span className="ml-1.5 text-accent" title={t("differsFromGenerated")}>
                   ●
                 </span>
               )}
@@ -134,14 +137,14 @@ export function RawLatexEditor({
 
         <div className="flex items-center justify-between gap-3 text-xs text-ink-muted">
           <span className="font-mono">
-            {text.split("\n").length} lines · {text.length} chars
+            {t("latexCounts", { lines: text.split("\n").length, chars: text.length })}
           </span>
           {edited && (
             <button
               className="inline-flex items-center gap-1 hover:text-ink"
               onClick={() => setDrafts({ ...drafts, [current]: generated! })}
             >
-              <Undo2 size={12} /> Restore this file from the document
+              <Undo2 size={12} /> {t("restoreFile")}
             </button>
           )}
         </div>
@@ -151,23 +154,23 @@ export function RawLatexEditor({
 }
 
 function Banner({ overridden, dirty }: { overridden: boolean; dirty: boolean }) {
+  const t = useT("cv");
   if (!overridden) {
     return (
       <p className="rounded-lg border bg-surface-2/60 px-3 py-2 text-xs leading-relaxed text-ink-muted">
-        This is what the fields above render to. Saving it makes the build follow{" "}
-        <em>this text</em> instead — useful for the things the editor has no field for.
-        {dirty && <span className="ml-1 text-accent">Unsaved LaTeX edits.</span>}
+        {t("generatedLead")} <em>{t("generatedEmphasis")}</em> {t("generatedRest")}
+        {dirty && <span className="ml-1 text-accent">{t("unsavedLatex")}</span>}
       </p>
     );
   }
+  // The one warning on this page that must not be softened in translation:
+  // while the override is in force, editing the fields does not reach the PDF.
   return (
     <p className="flex items-start gap-2 rounded-lg border border-accent/40 bg-accent/8 px-3 py-2 text-xs leading-relaxed">
       <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent" />
       <span>
-        The PDF is built from this LaTeX, not from the fields above — nothing parses{" "}
-        <code className="font-mono">.tex</code> back into the structured document, so edits up
-        there won't reach it until you revert. Version history keeps both.
-        {dirty && <span className="ml-1 font-medium text-accent">Unsaved LaTeX edits.</span>}
+        {t("overrideLead")} <code className="font-mono">.tex</code> {t("overrideRest")}
+        {dirty && <span className="ml-1 font-medium text-accent">{t("unsavedLatex")}</span>}
       </span>
     </p>
   );

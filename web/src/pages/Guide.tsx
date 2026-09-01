@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
-import { STATUS_INFO, FUNNEL_STEPS } from "@/lib/statuses";
+import { useT } from "@/i18n";
+import { STATUS_ACTOR, FUNNEL_STEPS, useStatuses } from "@/lib/statuses";
 import { StatusPill } from "@/components/StatusPill";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,8 @@ import type { JobStatus } from "@/types";
  * is almost always a number sitting in a column that is waiting on you.
  */
 export function Guide({ version }: { version: number }) {
+  const t = useT("guide");
+  const statuses = useStatuses();
   const { data: stats } = useApi(() => api.stats(), [version]);
   const { data: apply } = useApi(() => api.applySettings(), [version]);
   const count = (s: JobStatus) => stats?.by_status?.[s] ?? 0;
@@ -36,17 +39,14 @@ export function Guide({ version }: { version: number }) {
   return (
     <div className="animate-fade-up space-y-5">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">How this works</h1>
-        <p className="mt-0.5 text-sm text-ink-muted">
-          A job moves through nine states. Six are the happy path; two are exits; one means
-          something broke.
-        </p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <p className="mt-0.5 text-sm text-ink-muted">{t("subtitle")}</p>
       </div>
 
       {waiting.length > 0 && (
         <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 border-accent/40 bg-accent/8 px-4 py-3 text-sm">
           <User size={15} className="shrink-0 text-accent" />
-          <span className="font-medium">Waiting on you right now:</span>
+          <span className="font-medium">{t("waitingOnYou")}</span>
           {waiting.map(({ status, n }) => (
             <Link key={status} to={`/jobs?status=${status}`} className="hover:opacity-80">
               <StatusPill status={status} /> <span className="tabular-nums">×{n}</span>
@@ -58,8 +58,8 @@ export function Guide({ version }: { version: number }) {
       {/* The funnel, in order */}
       <Card>
         <CardHeader>
-          <CardTitle>The funnel</CardTitle>
-          <span className="text-[11px] text-ink-muted">top to bottom, one job at a time</span>
+          <CardTitle>{t("funnelTitle")}</CardTitle>
+          <span className="text-[11px] text-ink-muted">{t("funnelHint")}</span>
         </CardHeader>
         <CardBody className="pt-4">
           <ol className="flex flex-col">
@@ -75,7 +75,7 @@ export function Guide({ version }: { version: number }) {
 
           <div className="mt-5 border-t pt-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-ink-muted">
-              Exits
+              {t("exits")}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {(["SKIPPED", "FAILED"] as JobStatus[]).map((status) => (
@@ -87,7 +87,7 @@ export function Guide({ version }: { version: number }) {
                     </span>
                   </div>
                   <p className="mt-1.5 text-sm leading-relaxed text-ink/90">
-                    {STATUS_INFO[status].meaning}
+                    {statuses.info(status).meaning}
                   </p>
                 </div>
               ))}
@@ -100,18 +100,12 @@ export function Guide({ version }: { version: number }) {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Why shortlist at all?</CardTitle>
+            <CardTitle>{t("shortlistTitle")}</CardTitle>
           </CardHeader>
           <CardBody className="space-y-2.5 pt-3 text-sm leading-relaxed text-ink/90">
+            <p>{t("shortlistP1")}</p>
             <p>
-              Tailoring costs a Claude call and a LaTeX build — about a minute and real API
-              budget per job. A crawl can turn up dozens overnight, and most of them you can
-              rule out from the title alone.
-            </p>
-            <p>
-              <span className="font-medium">Shortlist is that filter.</span> You pick the handful
-              worth a CV of their own; the agent only does expensive work on those. Everything
-              else you Skip, and a re-crawl won't push it back in your face.
+              <span className="font-medium">{t("shortlistLead")}</span> {t("shortlistP2")}
             </p>
           </CardBody>
         </Card>
@@ -120,20 +114,17 @@ export function Guide({ version }: { version: number }) {
           <CardHeader>
             <CardTitle>
               <Shield size={15} className="mr-1.5 inline text-accent" />
-              What the agent cannot do
+              {t("agentTitle")}
             </CardTitle>
           </CardHeader>
           <CardBody className="space-y-2.5 pt-3 text-sm leading-relaxed text-ink/90">
+            {/* The emphasis sits on the whole first sentence rather than on the
+                words "by index" mid-clause: a bold span inside a sentence would
+                force the two languages to share English word order. */}
             <p>
-              It cannot add a skill you don't have. The tailor plan addresses your master CV{" "}
-              <span className="font-medium">by index</span> — it may reorder, trim or hide what is
-              already there, and the only free text it writes is the summary, which is checked
-              word by word against your CV's vocabulary.
+              <span className="font-medium">{t("agentLead")}</span> {t("agentP1")}
             </p>
-            <p>
-              A gap gets named in one place only: the "happy to learn X" line of the cover letter.
-              Claiming X is not something the format can express.
-            </p>
+            <p>{t("agentP2")}</p>
           </CardBody>
         </Card>
       </div>
@@ -141,7 +132,7 @@ export function Guide({ version }: { version: number }) {
       {/* Apply channels — the part with outside-world consequences */}
       <Card>
         <CardHeader>
-          <CardTitle>What "Apply" does depends on the channel</CardTitle>
+          <CardTitle>{t("channelsTitle")}</CardTitle>
         </CardHeader>
         <CardBody className="space-y-3 pt-3">
           <Channel
@@ -151,29 +142,26 @@ export function Guide({ version }: { version: number }) {
             status={
               apply
                 ? apply.email_blocker
-                  ? `Held: ${apply.email_blocker}`
-                  : "Live — Apply sends the message"
+                  ? // The blocker sentence is composed by the backend and shown
+                    // as-is; only the "Held:" framing is ours to translate.
+                    t("emailHeld", { reason: apply.email_blocker })
+                  : t("emailLive")
                 : "…"
             }
           >
-            The only channel that sends by itself. Three independent gates guard it —{" "}
+            {t("emailLead")}{" "}
             <code className="rounded bg-surface-2 px-1 text-[12px]">enabled</code>,{" "}
             <code className="rounded bg-surface-2 px-1 text-[12px]">dry_run</code>,{" "}
-            <code className="rounded bg-surface-2 px-1 text-[12px]">test_recipient</code> — and all
-            three ship closed. While any gate holds, Apply builds the mail and shows it to you
-            without opening a socket, and the job stays{" "}
-            <StatusPill status="APPROVED" className="align-middle" />.
+            <code className="rounded bg-surface-2 px-1 text-[12px]">test_recipient</code>{" "}
+            {t("emailGates")} <StatusPill status="APPROVED" className="align-middle" />.
           </Channel>
 
-          <Channel icon={Globe} name="portal" tone="held" status="Always your hand on the button">
-            You get a handoff package: the URL, the tailored PDF, and every field ready to paste.
-            Optionally the browser opens pre-filled — but nothing is ever submitted for you. When
-            you've sent it, hit <span className="font-medium">Confirm submitted</span>.
+          <Channel icon={Globe} name="portal" tone="held" status={t("portalStatus")}>
+            {t("portalBody")} <span className="font-medium">{t("portalConfirm")}</span>.
           </Channel>
 
-          <Channel icon={ArrowRight} name="external" tone="held" status="LinkedIn lands here">
-            The posting lives somewhere JobPilot won't touch. You apply on the site; JobPilot just
-            records that you did.
+          <Channel icon={ArrowRight} name="external" tone="held" status={t("externalStatus")}>
+            {t("externalBody")}
           </Channel>
         </CardBody>
       </Card>
@@ -184,15 +172,9 @@ export function Guide({ version }: { version: number }) {
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-accent" />
           <div className="space-y-2">
             <p>
-              <span className="font-medium">LinkedIn jobs arrive without a description.</span>{" "}
-              They come from Job Alert emails in your own inbox — LinkedIn's robots.txt forbids
-              crawling the job pages, so JobPilot never fetches them. The alert carries the title,
-              company and location, and nothing else.
+              <span className="font-medium">{t("linkedinLead")}</span> {t("linkedinBody")}
             </p>
-            <p className="text-ink-muted">
-              Those jobs are flagged on their detail page. Open the posting, paste the description
-              in, and then tailor — otherwise the agent is writing against an empty brief.
-            </p>
+            <p className="text-ink-muted">{t("linkedinHint")}</p>
           </div>
         </CardBody>
       </Card>
@@ -200,12 +182,18 @@ export function Guide({ version }: { version: number }) {
   );
 }
 
-const ACTOR_ICON = { you: User, agent: Bot, done: CheckCircle2 } as const;
-const ACTOR_LABEL = { you: "your move", agent: "agent working", done: "finished" } as const;
+type Actor = (typeof STATUS_ACTOR)[JobStatus];
+
+const ACTOR_ICON: Record<Actor, typeof User> = { you: User, agent: Bot, done: CheckCircle2 };
+// The three actor names are shared with the rest of the app, so they live in
+// the `labels` namespace rather than being spelled out again here.
+const ACTOR_KEY = { you: "actor_you", agent: "actor_agent", done: "actor_done" } as const;
 
 function Step({ status, n, last }: { status: JobStatus; n: number; last: boolean }) {
-  const info = STATUS_INFO[status];
-  const Icon = ACTOR_ICON[info.actor];
+  const tLabel = useT("labels");
+  const info = useStatuses().info(status);
+  const actor = STATUS_ACTOR[status];
+  const Icon = ACTOR_ICON[actor];
   return (
     <li className="flex gap-3">
       {/* Rail: the dot marks the step, the line carries you to the next one. */}
@@ -215,9 +203,7 @@ function Step({ status, n, last }: { status: JobStatus; n: number; last: boolean
         <span
           className={cn(
             "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full border-2",
-            info.actor === "you"
-              ? "border-accent bg-accent"
-              : "border-ink-muted/60 bg-surface",
+            actor === "you" ? "border-accent bg-accent" : "border-ink-muted/60 bg-surface",
           )}
         />
         {!last && <span className="my-1 w-px flex-1 bg-ink-muted/30" />}
@@ -230,10 +216,10 @@ function Step({ status, n, last }: { status: JobStatus; n: number; last: boolean
           <span
             className={cn(
               "inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide",
-              info.actor === "you" ? "text-accent" : "text-ink-muted",
+              actor === "you" ? "text-accent" : "text-ink-muted",
             )}
           >
-            <Icon size={12} /> {ACTOR_LABEL[info.actor]}
+            <Icon size={12} /> {tLabel(ACTOR_KEY[actor])}
           </span>
         </div>
         <p className="mt-1.5 text-sm leading-relaxed text-ink/90">{info.meaning}</p>

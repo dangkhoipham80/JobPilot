@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { useWebSocket, type WsMessage } from "@/hooks/useWebSocket";
+import { I18nProvider } from "@/i18n";
 import { Applications } from "@/pages/Applications";
 import { CvReview } from "@/pages/CvReview";
 import { CvStudio } from "@/pages/CvStudio";
@@ -26,24 +27,26 @@ export default function App() {
   });
 
   return (
-    <BrowserRouter>
-      <Layout live={connected}>
-        <Routes>
-          <Route path="/" element={<Dashboard version={version} />} />
-          <Route path="/jobs" element={<Jobs version={version} />} />
-          <Route path="/jobs/:id" element={<JobDetail version={version} />} />
-          <Route path="/jobs/:id/review" element={<CvReview version={version} />} />
-          <Route path="/cv" element={<CvStudio version={version} />} />
-          <Route path="/cv/:scope" element={<CvStudio version={version} />} />
-          <Route path="/applications" element={<Applications version={version} />} />
-          <Route path="/runs" element={<Runs version={version} />} />
-          <Route path="/guide" element={<Guide version={version} />} />
-          <Route path="/market" element={<Market version={version} />} />
-          <Route path="/models" element={<Models version={version} />} />
-          <Route path="/backup" element={<Backup version={version} />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Layout>
-    </BrowserRouter>
+    <I18nProvider>
+      <BrowserRouter>
+        <Layout live={connected}>
+          <Routes>
+            <Route path="/" element={<Dashboard version={version} />} />
+            <Route path="/jobs" element={<Jobs version={version} />} />
+            <Route path="/jobs/:id" element={<JobDetail version={version} />} />
+            <Route path="/jobs/:id/review" element={<CvReview version={version} />} />
+            <Route path="/cv" element={<CvStudio version={version} />} />
+            <Route path="/cv/:scope" element={<CvStudio version={version} />} />
+            <Route path="/applications" element={<Applications version={version} />} />
+            <Route path="/runs" element={<Runs version={version} />} />
+            <Route path="/guide" element={<Guide version={version} />} />
+            <Route path="/market" element={<Market version={version} />} />
+            <Route path="/models" element={<Models version={version} />} />
+            <Route path="/backup" element={<Backup version={version} />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </Layout>
+      </BrowserRouter>
+    </I18nProvider>
   );
 }

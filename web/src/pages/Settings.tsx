@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, Lock, Save, ShieldAlert } from "lucide-r
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Skeleton } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Settings as SettingsData } from "@/types";
 
@@ -15,6 +16,7 @@ import type { Settings as SettingsData } from "@/types";
  * can't clobber another.
  */
 export function Settings() {
+  const t = useT("settings");
   const { data, loading, error, refetch } = useApi(() => api.settings(), []);
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -42,18 +44,20 @@ export function Settings() {
         setSaved(section);
         setTimeout(() => setSaved(null), 2000);
       } catch (e) {
-        setSaveError(e instanceof ApiError ? e.message : "Save failed");
+        // An ApiError carries the server's own message; that is backend output,
+        // not UI copy, so it is shown as-is.
+        setSaveError(e instanceof ApiError ? e.message : t("saveFailed"));
       } finally {
         setSaving(null);
       }
     },
-    [draft, refetch],
+    [draft, refetch, t],
   );
 
   if (error) {
     return (
       <Card className="p-6 text-sm">
-        <span className="font-medium text-critical">Couldn't load settings.</span> {error}
+        <span className="font-medium text-critical">{t("loadFailed")}</span> {error}
       </Card>
     );
   }
@@ -72,10 +76,10 @@ export function Settings() {
   return (
     <div className="animate-fade-up space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("title")}</h1>
         <p className="text-sm text-ink-muted">
-          Saved to <code className="font-mono text-xs">config.local.yaml</code>, merged over the
-          commented defaults. Delete that file to reset.
+          {t("subtitleBefore")} <code className="font-mono text-xs">config.local.yaml</code>
+          {t("subtitleAfter")}
         </p>
       </div>
 
@@ -87,52 +91,52 @@ export function Settings() {
       )}
 
       <Section
-        title="Crawl"
+        title={t("crawl")}
         onSave={() => save("crawl")}
         saving={saving === "crawl"}
         saved={saved === "crawl"}
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <NumberField
-            label="Jobs per site"
+            label={t("jobsPerSite")}
             value={draft.crawl.jobs_per_site}
             onChange={(v) => set({ crawl: { ...draft.crawl, jobs_per_site: v } })}
           />
           <NumberField
-            label="Max pages per site"
-            hint="a ceiling, not a target"
+            label={t("maxPages")}
+            hint={t("maxPagesHint")}
             value={draft.crawl.max_pages}
             onChange={(v) => set({ crawl: { ...draft.crawl, max_pages: v } })}
           />
           <NumberField
-            label="Fresh window (hours)"
-            hint="🔥 flag below this age"
+            label={t("freshHours")}
+            hint={t("freshHoursHint")}
             value={draft.crawl.fresh_hours}
             onChange={(v) => set({ crawl: { ...draft.crawl, fresh_hours: v } })}
           />
           <NumberField
-            label="Min match score"
+            label={t("matchScoreMin")}
             step={0.05}
             value={draft.crawl.match_score_min}
             onChange={(v) => set({ crawl: { ...draft.crawl, match_score_min: v } })}
           />
         </div>
         <TagField
-          label="Stacks"
-          hint="what a good job looks like"
+          label={t("stacks")}
+          hint={t("stacksHint")}
           value={draft.crawl.stacks}
           onChange={(stacks) => set({ crawl: { ...draft.crawl, stacks } })}
         />
         <TagField
-          label="Exclude keywords"
-          hint="drop jobs whose title or JD matches"
+          label={t("excludeKeywords")}
+          hint={t("excludeKeywordsHint")}
           value={draft.crawl.exclude_keywords}
           onChange={(exclude_keywords) => set({ crawl: { ...draft.crawl, exclude_keywords } })}
         />
       </Section>
 
       <Section
-        title="Sources"
+        title={t("sources")}
         onSave={() => save("sources")}
         saving={saving === "sources"}
         saved={saved === "sources"}
@@ -155,15 +159,19 @@ export function Settings() {
                 }
                 className="h-4 w-4 accent-[rgb(var(--accent))]"
               />
+              {/* `source.key` is the identifier written to config.local.yaml —
+                  shown verbatim in both languages. */}
               <span className="font-medium">{source.key}</span>
-              <span className="font-mono text-[11px] text-ink-muted">tier {source.tier}</span>
+              <span className="font-mono text-[11px] text-ink-muted">
+                {t("tier", { tier: source.tier })}
+              </span>
             </label>
           ))}
         </div>
       </Section>
 
       <Section
-        title="Apply — email"
+        title={t("applyEmail")}
         onSave={() => save("apply")}
         saving={saving === "apply"}
         saved={saved === "apply"}
@@ -172,8 +180,8 @@ export function Settings() {
         <GateWarning email={draft.apply.email} />
         <div className="flex flex-col gap-1.5">
           <Toggle
-            label="Enabled"
-            hint="nothing is sent at all while this is off"
+            label={t("emailEnabled")}
+            hint={t("emailEnabledHint")}
             checked={draft.apply.email.enabled}
             locked={isLocked("apply.email.enabled")}
             onChange={(enabled) =>
@@ -181,8 +189,8 @@ export function Settings() {
             }
           />
           <Toggle
-            label="Dry run"
-            hint="build and record the message, never send it"
+            label={t("dryRun")}
+            hint={t("dryRunHint")}
             checked={draft.apply.email.dry_run}
             locked={isLocked("apply.email.dry_run")}
             onChange={(dry_run) =>
@@ -192,8 +200,8 @@ export function Settings() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
-            label="Test recipient"
-            hint="deliver here instead of employers"
+            label={t("testRecipient")}
+            hint={t("testRecipientHint")}
             value={draft.apply.email.test_recipient}
             locked={isLocked("apply.email.test_recipient")}
             onChange={(test_recipient) =>
@@ -201,7 +209,7 @@ export function Settings() {
             }
           />
           <TextField
-            label="From address"
+            label={t("fromAddr")}
             value={draft.apply.email.from_addr}
             onChange={(from_addr) =>
               set({ apply: { ...draft.apply, email: { ...draft.apply.email, from_addr } } })
@@ -209,31 +217,29 @@ export function Settings() {
           />
         </div>
         <p className="text-xs text-ink-muted">
-          SMTP credentials live in <code className="font-mono">.env</code>, not here.
+          {t("smtpBefore")} <code className="font-mono">.env</code>
+          {t("smtpAfter")}
         </p>
         {lockedFields.length > 0 && (
           <p className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs text-ink-muted">
             <Lock size={13} className="mt-0.5 shrink-0" />
             <span>
-              The three gates that decide whether mail actually leaves are deliberately not
-              editable over the network. Change them in{" "}
-              <code className="font-mono">jobpilot/config.local.yaml</code> on the host and
-              restart — so a stolen token cannot turn JobPilot into something that writes to
-              employers in your name.
+              {t("lockedBefore")}{" "}
+              <code className="font-mono">jobpilot/config.local.yaml</code> {t("lockedAfter")}
             </span>
           </p>
         )}
       </Section>
 
       <Section
-        title="CV"
+        title={t("cv")}
         onSave={() => save("app")}
         saving={saving === "app"}
         saved={saved === "app"}
       >
         <NumberField
-          label="Max edit rounds"
-          hint="how many times you can ask the agent to revise one CV"
+          label={t("editMaxRounds")}
+          hint={t("editMaxRoundsHint")}
           value={draft.app.edit_max_rounds}
           onChange={(v) => set({ app: { ...draft.app, edit_max_rounds: v } })}
         />
@@ -242,33 +248,37 @@ export function Settings() {
   );
 }
 
+/**
+ * Email is the one channel that leaves the machine without a per-item approval,
+ * so this banner has to say — in either language, with the same bluntness —
+ * exactly what would be sent and to whom. Hook goes above the early returns.
+ */
 function GateWarning({ email }: { email: SettingsData["apply"]["email"] }) {
+  const t = useT("settings");
+
   if (!email.enabled)
     return (
       <p className="rounded-lg border border-good/30 bg-good/5 px-3 py-2 text-xs text-ink-muted">
-        Email apply is off. Nothing can be sent.
+        {t("emailOff")}
       </p>
     );
   if (email.dry_run)
     return (
       <p className="rounded-lg border border-good/30 bg-good/5 px-3 py-2 text-xs text-ink-muted">
-        Dry run: messages are built and shown on the Applications board, never sent.
+        {t("emailDryRun")}
       </p>
     );
   if (email.test_recipient)
     return (
       <p className="rounded-lg border border-accent/40 bg-accent/8 px-3 py-2 text-xs text-ink-muted">
-        Live, but every message goes to{" "}
-        <span className="font-mono text-ink">{email.test_recipient}</span> instead of the employer.
+        {t("emailTestBefore")}{" "}
+        <span className="font-mono text-ink">{email.test_recipient}</span> {t("emailTestAfter")}
       </p>
     );
   return (
     <p className="flex items-start gap-2 rounded-lg border border-critical/40 bg-critical/8 px-3 py-2 text-xs text-critical">
       <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-      <span>
-        All three gates are open — approved applications will be emailed to real employers from{" "}
-        {email.from_addr || "(no from address set)"}.
-      </span>
+      <span>{t("emailLive", { from: email.from_addr || t("noFromAddr") })}</span>
     </p>
   );
 }
@@ -289,6 +299,8 @@ function Section({
   saved: boolean;
   danger?: boolean;
 }) {
+  const t = useT("settings");
+  const tc = useT("common");
   return (
     <Card className={cn(danger && "border-l-2 border-l-critical")}>
       <CardHeader className="items-center">
@@ -301,7 +313,7 @@ function Section({
           ) : (
             <Save size={14} />
           )}
-          {saved ? "Saved" : "Save"}
+          {saved ? t("saved") : tc("save")}
         </Button>
       </CardHeader>
       <CardBody className="flex flex-col gap-4 pt-3">{children}</CardBody>
@@ -379,9 +391,10 @@ function TagField({
   value: string[];
   onChange: (v: string[]) => void;
 }) {
+  const t = useT("settings");
   return (
     <label className="flex flex-col gap-1.5">
-      <Label label={label} hint={hint ?? "comma-separated"} />
+      <Label label={label} hint={hint ?? t("commaSeparated")} />
       <Input
         value={value.join(", ")}
         onChange={(e) =>
@@ -433,10 +446,11 @@ function Toggle({
 /** Marks a control the API refuses to change (config.LOCKED_SETTINGS). Shown
  *  inline rather than as one banner, so it is attached to the thing it explains. */
 function LockNote() {
+  const t = useT("settings");
   return (
     <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-ink-muted">
       <Lock size={11} />
-      host only
+      {t("hostOnly")}
     </span>
   );
 }

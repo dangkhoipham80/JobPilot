@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button, Card, CardBody, Input } from "@/components/ui";
+import { useT } from "@/i18n";
 import type { JobDetail } from "@/types";
 
 /**
@@ -13,6 +14,8 @@ import type { JobDetail } from "@/types";
  * like any other job.
  */
 export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void }) {
+  const t = useT("jobs");
+  const common = useT("common");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
       setForm({ url: "", title: "", company: "", location: "", salary: "", description_md: "" });
       setOpen(false);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not add the job");
+      setError(e instanceof ApiError ? e.message : t("addJobFailed"));
     } finally {
       setBusy(false);
     }
@@ -53,7 +56,7 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
   if (!open) {
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
-        <Plus size={15} /> Add job
+        <Plus size={15} /> {t("addJob")}
       </Button>
     );
   }
@@ -63,15 +66,12 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
       <CardBody className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-sm font-semibold">Add a job by hand</h2>
-            <p className="text-xs leading-relaxed text-ink-muted">
-              For postings JobPilot can't crawl — LinkedIn's robots.txt forbids it. Paste the
-              description too, or the tailor has nothing to work from.
-            </p>
+            <h2 className="font-display text-sm font-semibold">{t("addJobTitle")}</h2>
+            <p className="text-xs leading-relaxed text-ink-muted">{t("addJobIntro")}</p>
           </div>
           <button
             onClick={() => setOpen(false)}
-            aria-label="Close"
+            aria-label={common("close")}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink"
           >
             <X size={15} />
@@ -79,11 +79,12 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Input placeholder="Job title *" value={form.title} onChange={set("title")} />
-          <Input placeholder="Company *" value={form.company} onChange={set("company")} />
-          <Input placeholder="Location" value={form.location} onChange={set("location")} />
-          <Input placeholder="Salary" value={form.salary} onChange={set("salary")} />
+          <Input placeholder={t("fieldTitle")} value={form.title} onChange={set("title")} />
+          <Input placeholder={t("fieldCompany")} value={form.company} onChange={set("company")} />
+          <Input placeholder={t("fieldLocation")} value={form.location} onChange={set("location")} />
+          <Input placeholder={t("fieldSalary")} value={form.salary} onChange={set("salary")} />
         </div>
+        {/* A sample URL, not copy — it reads the same in either language. */}
         <Input
           placeholder="https://www.linkedin.com/jobs/view/…"
           value={form.url}
@@ -93,16 +94,17 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
           rows={7}
           value={form.description_md}
           onChange={set("description_md")}
-          placeholder="Paste the full job description here…"
+          placeholder={t("addJobJdPlaceholder")}
           className="w-full resize-y rounded-lg border bg-surface px-3 py-2 text-sm leading-relaxed text-ink placeholder:text-ink-muted/70 focus:border-accent focus:outline-none"
         />
 
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-ink-muted">
-            {error ? <span className="text-critical">{error}</span> : "Applies as external — you submit it yourself."}
+            {error ? <span className="text-critical">{error}</span> : t("addJobChannel")}
           </span>
           <Button onClick={submit} disabled={busy || !form.title.trim() || !form.company.trim()}>
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Add job
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{" "}
+            {t("addJob")}
           </Button>
         </div>
       </CardBody>

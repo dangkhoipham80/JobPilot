@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PAGE_SIZES } from "@/hooks/usePaging";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -8,7 +9,13 @@ interface Props {
   total: number;
   onPage: (page: number) => void;
   onSize: (size: number) => void;
-  /** What the rows are, for the range readout: "1–25 of 312 jobs". */
+  /**
+   * What the rows are, for the range readout: "1–25 of 312 jobs".
+   *
+   * Passed in already translated — the caller knows what it is listing and the
+   * pager does not, so a `noun` key here would just be a second place to keep a
+   * list of every noun in the app in sync.
+   */
   noun?: string;
   className?: string;
 }
@@ -25,7 +32,9 @@ interface Props {
  * place anyone means to go; the useful moves are one step either way and
  * changing how much you see at once.
  */
-export function Pagination({ page, size, total, onPage, onSize, noun = "rows", className }: Props) {
+export function Pagination({ page, size, total, onPage, onSize, noun, className }: Props) {
+  const t = useT("common");
+  const rows = noun ?? t("rows");
   const lastPage = Math.max(0, Math.ceil(total / size) - 1);
   // Clamp for the readout only. When a list shrinks under the page you are on,
   // `useClampPage` fixes the page — but it is an effect, so it runs after this
@@ -45,13 +54,13 @@ export function Pagination({ page, size, total, onPage, onSize, noun = "rows", c
     >
       <p className="tabular-nums text-muted-foreground">
         {total === 0 ? (
-          <>No {noun}</>
+          <>{t("noRows", { noun: rows })}</>
         ) : (
           <>
             <span className="text-ink">
               {first}–{last}
             </span>{" "}
-            of {total} {noun}
+            {t("range", { total, noun: rows })}
           </>
         )}
       </p>
@@ -59,13 +68,13 @@ export function Pagination({ page, size, total, onPage, onSize, noun = "rows", c
       <div className="flex items-center gap-3">
         <PageSizeSelect size={size} onSize={onSize} />
         <div className="flex items-center gap-1">
-          <PagerButton label="Previous page" disabled={page <= 0} onClick={() => step(-1)}>
+          <PagerButton label={t("previousPage")} disabled={page <= 0} onClick={() => step(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </PagerButton>
           <span className="px-1 tabular-nums text-muted-foreground">
             {page + 1} / {lastPage + 1}
           </span>
-          <PagerButton label="Next page" disabled={page >= lastPage} onClick={() => step(1)}>
+          <PagerButton label={t("nextPage")} disabled={page >= lastPage} onClick={() => step(1)}>
             <ChevronRight className="h-4 w-4" />
           </PagerButton>
         </div>
@@ -80,15 +89,16 @@ export function Pagination({ page, size, total, onPage, onSize, noun = "rows", c
 export function PageSizeSelect({
   size,
   onSize,
-  label = "Per page",
+  label,
 }: {
   size: number;
   onSize: (size: number) => void;
   label?: string;
 }) {
+  const t = useT("common");
   return (
     <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-      <span className="hidden sm:inline">{label}</span>
+      <span className="hidden sm:inline">{label ?? t("perPage")}</span>
       <select
         value={size}
         onChange={(e) => onSize(Number(e.target.value))}
@@ -124,19 +134,20 @@ export function CompactPager({
   total: number;
   onPage: (page: number) => void;
 }) {
+  const t = useT("common");
   const lastPage = Math.max(0, Math.ceil(total / size) - 1);
-  if (lastPage === 0) return null;
   const step = (delta: number) => onPage(Math.min(lastPage, Math.max(0, page + delta)));
+  if (lastPage === 0) return null;
 
   return (
     <div className="flex items-center justify-center gap-1 pt-1 text-xs">
-      <PagerButton label="Previous page" disabled={page <= 0} onClick={() => step(-1)}>
+      <PagerButton label={t("previousPage")} disabled={page <= 0} onClick={() => step(-1)}>
         <ChevronLeft className="h-3.5 w-3.5" />
       </PagerButton>
       <span className="px-1 tabular-nums text-muted-foreground">
         {page + 1} / {lastPage + 1}
       </span>
-      <PagerButton label="Next page" disabled={page >= lastPage} onClick={() => step(1)}>
+      <PagerButton label={t("nextPage")} disabled={page >= lastPage} onClick={() => step(1)}>
         <ChevronRight className="h-3.5 w-3.5" />
       </PagerButton>
     </div>

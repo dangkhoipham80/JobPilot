@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { CircleSlash, Loader2, Undo2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui";
-import { relativeTime } from "@/lib/format";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Application, ApplicationEvent, OutcomeType } from "@/types";
 
@@ -17,14 +18,16 @@ import type { Application, ApplicationEvent, OutcomeType } from "@/types";
  * yet" is a question the board is asking you, not a state of the world.
  */
 
-const OPTIONS: { key: OutcomeType; label: string; className: string }[] = [
-  { key: "replied", label: "They replied", className: "border-caution/40 text-caution" },
-  { key: "interview", label: "Interview", className: "border-accent/40 text-accent" },
-  { key: "offer", label: "Offer", className: "border-good/40 text-good" },
-  { key: "rejected", label: "Rejected", className: "border-critical/40 text-critical" },
-  { key: "withdrawn", label: "I withdrew", className: "border-ink/15 text-ink-muted" },
-  { key: "ghosted", label: "Ghosted", className: "border-ink/15 text-ink-muted" },
-];
+// `tk` is a dictionary key rather than a label: the string has to be resolved
+// at render time so the badges follow the language switch.
+const OPTIONS = [
+  { key: "replied", tk: "outcomeReplied", className: "border-caution/40 text-caution" },
+  { key: "interview", tk: "outcomeInterview", className: "border-accent/40 text-accent" },
+  { key: "offer", tk: "outcomeOffer", className: "border-good/40 text-good" },
+  { key: "rejected", tk: "outcomeRejected", className: "border-critical/40 text-critical" },
+  { key: "withdrawn", tk: "outcomeWithdrawn", className: "border-ink/15 text-ink-muted" },
+  { key: "ghosted", tk: "outcomeGhosted", className: "border-ink/15 text-ink-muted" },
+] as const;
 
 const BY_KEY = Object.fromEntries(OPTIONS.map((o) => [o.key, o])) as Record<
   OutcomeType,
@@ -32,6 +35,8 @@ const BY_KEY = Object.fromEntries(OPTIONS.map((o) => [o.key, o])) as Record<
 >;
 
 export function OutcomeTracker({ app, onChange }: { app: Application; onChange: () => void }) {
+  const t = useT("applications");
+  const fmt = useFormat();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // The in-flight guard has to be a ref, not the state above. Two clicks in one
@@ -69,13 +74,13 @@ export function OutcomeTracker({ app, onChange }: { app: Application; onChange: 
         await loadEvents();
         onChange();
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : "Request failed");
+        setError(e instanceof ApiError ? e.message : t("requestFailed"));
       } finally {
         inFlight.current = false;
         setBusy(false);
       }
     },
-    [loadEvents, onChange],
+    [loadEvents, onChange, t],
   );
 
   const current = app.outcome_stage ? BY_KEY[app.outcome_stage] : null;
@@ -89,12 +94,13 @@ export function OutcomeTracker({ app, onChange }: { app: Application; onChange: 
       >
         {current ? (
           <>
-            <Badge className={cn("py-0", current.className)}>{current.label}</Badge>
+            <Badge className={cn("py-0", current.className)}>{t(current.tk)}</Badge>
+            {/* `outcome_hint` is composed by the backend — data, not copy. */}
             <span className="truncate">{app.outcome_hint}</span>
           </>
         ) : (
           <span className="inline-flex items-center gap-1 underline decoration-dotted underline-offset-2">
-            <CircleSlash size={11} /> No outcome recorded — what happened?
+            <CircleSlash size={11} /> {t("outcomeNone")}
           </span>
         )}
         {busy && <Loader2 size={11} className="ml-auto animate-spin" />}
@@ -114,7 +120,9 @@ export function OutcomeTracker({ app, onChange }: { app: Application; onChange: 
                   o.className,
                 )}
               >
-                {o.key === app.outcome_stage ? `${o.label} again` : o.label}
+                {o.key === app.outcome_stage
+                  ? t("outcomeAgain", { label: t(o.tk) })
+                  : t(o.tk)}
               </button>
             ))}
           </div>
@@ -133,18 +141,22 @@ export function OutcomeTracker({ app, onChange }: { app: Application; onChange: 
                     e.is_retracted && "line-through opacity-60",
                   )}
                 >
-                  <span className="font-medium text-ink">{BY_KEY[e.event_type]?.label ?? e.event_type}</span>
+                  {/* An unknown event type falls back to the raw value: it came
+                      from the API, and inventing copy for it would hide it. */}
+                  <span className="font-medium text-ink">
+                    {BY_KEY[e.event_type] ? t(BY_KEY[e.event_type].tk) : e.event_type}
+                  </span>
                   {e.label && <span className="truncate">{e.label}</span>}
-                  <span>{relativeTime(e.occurred_at)}</span>
+                  <span>{fmt.relativeTime(e.occurred_at)}</span>
                   {!e.is_retracted && (
                     <button
                       type="button"
                       disabled={busy}
-                      title="Recorded by mistake — rewind to the previous outcome"
+                      title={t("retractTitle")}
                       onClick={() => run(() => api.retractEvent(app.id, e.id))}
                       className="ml-auto inline-flex items-center gap-0.5 hover:text-ink"
                     >
-                      <Undo2 size={10} /> retract
+                      <Undo2 size={10} /> {t("retract")}
                     </button>
                   )}
                 </li>

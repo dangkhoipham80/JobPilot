@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { BellRing, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button, Card } from "@/components/ui";
+import { useT } from "@/i18n";
 import type { Application } from "@/types";
 
 /**
@@ -27,6 +28,7 @@ export function FollowUps({
    *  the work, and a page size is not a fact about the work. */
   total?: number;
 }) {
+  const t = useT("applications");
   const [busy, setBusy] = useState<number | null>(null);
 
   const act = useCallback(
@@ -50,7 +52,7 @@ export function FollowUps({
       <header className="mb-3 flex items-center gap-2">
         <BellRing size={15} className="shrink-0 text-caution" />
         <h2 className="text-sm font-semibold">
-          {count} application{count > 1 ? "s" : ""} worth chasing
+          {t(count > 1 ? "followupsTitle" : "followupsTitleOne", { count })}
         </h2>
       </header>
 
@@ -63,6 +65,7 @@ export function FollowUps({
             <div className="min-w-0 flex-1">
               <span className="font-medium">{a.job_title}</span>
               <span className="text-ink-muted"> · {a.company}</span>
+              {/* `followup_hint` is written by the backend cadence — data. */}
               <p className="text-xs text-ink-muted">{a.followup_hint}</p>
             </div>
             <Button
@@ -70,18 +73,18 @@ export function FollowUps({
               variant="ghost"
               disabled={busy === a.id}
               onClick={() => act(a.id, "sent")}
-              title="Advance to the next step of the cadence"
+              title={t("followedUpTitle")}
             >
-              <Check size={13} /> I followed up
+              <Check size={13} /> {t("followedUp")}
             </Button>
             <Button
               size="sm"
               variant="ghost"
               disabled={busy === a.id}
               onClick={() => act(a.id, "stop")}
-              title="Stop chasing this one"
+              title={t("letItGoTitle")}
             >
-              <X size={13} /> Let it go
+              <X size={13} /> {t("letItGo")}
             </Button>
           </li>
         ))}

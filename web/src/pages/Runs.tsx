@@ -5,7 +5,8 @@ import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import { Pagination } from "@/components/Pagination";
-import { clockTime, relativeTime } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useT } from "@/i18n";
 import { Card, CardBody, CardHeader, CardTitle, Skeleton } from "@/components/ui";
 import { CrawlSetup } from "@/components/CrawlSetup";
 import { cn } from "@/lib/utils";
@@ -32,7 +33,17 @@ const OUTCOME: Record<string, string> = {
   failed: "text-critical",
 };
 
+/** Same four outcomes, as dictionary keys. An outcome the backend grows later
+ *  falls back to its raw value rather than rendering nothing. */
+const OUTCOME_KEY = {
+  success: "outcomeSuccess",
+  dry_run: "outcomeDryRun",
+  awaiting_user: "outcomeAwaitingUser",
+  failed: "outcomeFailed",
+} as const;
+
 export function Runs({ version }: { version: number }) {
+  const t = useT("runs");
   const taskPaging = usePaging("tasks");
   const tasks = useApi(
     () => api.tasks(undefined, { limit: taskPaging.size, offset: taskPaging.offset }),
@@ -74,10 +85,8 @@ export function Runs({ version }: { version: number }) {
   return (
     <div className="animate-fade-up space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Runs</h1>
-        <p className="text-sm text-ink-muted">
-          What the agent is doing now, and everything it has done.
-        </p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <p className="text-sm text-ink-muted">{t("subtitle")}</p>
       </div>
 
       <CrawlSetup
@@ -89,18 +98,16 @@ export function Runs({ version }: { version: number }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Queue</CardTitle>
+          <CardTitle>{t("queue")}</CardTitle>
           <span className="font-mono text-[11px] text-ink-muted">
-            {tasks.data?.total ?? 0} recent
+            {t("queueCount", { count: tasks.data?.total ?? 0 })}
           </span>
         </CardHeader>
         <CardBody className="pt-3">
           {tasks.loading && !tasks.data ? (
             <Skeleton className="h-20" />
           ) : !tasks.data?.total ? (
-            <p className="text-sm text-ink-muted">
-              Nothing queued. Hit “Crawl now” to look for jobs.
-            </p>
+            <p className="text-sm text-ink-muted">{t("queueEmpty")}</p>
           ) : (
             <>
               <ul className="flex flex-col gap-2">
@@ -115,7 +122,7 @@ export function Runs({ version }: { version: number }) {
                 total={tasks.data.total}
                 onPage={taskPaging.setPage}
                 onSize={taskPaging.setSize}
-                noun="tasks"
+                noun={t("tasksNoun")}
               />
             </>
           )}
@@ -124,14 +131,16 @@ export function Runs({ version }: { version: number }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>History</CardTitle>
-          <span className="font-mono text-[11px] text-ink-muted">{runs.data?.total ?? 0} runs</span>
+          <CardTitle>{t("history")}</CardTitle>
+          <span className="font-mono text-[11px] text-ink-muted">
+            {t("historyCount", { count: runs.data?.total ?? 0 })}
+          </span>
         </CardHeader>
         <CardBody className="pt-3">
           {runs.loading && !runs.data ? (
             <Skeleton className="h-24" />
           ) : !runs.data?.total ? (
-            <p className="text-sm text-ink-muted">No runs recorded yet.</p>
+            <p className="text-sm text-ink-muted">{t("historyEmpty")}</p>
           ) : (
             <>
               <ul className="flex flex-col divide-y">
@@ -146,7 +155,7 @@ export function Runs({ version }: { version: number }) {
                 total={runs.data.total}
                 onPage={runPaging.setPage}
                 onSize={runPaging.setSize}
-                noun="runs"
+                noun={t("runsNoun")}
               />
             </>
           )}
@@ -157,9 +166,13 @@ export function Runs({ version }: { version: number }) {
 }
 
 function TaskRow({ task }: { task: Task }) {
+  const t = useT("runs");
+  const fmt = useFormat();
   const meta = STATUS[task.status];
   const Icon = meta.icon;
   const sites = task.result?.sites ?? [];
+  const outcome = task.result.result as keyof typeof OUTCOME_KEY | undefined;
+  const pages = task.result.pages;
 
   return (
     <li className="rounded-lg border p-3">
@@ -168,7 +181,7 @@ function TaskRow({ task }: { task: Task }) {
         <span className="font-medium">{task.label}</span>
         <span className="font-mono text-[11px] text-ink-muted">{task.kind}</span>
         <span className="ml-auto text-xs text-ink-muted">
-          {relativeTime(task.finished_at ?? task.started_at ?? task.created_at)}
+          {fmt.relativeTime(task.finished_at ?? task.started_at ?? task.created_at)}
         </span>
       </div>
 
@@ -177,19 +190,23 @@ function TaskRow({ task }: { task: Task }) {
       )}
       {/* A finished apply task is not the same as a sent application: the
           dispatch ran, and `result` says whether anything actually left. */}
-      {task.status === "done" && task.result.result && (
+      {task.status === "done" && outcome && (
         <p className="mt-1 pl-6 text-xs text-ink-muted">
-          <span className={cn("font-medium", OUTCOME[task.result.result] ?? "text-ink")}>
-            {task.result.result.replace("_", " ")}
+          <span className={cn("font-medium", OUTCOME[outcome] ?? "text-ink")}>
+            {/* An outcome the backend adds later has no key yet: show it raw
+                rather than nothing — a blank line hides the result entirely. */}
+            {OUTCOME_KEY[outcome] ? t(OUTCOME_KEY[outcome]) : outcome.replace("_", " ")}
           </span>
           {task.result.detail ? ` — ${task.result.detail}` : ""}
         </p>
       )}
       {task.status === "done" && task.result.version !== undefined && (
         <p className="mt-1 pl-6 text-xs text-ink-muted">
-          v{task.result.version} · match{" "}
-          {Math.round((task.result.match_score ?? 0) * 100)}% · {task.result.pages ?? "?"} page
-          {task.result.pages === 1 ? "" : "s"}
+          {t("tailorResult", {
+            version: task.result.version,
+            match: Math.round((task.result.match_score ?? 0) * 100),
+            pages: pages === 1 ? t("onePage") : t("nPages", { count: pages ?? "?" }),
+          })}
         </p>
       )}
       {task.error && (
@@ -210,17 +227,14 @@ function TaskRow({ task }: { task: Task }) {
         <table className="mt-2 w-full text-xs">
           <thead className="text-ink-muted">
             <tr className="text-left">
-              <th className="font-medium">source</th>
-              <th className="font-medium tabular-nums">new</th>
-              <th className="font-medium tabular-nums">updated</th>
-              <th className="font-medium tabular-nums">dup</th>
-              <th
-                className="font-medium tabular-nums"
-                title="kept despite matching another board, because that board's copy had no JD"
-              >
-                kept
+              <th className="font-medium">{t("colSource")}</th>
+              <th className="font-medium tabular-nums">{t("colNew")}</th>
+              <th className="font-medium tabular-nums">{t("colUpdated")}</th>
+              <th className="font-medium tabular-nums">{t("colDup")}</th>
+              <th className="font-medium tabular-nums" title={t("colKeptWhy")}>
+                {t("colKept")}
               </th>
-              <th className="font-medium tabular-nums">fresh</th>
+              <th className="font-medium tabular-nums">{t("colFresh")}</th>
             </tr>
           </thead>
           <tbody>
@@ -258,6 +272,12 @@ function TaskRow({ task }: { task: Task }) {
  * stringifying the top level gave `sites=[object Object]`, which is worse than
  * showing nothing. This names the sources instead, since "which site actually
  * worked" is the question a run history exists to answer.
+ *
+ * Every token in the line is raw on purpose — site keys, counts and `k=v` pairs
+ * come straight from `run.stats` — so `failed` stays English too. Translating
+ * that one word would leave a machine-readable line with a single token that
+ * moves with the UI language, and the reason this is rendered in mono is that
+ * you can grep it against the crawl log.
  */
 function summarise(stats: Record<string, unknown> | undefined): string {
   if (!stats) return "";
@@ -282,8 +302,11 @@ function summarise(stats: Record<string, unknown> | undefined): string {
 }
 
 function RunRow({ run }: { run: RunRecord }) {
+  const t = useT("runs");
+  const fmt = useFormat();
   const ok = run.stats?.ok;
   const failed = ok === false;
+  const summary = summarise(run.stats);
   return (
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm">
       <span className="font-mono text-[11px] text-ink-muted">#{run.id}</span>
@@ -295,22 +318,19 @@ function RunRow({ run }: { run: RunRecord }) {
           to={`/jobs?run=${run.id}`}
           className="rounded-md border border-accent/40 bg-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-accent hover:bg-accent/20"
         >
-          {run.job_count} job{run.job_count === 1 ? "" : "s"} →
+          {run.job_count === 1 ? t("oneJob") : t("nJobs", { count: run.job_count })} →
         </Link>
       )}
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-muted"
-        title={summarise(run.stats)}
-      >
-        {summarise(run.stats)}
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-muted" title={summary}>
+        {summary}
       </span>
       {/* Absolute clock time, not "3h ago": "which of today's crawls was that?"
           is a question relative time cannot answer. */}
       <span
         className="whitespace-nowrap font-mono text-xs text-ink-muted"
-        title={relativeTime(run.finished_at ?? run.started_at)}
+        title={fmt.relativeTime(run.finished_at ?? run.started_at)}
       >
-        {clockTime(run.started_at)}
+        {fmt.clockTime(run.started_at)}
       </span>
     </li>
   );

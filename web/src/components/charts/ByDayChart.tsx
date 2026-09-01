@@ -1,16 +1,27 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TooltipBox, axisColor, gridColor } from "@/components/charts/ChartFrame";
-import { shortDay } from "@/lib/format";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
 
 // Change-over-time (jobs crawled per day) → single-series bars, sequential blue.
 // Title names the series, so no legend box.
 export function ByDayChart({ data }: { data: Record<string, number> }) {
+  const t = useT("dashboard");
+  // Hooks run here, not inside the tick formatter: `tickFormatter` is called by
+  // recharts during render, so it has to close over an already-bound formatter.
+  const fmt = useFormat();
   const rows = Object.entries(data)
     .map(([day, count]) => ({ day, count }))
     .sort((a, b) => a.day.localeCompare(b.day))
     .slice(-14);
 
-  if (rows.length === 0) return <Empty />;
+  if (rows.length === 0) {
+    return (
+      <div className="grid h-40 place-items-center text-sm text-ink-muted">
+        {t("noCrawlHistory")}
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height={180}>
@@ -23,7 +34,7 @@ export function ByDayChart({ data }: { data: Record<string, number> }) {
           axisLine={false}
           tickLine={false}
           tick={{ fill: axisColor(), fontSize: 11 }}
-          tickFormatter={shortDay}
+          tickFormatter={fmt.shortDay}
           minTickGap={12}
         />
         <YAxis
@@ -38,8 +49,10 @@ export function ByDayChart({ data }: { data: Record<string, number> }) {
           content={({ active, payload }) =>
             active && payload?.length ? (
               <TooltipBox
-                label={shortDay(String(payload[0].payload.day))}
-                rows={[{ key: "crawled", value: payload[0].value as number, color: "#3987e5" }]}
+                label={fmt.shortDay(String(payload[0].payload.day))}
+                rows={[
+                  { key: t("tipCrawled"), value: payload[0].value as number, color: "#3987e5" },
+                ]}
               />
             ) : null
           }
@@ -48,8 +61,4 @@ export function ByDayChart({ data }: { data: Record<string, number> }) {
       </BarChart>
     </ResponsiveContainer>
   );
-}
-
-function Empty() {
-  return <div className="grid h-40 place-items-center text-sm text-ink-muted">No crawl history yet.</div>;
 }

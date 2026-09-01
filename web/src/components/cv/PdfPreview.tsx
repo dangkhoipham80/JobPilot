@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /** A4, the page size awesome-cv.cls sets. Drives the frame height. */
@@ -77,6 +78,7 @@ export function PdfPreview({
   compiledAt: number;
   onCompile: () => void;
 }) {
+  const t = useT("cv");
   const [url, setUrl] = useState<string | null>(null);
   const [frameRef, width] = useWidth<HTMLDivElement>();
   const [full, setFull] = useState(false);
@@ -130,7 +132,7 @@ export function PdfPreview({
         // Taller than its frame on purpose — the overflow is the viewer's
         // trailing background, and clipping it is the only way to hide it.
         <iframe
-          title="CV preview"
+          title={t("previewFrame")}
           src={`${url}#toolbar=0&view=FitH`}
           className="w-full"
           style={{ height: width ? frameHeight(width, pages ?? 1) + 48 : "100%" }}
@@ -143,7 +145,7 @@ export function PdfPreview({
     <>
       <Card className="flex flex-col overflow-hidden">
         <CardHeader className="items-center">
-          <CardTitle>Preview</CardTitle>
+          <CardTitle>{t("preview")}</CardTitle>
           <div className="flex items-center gap-2">
             {pages !== null && !error && (
               <span
@@ -151,9 +153,9 @@ export function PdfPreview({
                   "rounded-md border px-2 py-0.5 font-mono text-[11px]",
                   pages === 1 ? "border-good/40 text-good" : "border-critical/40 text-critical",
                 )}
-                title={pages === 1 ? "Fits on one page" : "A CV should fit on one page"}
+                title={pages === 1 ? t("fitsOnePage") : t("shouldFitOnePage")}
               >
-                {pages} page{pages === 1 ? "" : "s"}
+                {t(pages === 1 ? "pagesOne" : "pagesMany", { n: pages })}
               </span>
             )}
             {url && !error && (
@@ -162,7 +164,7 @@ export function PdfPreview({
                   size="sm"
                   variant="ghost"
                   className="h-8 px-2"
-                  title="Full screen"
+                  title={t("fullScreen")}
                   onClick={() => setFull(true)}
                 >
                   <Maximize2 size={14} />
@@ -171,7 +173,7 @@ export function PdfPreview({
                   href={url}
                   target="_blank"
                   rel="noreferrer"
-                  title="Open in a new tab"
+                  title={t("openNewTab")}
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-ink"
                 >
                   <ExternalLink size={14} />
@@ -180,7 +182,7 @@ export function PdfPreview({
             )}
             <Button size="sm" variant="outline" onClick={onCompile} disabled={compiling}>
               {compiling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {compiling ? "Compiling…" : "Compile"}
+              {compiling ? t("compiling") : t("compile")}
             </Button>
           </div>
         </CardHeader>
@@ -189,8 +191,9 @@ export function PdfPreview({
           {error ? (
             <div className="flex h-full flex-col gap-2 rounded-lg border border-critical/40 bg-critical/5 p-3">
               <div className="flex items-center gap-2 text-sm font-medium text-critical">
-                <AlertTriangle size={15} /> LaTeX build failed
+                <AlertTriangle size={15} /> {t("buildFailed")}
               </div>
+              {/* The xelatex log, verbatim. */}
               <pre className="max-h-72 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-ink-muted">
                 {error}
               </pre>
@@ -199,9 +202,7 @@ export function PdfPreview({
             <>
               {frame}
               {dirty && (
-                <p className="pt-2 text-xs text-ink-muted">
-                  Showing the last compiled build — save and compile to see your edits.
-                </p>
+                <p className="pt-2 text-xs text-ink-muted">{t("staleBuild")}</p>
               )}
             </>
           ) : (
@@ -220,6 +221,8 @@ export function PdfPreview({
  * one: the page gets the whole window height and the viewer fits it vertically.
  */
 function FullScreen({ url, onClose }: { url: string; onClose: () => void }) {
+  const t = useT("cv");
+  const tc = useT("common");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -239,20 +242,20 @@ function FullScreen({ url, onClose }: { url: string; onClose: () => void }) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="CV preview, full screen"
+      aria-label={t("previewFull")}
       className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-sm"
       onClick={onClose}
     >
       <div className="flex items-center justify-between px-4 py-2 text-white">
         <span className="font-display text-sm font-semibold uppercase tracking-[0.14em]">
-          CV preview
+          {t("previewFrame")}
         </span>
         <button
           onClick={onClose}
-          aria-label="Close preview"
+          aria-label={t("closePreview")}
           className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm hover:bg-white/10"
         >
-          <X size={15} /> Close <kbd className="font-mono text-xs opacity-70">Esc</kbd>
+          <X size={15} /> {tc("close")} <kbd className="font-mono text-xs opacity-70">Esc</kbd>
         </button>
       </div>
       {/* Sized to the page rather than to the window: at `FitV` the viewer fits
@@ -260,7 +263,7 @@ function FullScreen({ url, onClose }: { url: string; onClose: () => void }) {
           background. stopPropagation keeps a click on the document from
           dismissing it. */}
       <iframe
-        title="CV preview, full screen"
+        title={t("previewFull")}
         src={`${url}#toolbar=0&view=FitV`}
         onClick={(e) => e.stopPropagation()}
         style={{ aspectRatio: `${PAGE_RATIO}` }}
@@ -272,6 +275,7 @@ function FullScreen({ url, onClose }: { url: string; onClose: () => void }) {
 }
 
 function Placeholder({ compiling }: { compiling: boolean }) {
+  const t = useT("cv");
   return (
     <div className="grid aspect-[210/297] place-items-center rounded-lg border border-dashed text-center">
       <div className="flex flex-col items-center gap-2 text-ink-muted">
@@ -280,13 +284,9 @@ function Placeholder({ compiling }: { compiling: boolean }) {
         ) : (
           <FileText size={22} className="opacity-60" />
         )}
-        <p className="text-sm">
-          {compiling ? "Running xelatex in Docker…" : "Hit Compile to render the PDF."}
-        </p>
+        <p className="text-sm">{compiling ? t("runningXelatex") : t("hitCompile")}</p>
         {!compiling && (
-          <p className="max-w-xs text-xs leading-relaxed opacity-80">
-            Needs Docker running — the build uses the Awesome-CV image.
-          </p>
+          <p className="max-w-xs text-xs leading-relaxed opacity-80">{t("needsDocker")}</p>
         )}
       </div>
     </div>

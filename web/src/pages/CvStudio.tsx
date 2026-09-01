@@ -7,6 +7,7 @@ import { useTask } from "@/hooks/useTask";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import { Pagination } from "@/components/Pagination";
 import { Button, Card, CardBody, Select, Skeleton } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
 import { MarkupLegend } from "@/components/cv/fields";
@@ -20,6 +21,9 @@ import { VersionHistory } from "@/components/cv/VersionHistory";
 import { DiffPanel } from "@/components/review/DiffPanel";
 import type { AtsReport, CvDocument, CvSection, CvSectionType, CvVersionDiff } from "@/types";
 
+// The `title` here lands in the CV and is rendered into the PDF, so it is CV
+// content, not UI copy: it stays in English in both languages, same as every
+// other word the user typed. Rename it in the editor to change it.
 const NEW_SECTION: Record<CvSectionType, () => CvSection> = {
   paragraph: () => ({ type: "paragraph", key: "summary", title: "Summary", enabled: true, text: "", small: true }),
   bullets: () => ({ type: "bullets", key: "skills", title: "Skills", enabled: true, items: [] }),
@@ -36,6 +40,8 @@ const NEW_SECTION: Record<CvSectionType, () => CvSection> = {
 export function CvStudio({ version: wsVersion }: { version: number }) {
   // /cv edits the Master CV; /cv/<job id> edits that job's tailored fork.
   const { scope = "master" } = useParams();
+  const t = useT("cv");
+  const tc = useT("common");
   const { data, loading, error, refetch } = useApi(() => api.cv(scope), [scope]);
 
   const [draft, setDraft] = useState<CvDocument | null>(null);
@@ -128,10 +134,10 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
         const task = await api.editMasterCv(instruction);
         setEditTaskId(task.id);
       } catch (e) {
-        setEditError(e instanceof ApiError ? e.message : "Could not start the edit");
+        setEditError(e instanceof ApiError ? e.message : t("editStartFailed"));
       }
     },
-    [scope, savedVersion],
+    [scope, savedVersion, t],
   );
 
   // When an edit lands, pull the new version in and put the diff on screen --
@@ -211,11 +217,11 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
       setSavedVersion(res.version);
       await refetch();
     } catch (e) {
-      setActionError(e instanceof ApiError ? e.message : "Save failed");
+      setActionError(e instanceof ApiError ? e.message : t("saveFailed"));
     } finally {
       setSaving(false);
     }
-  }, [draft, scope, refetch]);
+  }, [draft, scope, refetch, t]);
 
   const compile = useCallback(async () => {
     setCompiling(true);
@@ -226,13 +232,13 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
       setAts(res.ats);
       setCompiledAt(Date.now());
     } catch (e) {
-      setBuildError(e instanceof Error ? e.message : "Compile failed");
+      setBuildError(e instanceof Error ? e.message : t("compileFailed"));
       setPages(null);
       setAts(undefined);
     } finally {
       setCompiling(false);
     }
-  }, [scope]);
+  }, [scope, t]);
 
   const rollback = useCallback(
     async (target: number) => {
@@ -243,10 +249,10 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
         setSavedVersion(res.version);
         await refetch();
       } catch (e) {
-        setActionError(e instanceof ApiError ? e.message : "Restore failed");
+        setActionError(e instanceof ApiError ? e.message : t("restoreFailed"));
       }
     },
-    [scope, refetch],
+    [scope, refetch, t],
   );
 
   if (loading && !draft) return <StudioSkeleton />;
@@ -268,13 +274,13 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">CV Studio</h1>
           <p className="text-sm text-ink-muted">
-            {scope === "master" ? "Master CV" : `Tailored · ${scope}`} · v{savedVersion}
-            {dirty && <span className="ml-2 text-accent">unsaved changes</span>}
+            {scope === "master" ? t("masterCv") : t("tailoredScope", { scope })} · v{savedVersion}
+            {dirty && <span className="ml-2 text-accent">{t("unsaved")}</span>}
             {/* Said here too, not only inside the LaTeX tab: while an override
                 is in force these fields don't reach the PDF, and finding that
                 out from a PDF that ignored your edits is the bad way. */}
             {data?.tex_override && (
-              <span className="ml-2 text-accent">building from raw LaTeX</span>
+              <span className="ml-2 text-accent">{t("rawLatexActive")}</span>
             )}
           </p>
         </div>
@@ -283,7 +289,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
           <ModeSwitch mode={mode} onChange={setMode} />
           {mode === "fields" && (
             <Button onClick={save} disabled={!dirty || saving}>
-              <Save size={15} /> {saving ? "Saving…" : "Save version"}
+              <Save size={15} /> {saving ? tc("saving") : t("saveVersion")}
             </Button>
           )}
         </div>
@@ -320,14 +326,11 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
                 <Card>
                   <CardBody className="flex items-center justify-between gap-3 text-xs text-ink-muted">
                     <span>
-                      The agent saved <span className="text-ink">v{editSkippedVersion}</span> while
-                      you had unsaved edits here. Your edits were kept — load it to bring it into
-                      the editor (this discards your local edits), or keep editing and Save: that
-                      replaces it at the head of history with your version instead (v
-                      {editSkippedVersion} stays in History either way).
+                      {t("skippedLead")} <span className="text-ink">v{editSkippedVersion}</span>{" "}
+                      {t("skippedBody", { version: editSkippedVersion })}
                     </span>
                     <Button size="sm" variant="outline" onClick={loadSkippedEdit}>
-                      Load v{editSkippedVersion}
+                      {t("loadVersion", { version: editSkippedVersion })}
                     </Button>
                   </CardBody>
                 </Card>
@@ -397,7 +400,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
                 total={versions.data?.total ?? 0}
                 onPage={versionPaging.setPage}
                 onSize={versionPaging.setSize}
-                noun="versions"
+                noun={t("versionsNoun")}
               />
             }
           />
@@ -424,9 +427,11 @@ function VersionCompare({
   state: { data: CvVersionDiff | null; loading: boolean; error: string | null };
   onClose: () => void;
 }) {
+  const t = useT("cv");
+  const tc = useT("common");
   const close = (
     <Button size="sm" variant="ghost" className="h-7 shrink-0 px-2" onClick={onClose}>
-      <X size={13} /> Close
+      <X size={13} /> {tc("close")}
     </Button>
   );
 
@@ -455,9 +460,7 @@ function VersionCompare({
       />
       {!diff.changed && (
         <p className="px-1 text-xs text-ink-muted">
-          {same
-            ? "Same version on both sides — nothing to compare."
-            : `v${base} and v${target} have identical structure and text.`}
+          {same ? t("compareSame") : t("compareIdentical", { base, target })}
         </p>
       )}
     </div>
@@ -471,9 +474,10 @@ function ModeSwitch({
   mode: "fields" | "latex";
   onChange: (next: "fields" | "latex") => void;
 }) {
+  const t = useT("cv");
   const tabs = [
-    { id: "fields" as const, label: "Fields", icon: LayoutList },
-    { id: "latex" as const, label: "LaTeX", icon: Code2 },
+    { id: "fields" as const, label: t("tabFields"), icon: LayoutList },
+    { id: "latex" as const, label: t("tabLatex"), icon: Code2 },
   ];
   return (
     <div className="flex items-center gap-0.5 rounded-lg border p-0.5">
@@ -494,18 +498,19 @@ function ModeSwitch({
 }
 
 function AddSection({ onAdd }: { onAdd: (type: CvSectionType) => void }) {
+  const t = useT("cv");
   const [type, setType] = useState<CvSectionType>("bullets");
   return (
     <div className="flex items-center gap-2">
       <Select value={type} onChange={(e) => setType(e.target.value as CvSectionType)}>
-        <option value="paragraph">Paragraph</option>
-        <option value="bullets">Bullets</option>
-        <option value="education">Education</option>
-        <option value="experience">Experience</option>
-        <option value="projects">Projects</option>
+        <option value="paragraph">{t("typeParagraph")}</option>
+        <option value="bullets">{t("typeBullets")}</option>
+        <option value="education">{t("typeEducation")}</option>
+        <option value="experience">{t("typeExperience")}</option>
+        <option value="projects">{t("typeProjects")}</option>
       </Select>
       <Button variant="outline" size="sm" onClick={() => onAdd(type)}>
-        <Plus size={14} /> Add section
+        <Plus size={14} /> {t("addSection")}
       </Button>
     </div>
   );

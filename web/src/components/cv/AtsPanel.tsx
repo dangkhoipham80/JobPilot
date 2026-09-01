@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, XCircle } from "lucide-react";
+import { useT } from "@/i18n";
 import type { AtsReport } from "../../types";
 
 /**
@@ -10,15 +11,16 @@ import type { AtsReport } from "../../types";
  * while "your email is not in the text layer" tells you exactly what to fix.
  */
 export function AtsPanel({ report }: { report: AtsReport | null | undefined }) {
+  const t = useT("cv");
   // Not checked is not the same as passed, and must never look like it.
   if (report === null || report === undefined) {
     return (
       <div className="flex items-start gap-2 rounded-lg border border-dashed border-line bg-surface/40 p-3 text-sm text-muted">
         <HelpCircle size={15} className="mt-0.5 shrink-0" />
         <span>
-          Readability not checked — no PDF text extractor installed. Run{" "}
-          <code className="rounded bg-surface px-1 py-0.5 text-xs">pip install -e '.[cv]'</code> to
-          see what an ATS would read.
+          {t("atsNotCheckedLead")}{" "}
+          <code className="rounded bg-surface px-1 py-0.5 text-xs">pip install -e '.[cv]'</code>{" "}
+          {t("atsNotCheckedRest")}
         </span>
       </div>
     );
@@ -37,11 +39,14 @@ export function AtsPanel({ report }: { report: AtsReport | null | undefined }) {
         )}
         <h3 className="text-sm font-semibold">
           {errors.length > 0
-            ? `${errors.length} thing${errors.length > 1 ? "s" : ""} an ATS can't read`
-            : "An ATS can read this CV"}
+            ? t(errors.length === 1 ? "atsBadOne" : "atsBadMany", { n: errors.length })
+            : t("atsOk")}
         </h3>
-        <span className="ml-auto font-mono text-[11px] text-muted" title={`read by ${report.engine}`}>
-          {report.chars.toLocaleString()} chars
+        <span
+          className="ml-auto font-mono text-[11px] text-muted"
+          title={t("atsEngine", { engine: report.engine })}
+        >
+          {t("atsChars", { n: report.chars.toLocaleString() })}
         </span>
       </header>
 
@@ -71,9 +76,7 @@ export function AtsPanel({ report }: { report: AtsReport | null | undefined }) {
 
       {(report.keywords_found.length > 0 || report.keywords_missing.length > 0) && (
         <div className="rounded-lg border border-line bg-surface/40 p-3">
-          <p className="mb-2 text-xs font-medium text-muted">
-            Job keywords a parser can find in your PDF
-          </p>
+          <p className="mb-2 text-xs font-medium text-muted">{t("atsKeywords")}</p>
           <div className="flex flex-wrap gap-1.5">
             {report.keywords_found.map((k) => (
               <span
@@ -96,9 +99,7 @@ export function AtsPanel({ report }: { report: AtsReport | null | undefined }) {
             // Deliberately not a blocker: the honest fix is to gain the skill or
             // let it go, never to paste it into the CV. That is precisely what
             // the tailor guardrail exists to prevent.
-            <p className="mt-2 text-xs text-muted">
-              Struck-through keywords aren't in your CV. Only add one if it's genuinely true of you.
-            </p>
+            <p className="mt-2 text-xs text-muted">{t("atsKeywordsNote")}</p>
           )}
         </div>
       )}

@@ -15,24 +15,28 @@ import {
   Settings2,
   Sun,
 } from "lucide-react";
+import { LANG_NAMES, useI18n, useT, type Lang } from "@/i18n";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
+// `key` indexes the nav namespace; the visible string is resolved at render so
+// it follows the language switch.
 const NAV = [
-  { to: "/", label: "Deck", icon: LayoutDashboard, end: true },
-  { to: "/jobs", label: "Jobs", icon: Briefcase, end: false },
-  { to: "/cv", label: "CV Studio", icon: FileText, end: false },
-  { to: "/applications", label: "Applications", icon: Send, end: false },
-  { to: "/runs", label: "Runs", icon: Activity, end: false },
-  { to: "/market", label: "Market", icon: TrendingUp, end: false },
-  { to: "/models", label: "Models", icon: Cpu, end: false },
-  { to: "/backup", label: "Backup", icon: DatabaseBackup, end: false },
-  { to: "/settings", label: "Settings", icon: Settings2, end: false },
-  { to: "/guide", label: "Guide", icon: BookOpen, end: false },
-];
+  { to: "/", key: "deck", icon: LayoutDashboard, end: true },
+  { to: "/jobs", key: "jobs", icon: Briefcase, end: false },
+  { to: "/cv", key: "cv", icon: FileText, end: false },
+  { to: "/applications", key: "applications", icon: Send, end: false },
+  { to: "/runs", key: "runs", icon: Activity, end: false },
+  { to: "/market", key: "market", icon: TrendingUp, end: false },
+  { to: "/models", key: "models", icon: Cpu, end: false },
+  { to: "/backup", key: "backup", icon: DatabaseBackup, end: false },
+  { to: "/settings", key: "settings", icon: Settings2, end: false },
+  { to: "/guide", key: "guide", icon: BookOpen, end: false },
+] as const;
 
 export function Layout({ live, children }: { live: boolean; children: ReactNode }) {
   const { theme, toggle } = useTheme();
+  const t = useT("nav");
 
   return (
     <div className="flex min-h-screen">
@@ -46,7 +50,7 @@ export function Layout({ live, children }: { live: boolean; children: ReactNode 
         </div>
 
         <nav className="mt-8 flex flex-col gap-1">
-          {NAV.map(({ to, label, icon: Icon, end }) => (
+          {NAV.map(({ to, key, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
@@ -61,13 +65,13 @@ export function Layout({ live, children }: { live: boolean; children: ReactNode 
               }
             >
               <Icon size={17} />
-              {label}
+              {t(key)}
             </NavLink>
           ))}
         </nav>
 
         <div className="mt-auto px-2 text-[11px] leading-relaxed text-ink-muted">
-          Local control plane · single user
+          {t("tagline")}
         </div>
       </aside>
 
@@ -75,13 +79,16 @@ export function Layout({ live, children }: { live: boolean; children: ReactNode 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-bg/80 px-6 backdrop-blur">
           <LiveIndicator live={live} />
-          <button
-            onClick={toggle}
-            aria-label={theme === "dark" ? "Switch to light" : "Switch to dark"}
-            className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-ink"
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <div className="flex items-center gap-1">
+            <LanguageToggle />
+            <button
+              onClick={toggle}
+              aria-label={theme === "dark" ? t("toLight") : t("toDark")}
+              className="grid h-8 w-8 place-items-center rounded-lg text-ink-muted hover:bg-surface-2 hover:text-ink"
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          </div>
         </header>
 
         {/* Full-bleed on purpose: this is a local single-user control plane on a
@@ -94,7 +101,47 @@ export function Layout({ live, children }: { live: boolean; children: ReactNode 
   );
 }
 
+/**
+ * VI / EN as a two-slot segmented control rather than a dropdown.
+ *
+ * With exactly two options a select costs a click to discover what the other
+ * one even is, while both labels fit in the space the closed dropdown would
+ * have taken. `aria-pressed` carries the state that the highlight shows.
+ */
+function LanguageToggle() {
+  const { lang, setLang } = useI18n();
+  const t = useT("nav");
+  const options: Lang[] = ["vi", "en"];
+
+  return (
+    <div
+      role="group"
+      aria-label={t("language")}
+      className="flex items-center rounded-lg border p-0.5 text-[11px] font-semibold"
+    >
+      {options.map((code) => (
+        <button
+          key={code}
+          type="button"
+          onClick={() => setLang(code)}
+          aria-pressed={lang === code}
+          title={LANG_NAMES[code]}
+          className={cn(
+            "rounded-[5px] px-1.5 py-0.5 uppercase tracking-wide transition-colors",
+            lang === code
+              ? "bg-accent/15 text-accent"
+              : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+          )}
+        >
+          {code}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function LiveIndicator({ live }: { live: boolean }) {
+  const t = useT("nav");
   return (
     <div className="flex items-center gap-2 text-xs font-medium">
       <span className="relative flex h-2 w-2">
@@ -106,7 +153,7 @@ function LiveIndicator({ live }: { live: boolean }) {
         />
       </span>
       <span className={cn("font-mono uppercase tracking-widest", live ? "text-live" : "text-ink-muted")}>
-        {live ? "Live" : "Offline"}
+        {live ? t("live") : t("offline")}
       </span>
     </div>
   );

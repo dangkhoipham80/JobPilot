@@ -1380,3 +1380,93 @@ xác nhận blocker trên):
 **Verify vòng 5:** `tsc --noEmit` sạch, `ruff check jobpilot` sạch, 844 test Python không đổi
 (vòng này chỉ sửa `CvStudio.tsx`).
 
+
+---
+
+## Phase i18n — dashboard song ngữ Việt/Anh (mặc định Tiếng Việt)
+
+**Mục tiêu:** toàn bộ 10 trang web đọc được bằng tiếng Việt, giữ English là ngôn ngữ hạng nhất,
+đổi qua lại bằng một nút trên header. Không thêm dependency runtime nào.
+
+### Vì sao không dùng `react-i18next`
+
+App cố ý chỉ có 7 dependency runtime; bảng chữ là **2 ngôn ngữ cố định**; tiếng Việt **không
+biến cách số nhiều** nên không có luật plural nào đáng mô hình hoá. Đổi lại, một `Record` có
+type cho **key check lúc biên dịch** — thứ mà tra cứu bằng string thuần không cho. Cụ thể helper
+`ns({en, vi})` khai `vi` là mapped type trên `keyof en`, nên **thiếu một chuỗi tiếng Việt hoặc
+thừa một key lạ = lỗi `tsc`**, mà `npm run build` vốn đã chạy `tsc --noEmit`. Không cần lint riêng.
+Kết quả: **17 namespace, 751 key**, parity verify bằng script — 0 lệch.
+
+### Quyết định: ba helper thành hook, bản không-ngôn-ngữ bị xoá hẳn
+
+`relativeTime()` / `qualityLabel()` / `STATUS_INFO` cũ **đã bị xoá**, thay bằng `useFormat()` /
+`useLabels()` / `useStatuses()`. Hai lý do, lý do sau mới là chính:
+
+1. Một hàm thuần đọc biến "ngôn ngữ hiện tại" ở module scope sẽ **không re-render** khi user bấm
+   đổi ngôn ngữ — bảng "3h ago" đứng nguyên tiếng Anh tới khi có thứ khác tình cờ invalidate nó.
+2. **Xoá hẳn bản cũ biến mọi call-site sót thành lỗi biên dịch.** Nếu chỉ *thêm* bản mới, chuỗi
+   sót lại sẽ lặng lẽ hiện tiếng Anh giữa trang tiếng Việt — đúng loại "sai mà trông như đúng"
+   mà repo này đã trả giá nhiều lần. 14 lỗi `tsc` ngay sau khi xoá chính là danh sách việc phải làm.
+
+### Cách chạy: 1 spine + 11 agent song song
+
+Tự viết phần xương (provider, `ns`, `common`/`nav`/`labels`/`format`/`statuses`/`task`, Layout,
+Pagination, StatusPill, TaskProgress), rồi **fan out 11 agent, mỗi agent sở hữu đúng 1 file
+dictionary + các file page của nó**. `dict/index.ts` được viết sẵn đầy đủ 17 namespace và các
+file namespace được tạo sẵn dạng stub rỗng hợp lệ, nên **không agent nào phải sửa file chung** —
+zero conflict. Component dùng chung bởi nhiều agent (`TaskProgress`, `Pagination`, `StatusPill`,
+`ui.tsx`) tự làm trước để không ai giẫm chân.
+
+**Bẫy các agent tự phát hiện, đáng ghi lại:** `tsc` gặp **lỗi cú pháp** ở một file thì **bỏ luôn
+semantic check của mọi file khác**. Giữa lúc 11 agent cùng sửa, `npx tsc --noEmit | grep <file của tôi>`
+trả về rỗng **không** có nghĩa là sạch — nó rỗng vì một agent khác đang viết dở. Vài agent tự
+dựng `tsconfig` tạm chỉ include slice của mình, và **verify chính công cụ verify** bằng cách cắm
+một key sai rồi xem nó có báo không. Đúng bài học "đừng để công cụ đo bịa ra finding".
+
+### Ba bug chỉ lộ ra khi chạy thật (test + tsc đều xanh trước đó)
+
+1. **Pill trạng thái vỡ 3 dòng.** Mọi state tiếng Anh là **một từ** (`discovered`) nên pill chưa
+   bao giờ có cơ hội wrap; `mới tìm thấy` là **ba từ**, trong ô bảng nó xuống 3 dòng và đội cao
+   toàn bộ row. Thêm `whitespace-nowrap` vào `StatusPill` — pill là *nhãn*, nó phải nong cột ra
+   chứ không được reflow bên trong.
+2. **Nút vỡ đôi.** `Bỏ qua` tách thành `Bỏ` / `qua` và tràn khỏi viền, vì `Button` cao cố định
+   không có chỗ cho dòng thứ hai. Thêm `whitespace-nowrap` vào `Button` gốc — nhãn tiếng Việt
+   phần lớn 2 từ trong khi tiếng Anh 1 từ, nên đây là lỗi sẽ còn tái diễn nếu vá lẻ từng chỗ.
+3. **`titleCase` bịa ra tên board.** `BySourceChart` và `SourceScorecard` title-case key thô →
+   `Itviec`, `Wework remotely`, `Topcv`. `sourceLabel` tồn tại đúng để tránh chuyện này. Đây là
+   bug **có sẵn từ trước**, chỉ lộ ra vì agent trang Jobs sửa còn agent trang Dashboard không —
+   hai trang cạnh nhau viết tên khác nhau mới thành thứ nhìn là thấy. *Viết hoa không phải là
+   dịch*: `sourceLabel` cho dim source, `levelLabel` cho dim level, `titleCase` cho channel.
+
+### Quyết định có chủ ý: ba chip gợi ý trong InstructionBox **giữ tiếng Anh** ở cả 2 ngôn ngữ
+
+Bấm chip là đổ text vào textarea, và text đó **không phải chrome** — nó đi thẳng tới model làm
+instruction, mà với `add_entry` thì `source_quote` **buộc phải xuất hiện nguyên văn trong đó**,
+nên câu chữ của user đáp xuống CV nguyên si. Chip tiếng Việt + Master CV tiếng Anh = một bullet
+tiếng Việt nằm giữa tài liệu tiếng Anh.
+
+Đào thêm thì thấy: `textnorm.quote_appears_in` **xử lý tiếng Việt đúng** và fail-closed (mất dấu
+là trượt) — guardrail provenance vẫn nguyên. Nhưng **`edit_guard._NUMBER_WORDS` chỉ có tiếng
+Anh**, và `_WORD_RE` của nó là `[a-zA-Z]+` nên **không match nổi "mười hai" hay "gấp đôi"** — một
+con số bịa viết bằng **chữ số** vẫn bị bắt, viết bằng **chữ tiếng Việt** thì lọt. Lỗ này có sẵn
+từ trước; đẩy user sang viết instruction tiếng Việt chỉ làm nó **dễ chạm tới hơn nhiều**.
+Kết luận: dịch chrome, **không** dịch thứ trở thành input cho model viết CV. Không có gì chặn
+user tự gõ tiếng Việt — chỉ là UI không đi mời.
+
+### Còn lại tiếng Anh (biết, và cố ý)
+
+- **Câu do backend soạn** — `facet.note` (Market), `split.note` (Dashboard), `llm.blocker()` /
+  `llm.warnings()` (Models), các `*_hint` (Applications), `description` của template (CV Studio).
+  Đây là **dữ liệu**, không phải copy; dịch ở frontend nghĩa là pattern-match câu tiếng Anh của
+  chính mình — mong manh và sai chỗ. Muốn phủ hết thì phải sửa backend (trả key + số, hoặc nhận
+  tham số ngôn ngữ), là một phase riêng.
+- **Danh từ riêng** (`ITviec`, `PostgreSQL`), **bậc seniority** (thị trường VN rao tin bằng đúng
+  thang tiếng Anh), **config key / CLI / đường dẫn**, và **nội dung CV của user**.
+
+### Verify
+
+`npm run build` xanh (tsc + vite), **844 test Python** vẫn xanh, script parity 17/17 namespace
+không lệch, **0 console error**. Chạy thật trên Postgres 180 job: đi qua Deck / Jobs / CV Studio /
+Guide / Market / Settings ở cả VI và EN, `1920×1080`. Đổi ngôn ngữ lật đúng cả **định dạng ngày**
+(`2/8/2026` ⇄ `8/2/2026`). Ba font (Inter, Space Grotesk, JetBrains Mono) đều **đã kiểm** là có
+subset `vietnamese` trên Google Fonts — không phải đoán, `curl` lấy CSS ra đọc `unicode-range`.

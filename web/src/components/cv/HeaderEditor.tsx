@@ -1,5 +1,6 @@
 import { Card, CardBody, CardHeader, CardTitle, Input } from "@/components/ui";
 import { Field, TextField } from "@/components/cv/fields";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { CvHeader, CvTheme } from "@/types";
 
@@ -36,6 +37,7 @@ export function HeaderEditor({
   onHeader: (h: CvHeader) => void;
   onTheme: (t: CvTheme) => void;
 }) {
+  const t = useT("cv");
   const monochrome = MONOCHROME_TEMPLATES.has(template);
   const set = <K extends keyof CvHeader>(key: K, value: CvHeader[K]) =>
     onHeader({ ...header, [key]: value });
@@ -44,35 +46,40 @@ export function HeaderEditor({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Identity</CardTitle>
+        <CardTitle>{t("identity")}</CardTitle>
       </CardHeader>
       <CardBody className="grid grid-cols-2 gap-4 pt-3">
-        <TextField label="First name" value={header.first_name} onChange={(v) => set("first_name", v)} />
-        <TextField label="Last name" value={header.last_name} onChange={(v) => set("last_name", v)} />
+        <TextField label={t("firstName")} value={header.first_name} onChange={(v) => set("first_name", v)} />
+        <TextField label={t("lastName")} value={header.last_name} onChange={(v) => set("last_name", v)} />
         <TextField
-          label="Position"
+          label={t("position")}
           value={header.position}
           onChange={(v) => set("position", v)}
           className="col-span-2"
         />
-        <TextField label="Email" value={header.email ?? ""} onChange={opt("email")} />
-        <TextField label="Mobile" value={header.mobile ?? ""} onChange={opt("mobile")} />
-        <TextField label="GitHub" value={header.github ?? ""} onChange={opt("github")} hint="username" />
+        <TextField label={t("email")} value={header.email ?? ""} onChange={opt("email")} />
+        <TextField label={t("mobile")} value={header.mobile ?? ""} onChange={opt("mobile")} />
+        <TextField
+          label="GitHub"
+          value={header.github ?? ""}
+          onChange={opt("github")}
+          hint={t("usernameHint")}
+        />
         <TextField
           label="LinkedIn"
           value={header.linkedin ?? ""}
           onChange={opt("linkedin")}
-          hint="username"
+          hint={t("usernameHint")}
         />
         <TextField
-          label="Address"
+          label={t("address")}
           value={header.address ?? ""}
           onChange={opt("address")}
-          hint="optional"
+          hint={t("optional")}
           className="col-span-2"
         />
 
-        <Field label="Extra link" hint="label + url, shown next to the home icon" className="col-span-2">
+        <Field label={t("extraLink")} hint={t("extraLinkHint")} className="col-span-2">
           <div className="flex gap-2">
             <Input
               className="w-40"
@@ -103,8 +110,8 @@ export function HeaderEditor({
         </Field>
 
         <Field
-          label="Accent colour"
-          hint={monochrome ? `not used by the ${template} template` : "Awesome-CV name or #hex"}
+          label={t("accentColour")}
+          hint={monochrome ? t("accentUnused", { template }) : t("accentHint")}
           className="col-span-2"
         >
           <div className={cn("flex flex-wrap items-center gap-1.5", monochrome && "opacity-50")}>

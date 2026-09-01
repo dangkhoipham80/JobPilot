@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { Button, Input } from "@/components/ui";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -94,7 +95,7 @@ export function AutoTextarea({
 export function BulletList({
   items,
   onChange,
-  addLabel = "Add bullet",
+  addLabel,
   placeholder,
 }: {
   items: string[];
@@ -102,6 +103,7 @@ export function BulletList({
   addLabel?: string;
   placeholder?: string;
 }) {
+  const t = useT("cv");
   const move = (i: number, delta: number) => {
     const next = [...items];
     const j = i + delta;
@@ -126,7 +128,7 @@ export function BulletList({
             onChange={(v) => onChange(items.map((x, j) => (j === i ? v : x)))}
           />
           <IconButton
-            label="Remove bullet"
+            label={t("removeBullet")}
             onClick={() => onChange(items.filter((_, j) => j !== i))}
             danger
           >
@@ -135,7 +137,7 @@ export function BulletList({
         </div>
       ))}
       <Button variant="ghost" size="sm" className="self-start" onClick={() => onChange([...items, ""])}>
-        <Plus size={14} /> {addLabel}
+        <Plus size={14} /> {addLabel ?? t("addBullet")}
       </Button>
     </div>
   );
@@ -153,8 +155,9 @@ export function TagsField({
   onChange: (v: string[]) => void;
   hint?: string;
 }) {
+  const t = useT("cv");
   return (
-    <Field label={label} hint={hint ?? "comma-separated, order is kept"}>
+    <Field label={label} hint={hint ?? t("tagsHint")}>
       <Input
         value={value.join(", ")}
         placeholder="Java, Spring Boot, Docker"
@@ -214,13 +217,14 @@ export function ReorderHandle({
   disableUp?: boolean;
   disableDown?: boolean;
 }) {
+  const t = useT("cv");
   return (
     <div className="flex shrink-0 items-center pt-1.5 text-ink-muted/40">
       <GripVertical size={14} />
       <div className="flex flex-col opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <button
           type="button"
-          aria-label="Move up"
+          aria-label={t("moveUp")}
           disabled={disableUp}
           onClick={onUp}
           className="px-0.5 text-[9px] leading-[9px] hover:text-ink disabled:opacity-25"
@@ -229,7 +233,7 @@ export function ReorderHandle({
         </button>
         <button
           type="button"
-          aria-label="Move down"
+          aria-label={t("moveDown")}
           disabled={disableDown}
           onClick={onDown}
           className="px-0.5 text-[9px] leading-[9px] hover:text-ink disabled:opacity-25"
@@ -243,13 +247,14 @@ export function ReorderHandle({
 
 /** Legend for the inline markup, shown once at the top of the editor. */
 export function MarkupLegend() {
+  const t = useT("cv");
   return (
     <p className="text-xs leading-relaxed text-ink-muted">
-      Formatting:{" "}
+      {t("formatting")}{" "}
       <code className="rounded bg-surface-2 px-1 font-mono text-[11px]">**bold**</code>,{" "}
       <code className="rounded bg-surface-2 px-1 font-mono text-[11px]">`accent`</code>,{" "}
-      <code className="rounded bg-surface-2 px-1 font-mono text-[11px]">[label](url)</code>. Everything
-      else is escaped — no LaTeX needed.
+      <code className="rounded bg-surface-2 px-1 font-mono text-[11px]">[label](url)</code>.{" "}
+      {t("formattingRest")}
     </p>
   );
 }

@@ -1,5 +1,5 @@
 import type { JobStatus } from "@/types";
-import { statusTooltip } from "@/lib/statuses";
+import { useStatuses } from "@/lib/statuses";
 import { cn } from "@/lib/utils";
 
 // Status is state, not a data series — a reserved, labeled vocabulary. Color
@@ -21,18 +21,25 @@ const STYLES: Record<JobStatus, string> = {
 };
 
 export function StatusPill({ status, className }: { status: JobStatus; className?: string }) {
+  const statuses = useStatuses();
   return (
     <span
       // Nine one-word states carry a lot of meaning; hovering explains what the
-      // word means and whose move it is, without a trip to the Guide.
-      title={statusTooltip(status)}
+      // word means and whose move it is, without a trip to the Guide. It also
+      // carries the raw DB state, which the translated pill no longer shows.
+      title={statuses.tooltip(status)}
       className={cn(
-        "inline-flex cursor-help items-center rounded-md border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
+        // `whitespace-nowrap` is load-bearing, not cosmetic. Every English state
+        // is one word, so the pill could never wrap; Vietnamese "mới tìm thấy"
+        // is three, and in a table cell it broke onto three lines and pushed
+        // every row taller. A pill is a label — it should widen its column, not
+        // reflow inside itself.
+        "inline-flex cursor-help items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
         STYLES[status],
         className,
       )}
     >
-      {status.toLowerCase()}
+      {statuses.info(status).label}
     </span>
   );
 }

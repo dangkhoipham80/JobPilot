@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { AlertTriangle, Check, Inbox, Loader2, Mail, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Badge, Button, Card } from "@/components/ui";
-import { relativeTime } from "@/lib/format";
+import { useT } from "@/i18n";
+import { useFormat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { InboxSettings, InboxSuggestion, MatchConfidence } from "@/types";
 
@@ -14,21 +15,22 @@ import type { InboxSettings, InboxSuggestion, MatchConfidence } from "@/types";
  * one line, and the buttons are the only thing that makes any of it real.
  */
 
-const VERDICT_LABEL: Record<string, { text: string; className: string }> = {
-  replied: { text: "They replied", className: "border-caution/40 text-caution" },
-  interview: { text: "Interview", className: "border-accent/40 text-accent" },
-  offer: { text: "Offer", className: "border-good/40 text-good" },
-  rejected: { text: "Rejected", className: "border-critical/40 text-critical" },
-};
+// Dictionary keys, not strings: the badge has to re-resolve when the language
+// flips, and these are the same four names the outcome tracker uses.
+const VERDICT_LABEL = {
+  replied: { tk: "outcomeReplied", className: "border-caution/40 text-caution" },
+  interview: { tk: "outcomeInterview", className: "border-accent/40 text-accent" },
+  offer: { tk: "outcomeOffer", className: "border-good/40 text-good" },
+  rejected: { tk: "outcomeRejected", className: "border-critical/40 text-critical" },
+} as const;
 
 /** How much the match itself should be trusted, said plainly. */
-const CONFIDENCE_NOTE: Record<MatchConfidence | "", string> = {
-  thread: "certain — this answers the message we sent",
-  address: "the address we applied to",
-  domain: "same domain we applied to",
-  company: "guessed from the sender's domain",
-  "": "",
-};
+const CONFIDENCE_NOTE = {
+  thread: "confidenceThread",
+  address: "confidenceAddress",
+  domain: "confidenceDomain",
+  company: "confidenceCompany",
+} as const satisfies Record<MatchConfidence, string>;
 
 export function InboxReplies({
   items,
@@ -42,6 +44,8 @@ export function InboxReplies({
   /** Rendered under the list; the page owns the page state. */
   pager?: React.ReactNode;
 }) {
+  const t = useT("applications");
+  const fmt = useFormat();
   const [busy, setBusy] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,13 +61,13 @@ export function InboxReplies({
         await (what === "accept" ? api.acceptSuggestion(id) : api.dismissSuggestion(id));
         onChange();
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : "Request failed");
+        setError(e instanceof ApiError ? e.message : t("requestFailed"));
       } finally {
         inFlight.current = false;
         setBusy(null);
       }
     },
-    [onChange],
+    [onChange, t],
   );
 
   const sync = useCallback(async () => {
@@ -72,11 +76,11 @@ export function InboxReplies({
     try {
       await api.syncInbox();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Request failed");
+      setError(e instanceof ApiError ? e.message : t("requestFailed"));
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [t]);
 
   // Nothing to show and nothing to offer: don't take up room on the board.
   if (!items.length && !settings?.enabled) return null;
@@ -87,22 +91,21 @@ export function InboxReplies({
         <Inbox size={15} className={cn("shrink-0", items.length ? "text-accent" : "text-ink-muted")} />
         <h2 className="text-sm font-semibold">
           {items.length
-            ? `${items.length} repl${items.length > 1 ? "ies" : "y"} found in your mailbox`
-            : "No new replies in your mailbox"}
+            ? t(items.length > 1 ? "inboxFound" : "inboxFoundOne", { count: items.length })
+            : t("inboxEmpty")}
         </h2>
-        <span className="text-xs text-ink-muted">
-          nothing is recorded until you say so
-        </span>
+        <span className="text-xs text-ink-muted">{t("inboxNote")}</span>
         <Button
           size="sm"
           variant="ghost"
           className="ml-auto"
           onClick={sync}
           disabled={syncing || !settings?.enabled}
-          title={settings?.blocker || `Read ${settings?.folder ?? "INBOX"} again`}
+          // `blocker` is the backend's own explanation of why sync is off.
+          title={settings?.blocker || t("checkMailTitle", { folder: settings?.folder ?? "INBOX" })}
         >
           {syncing ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
-          Check mail
+          {t("checkMail")}
         </Button>
       </header>
 
@@ -117,19 +120,24 @@ export function InboxReplies({
 
       <ul className="space-y-2">
         {items.map((s) => {
-          const verdict = VERDICT_LABEL[s.verdict] ?? {
-            text: s.verdict,
-            className: "border-ink/15 text-ink-muted",
-          };
+          // `auto_ack` / `unrelated` never reach a pending row, but if one ever
+          // did, showing the raw verdict beats inventing a name for it.
+          const known = s.verdict in VERDICT_LABEL
+            ? VERDICT_LABEL[s.verdict as keyof typeof VERDICT_LABEL]
+            : null;
           return (
             <li key={s.id} className="rounded-lg border border-line bg-surface px-3 py-2">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <Badge className={cn("py-0", verdict.className)}>{verdict.text}</Badge>
+                <Badge className={cn("py-0", known?.className ?? "border-ink/15 text-ink-muted")}>
+                  {known ? t(known.tk) : s.verdict}
+                </Badge>
+                {/* Job title, company and round label come straight from the
+                    mailbox and the DB — never reworded. */}
                 <span className="font-medium">{s.job_title}</span>
                 <span className="text-ink-muted">· {s.company}</span>
                 {s.round_label && <span className="text-xs text-ink-muted">{s.round_label}</span>}
                 <span className="ml-auto text-xs text-ink-muted">
-                  {relativeTime(s.mail_date)}
+                  {fmt.relativeTime(s.mail_date)}
                 </span>
               </div>
 
@@ -144,7 +152,7 @@ export function InboxReplies({
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-[11px] text-ink-muted">
                   {s.mail_from}
-                  {s.match_confidence && ` · ${CONFIDENCE_NOTE[s.match_confidence]}`}
+                  {s.match_confidence && ` · ${t(CONFIDENCE_NOTE[s.match_confidence])}`}
                 </span>
                 <div className="ml-auto flex items-center gap-1">
                   <Button
@@ -158,7 +166,7 @@ export function InboxReplies({
                     ) : (
                       <Check size={12} />
                     )}
-                    Record it
+                    {t("recordIt")}
                   </Button>
                   <Button
                     size="sm"
@@ -167,7 +175,7 @@ export function InboxReplies({
                     disabled={busy === s.id}
                     onClick={() => act(s.id, "dismiss")}
                   >
-                    <X size={12} /> Not this
+                    <X size={12} /> {t("notThis")}
                   </Button>
                 </div>
               </div>

@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, PenSquare } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
+import { useT } from "@/i18n";
 import { titleCase } from "@/lib/format";
 import type { JobDetail } from "@/types";
 
@@ -15,6 +16,8 @@ import type { JobDetail } from "@/types";
  * rather than letting the tailor run on an empty JD and produce noise.
  */
 export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () => void }) {
+  const t = useT("jobs");
+  const common = useT("common");
   const empty = !job.description_md.trim();
   const [editing, setEditing] = useState(empty);
   const [draft, setDraft] = useState(job.description_md);
@@ -34,7 +37,7 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
       onSaved();
       setEditing(false);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not save");
+      setError(e instanceof ApiError ? e.message : t("saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -43,16 +46,18 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
   return (
     <Card>
       <CardHeader className="items-center">
-        <CardTitle>Job description</CardTitle>
+        <CardTitle>{t("descriptionTitle")}</CardTitle>
         <div className="flex items-center gap-3">
           {job.apply_channel && (
             <span className="text-xs text-ink-muted">
-              applies via {titleCase(job.apply_channel)}
+              {/* The channel name is a backend value (email / portal /
+                  external) — shown as stored, in both languages. */}
+              {t("appliesVia", { channel: titleCase(job.apply_channel) })}
             </span>
           )}
           {!editing && (
             <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-              <PenSquare size={13} /> Edit
+              <PenSquare size={13} /> {common("edit")}
             </Button>
           )}
         </div>
@@ -64,11 +69,7 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
           <p className="mb-3 flex items-start gap-2 rounded-lg border border-accent/40 bg-accent/8 px-3 py-2 text-xs leading-relaxed">
             <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent" />
             <span>
-              {job.needs_jd
-                ? "This job came from a LinkedIn alert, which announces the posting but not its text — and JobPilot won't fetch it (robots.txt). "
-                : "No description yet. "}
-              Tailoring without one produces a generic CV — open the posting, copy the
-              description, and paste it here first.
+              {job.needs_jd ? t("noJdLinkedIn") : t("noJdPlain")} {t("noJdAdvice")}
             </span>
           </p>
         )}
@@ -79,7 +80,7 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
               rows={14}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Paste the full job description…"
+              placeholder={t("descriptionPlaceholder")}
               className="w-full resize-y rounded-lg border bg-surface px-3 py-2 font-sans text-sm leading-relaxed text-ink placeholder:text-ink-muted/70 focus:border-accent focus:outline-none"
             />
             <div className="flex items-center justify-end gap-2">
@@ -87,8 +88,11 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
                 <span className="mr-auto text-xs text-critical">{error}</span>
               ) : (
                 <span className="mr-auto text-xs text-ink-muted">
-                  Markdown: <code className="font-mono">##</code> heading,{" "}
-                  <code className="font-mono">-</code> bullet, <code className="font-mono">**bold**</code>
+                  {/* The markers are syntax, so only the words around them
+                      change language. */}
+                  Markdown: <code className="font-mono">##</code> {t("mdHeading")},{" "}
+                  <code className="font-mono">-</code> {t("mdBullet")},{" "}
+                  <code className="font-mono">**text**</code> {t("mdBold")}
                 </span>
               )}
               {!empty && (
@@ -100,11 +104,12 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
                     setEditing(false);
                   }}
                 >
-                  Cancel
+                  {common("cancel")}
                 </Button>
               )}
               <Button size="sm" onClick={save} disabled={busy || !draft.trim()}>
-                {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}{" "}
+                {busy ? common("saving") : common("save")}
               </Button>
             </div>
           </div>

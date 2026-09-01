@@ -1,6 +1,7 @@
 import { AlertTriangle, Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardBody } from "@/components/ui";
 import { isActive } from "@/hooks/useTask";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/types";
 
@@ -14,14 +15,19 @@ import type { Task } from "@/types";
  * waiting and debugging.
  */
 export function TaskProgress({ task, className }: { task: Task; className?: string }) {
+  const t = useT("task");
   if (isActive(task)) {
     return (
       <Card className={cn("border-l-2 border-l-accent", className)}>
         <CardBody className="flex items-center gap-2.5 py-3 text-sm">
           <Loader2 size={15} className="shrink-0 animate-spin text-accent" />
-          <span className="font-medium">{task.status === "queued" ? "Queued" : "Working"}</span>
+          <span className="font-medium">
+            {task.status === "queued" ? t("queued") : t("working")}
+          </span>
           <span className="min-w-0 flex-1 truncate text-ink-muted">
-            {task.progress || (task.status === "queued" ? "waiting for a free worker" : "…")}
+            {/* `task.progress` is written by the backend and stays in whatever
+                language the worker emitted — it is a live log line, not UI copy. */}
+            {task.progress || (task.status === "queued" ? t("waitingForWorker") : "…")}
           </span>
           <span className="shrink-0 font-mono text-[11px] text-ink-muted">{task.kind}</span>
         </CardBody>
@@ -40,7 +46,11 @@ export function TaskProgress({ task, className }: { task: Task; className?: stri
  * is never mistaken for a transient build failure worth retrying.
  */
 function TaskFailure({ task, className }: { task: Task; className?: string }) {
+  const t = useT("task");
   const guardrail = task.error_kind === "GuardrailViolation";
+  // `Evicted` is raised by `hooks/useTask.ts`, not the server, so its body is
+  // our copy to translate rather than a backend string to print verbatim.
+  const evicted = task.error_kind === "Evicted";
   const Icon = guardrail ? ShieldAlert : AlertTriangle;
 
   return (
@@ -48,15 +58,12 @@ function TaskFailure({ task, className }: { task: Task; className?: string }) {
       <CardBody className="flex items-start gap-2.5 py-3 text-sm">
         <Icon size={16} className="mt-0.5 shrink-0 text-critical" />
         <div className="min-w-0 space-y-1">
-          <p className="font-medium">
-            {guardrail ? "Blocked: the plan claimed something unsupported" : "That didn't finish"}
+          <p className="font-medium">{guardrail ? t("guardrailTitle") : t("failed")}</p>
+          <p className="break-words leading-relaxed text-ink-muted">
+            {evicted ? t("evicted") : task.error}
           </p>
-          <p className="break-words leading-relaxed text-ink-muted">{task.error}</p>
           {guardrail && (
-            <p className="text-[12px] leading-relaxed text-ink-muted">
-              Nothing was written to your CV. Add the experience to your Master CV if it's real,
-              or try again — the agent re-plans from scratch.
-            </p>
+            <p className="text-[12px] leading-relaxed text-ink-muted">{t("guardrailBody")}</p>
           )}
         </div>
       </CardBody>
