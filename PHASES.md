@@ -1470,3 +1470,50 @@ không lệch, **0 console error**. Chạy thật trên Postgres 180 job: đi qu
 Guide / Market / Settings ở cả VI và EN, `1920×1080`. Đổi ngôn ngữ lật đúng cả **định dạng ngày**
 (`2/8/2026` ⇄ `8/2/2026`). Ba font (Inter, Space Grotesk, JetBrains Mono) đều **đã kiểm** là có
 subset `vietnamese` trên Google Fonts — không phải đoán, `curl` lấy CSS ra đọc `unicode-range`.
+
+## Parser lương — nhánh một-số nuốt mất cái trần, ba lần nữa (2026-09-01)
+
+Cùng một hình dạng bug với ca `"15tr - 25tr"` ở Phase 21, và nó **tái phát ba lần**. Gốc chung:
+khi `_RANGE` không khớp, `parse()` **rơi xuống nhánh `_ANY_NUM`** và báo **sàn thành cả hai đầu**.
+Không có lỗi, không có cảnh báo — chỉ là một cái trần bị thay bằng cái sàn.
+
+| Nhãn | Trước | Sau |
+|---|---|---|
+| `2000～3000 USD` | 2000–2000 | 2000–3000 |
+| `$2,000 - $3,000` | 2000–2000 | 2000–3000 |
+| `160 triệu+` | 160tr–160tr | 160tr–**None** |
+| `Lương admin 5 triệu` | sàn mở 5tr | 5tr–5tr |
+
+1. **Tilde.** Dấu ngăn không chỉ là gạch ngang: board ghi `~`, và bộ gõ CJK biến nó thành
+   full-width `～` hoặc wave dash `〜`. `_SEP` giờ gồm `- – — − ~ ～ 〜 to đến` (thêm cả **dấu trừ
+   thật** U+2212, khác hyphen ASCII).
+2. **Ký hiệu tiền ở đầu số thứ hai.** Unit được cho phép *sau* số thứ nhất (`15tr - 25tr`) nhưng
+   không có gì được phép *trước* số thứ hai, trong khi board Mỹ ghi `$` ở **cả hai** đầu. Đúng
+   một bug với ca `15tr`, chỉ khác đầu.
+3. **Sàn mở bịa ra trần.** `160 triệu+` ra `min=max=160tr` — **khẳng định một cái trần mà tin
+   không hề nói**. Đối xứng với luật "up to 3000 ⇒ min=None" đã có sẵn: bound không được nói thì
+   để `None`. Mỗi tin loại này kéo tụt phần đỉnh thị trường đúng bằng cái phần khiến nó đáng đăng.
+4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
+   "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
+
+**Chỗ tinh tế, suýt sửa sai**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó giới
+thiệu một khoản cộng thêm, và kiểu viết này rất phổ biến trong tin Việt. Đọc nó thành "2000 trở
+lên" là **đổi một con số sai lấy một con số sai khác**. Phân biệt bằng `\+(?!\s*\w)`: `+` dính số
+hoặc đứng trước dấu câu (`160 triệu+ (gross)`) là sàn mở; `+` rồi tới **chữ** thì không.
+
+### Verify
+
+849 test xanh (844 + 5 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+`parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
+tức **+25%** vào đúng con số dựng nên median của `/market`.
+
+**Nói thẳng về mức độ ảnh hưởng thực tế**: corpus local hiện chỉ có **1 nhãn lương parse được**
+trên 181 job (57% là LinkedIn — không có lương; ITviec giấu lương sau login), và nhãn đó
+(`20 - 60 triệu`) **không dính** bug nào ở trên. Nên `/market` ở máy này **chưa hề vẽ sai** —
+guardrail `covered/total` đang báo đúng *"Only 1 job(s) list a parsable salary"*. Bug là thật và
+đã sửa, nhưng nó **đang tiềm ẩn**, sẽ lộ ra khi TopCV/VietnamWorks/board Mỹ vào nhiều hơn. Không
+có chuyện "chart đang sai và giờ đã đúng".
+
+⚠️ **`salary_range` là dữ liệu đã ghi trong `payload`, không tính lại lúc đọc.** Sửa parser xong
+**bắt buộc `backfill --force`** (đã chạy: 181 job), nếu không `/market` vẫn vẽ bằng số cũ và mọi
+verify đều "xanh" một cách vô nghĩa.

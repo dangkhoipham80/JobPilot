@@ -43,6 +43,59 @@ def test_the_unit_between_a_range_and_its_dash_is_not_lost():
     assert (both.min, both.max) == (15e6, 25e6)
 
 
+def test_a_tilde_is_a_range_separator_like_a_dash():
+    """"2000～3000 USD" reported 2000-2000. Boards write the separator as a
+    tilde, and a CJK-aware input method turns it full-width, so the label reads
+    as a range to a human and as one number to the parser — the ceiling is
+    replaced by the floor with nothing to show for it."""
+    for label in ("2000～3000 USD", "1500~2500 USD", "1000 ~ 2000 USD", "2000〜3000 USD"):
+        parsed = parse_salary(label)
+        assert parsed.min != parsed.max, f"{label!r} collapsed to a single figure"
+    assert (parse_salary("2000～3000 USD").min, parse_salary("2000～3000 USD").max) == (2000, 3000)
+    # The real minus sign turns up too, and is not the ASCII hyphen.
+    assert (parse_salary("2000 − 3000 USD").min, parse_salary("2000 − 3000 USD").max) == (2000, 3000)
+
+
+def test_a_currency_symbol_on_the_second_bound_does_not_break_the_range():
+    """"$2,000 - $3,000" reported 2000-2000. The unit was allowed *after* the
+    first figure but nothing was allowed *before* the second, and US boards
+    write the symbol on both. Same failure as "15tr - 25tr", other end."""
+    both = parse_salary("$2,000 - $3,000")
+    assert (both.min, both.max) == (2000, 3000)
+    assert (parse_salary("$2,000-$3,000").min, parse_salary("$2,000-$3,000").max) == (2000, 3000)
+
+
+def test_an_open_ended_floor_does_not_invent_a_ceiling():
+    """"160 triệu+" reported 160-160, which asserts a maximum the ad never gave.
+    The mirror of "up to 3000" leaving min None: an unstated bound stays None,
+    because every such ad otherwise understates the top of the market by exactly
+    the amount that made it worth posting."""
+    for label in ("160 triệu+", "15tr+", "20 triệu trở lên", "Trên 30 triệu"):
+        parsed = parse_salary(label)
+        assert parsed.max is None, f"{label!r} invented a ceiling of {parsed.max}"
+        assert parsed.min is not None
+    assert parse_salary("160 triệu+").min == 160e6
+    assert parse_salary("2000 USD or more").min == 2000
+    # Punctuation after the "+" is still the open-ended reading.
+    assert parse_salary("160 triệu+ (gross)").max is None
+
+
+def test_a_plus_that_introduces_a_bonus_is_not_an_open_range():
+    """"2000 USD + phụ cấp" is a base plus allowances, not "2000 or more" — and
+    it is common enough in Vietnamese ads that reading it as an open range would
+    be a guess rendered as a fact. It stays a point salary."""
+    for label in ("2000 USD + phụ cấp", "3000 USD + bonus"):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} was read as an open range"
+
+
+def test_min_does_not_match_inside_another_word():
+    """The floor keyword had no word boundary, so "Lương admin 5 triệu" matched
+    the "min" inside "admin" and became an open-ended floor of 5 triệu."""
+    parsed = parse_salary("Lương admin 5 triệu")
+    assert (parsed.min, parsed.max) == (5e6, 5e6)
+
+
 def test_a_salary_with_no_currency_is_refused():
     """"20 - 60" is millions of dong or dollars an hour depending on the board.
     Guessing would render a coin flip as a fact."""

@@ -37,16 +37,46 @@ _MILLION = 1_000_000
 
 _NUM = r"\d[\d.,]*"
 
-# "20 - 60 triệu", "1,500-2,500 USD", "15tr - 25tr". The optional unit between
-# the first figure and the dash matters: ads write the unit on *both* bounds
-# ("15tr - 25tr"), and without it the pattern failed, fell through to the
-# single-number branch, and reported the range's low end as both bounds.
-_UNIT = r"(?:\s*(?:tr|triệu|m|k|usd|vnd|\$))?"
-_RANGE = re.compile(rf"({_NUM}){_UNIT}\s*(?:-|–|—|to|đến)\s*({_NUM})", re.I)
-# "Up to 3000 USD", "tới 25 triệu"
-_MAX_ONLY = re.compile(rf"(?:up\s*to|tới|đến|max)\s*({_NUM})", re.I)
-# "From 2000 USD", "từ 15 triệu"
-_MIN_ONLY = re.compile(rf"(?:from|từ|starting|min)\s*({_NUM})", re.I)
+# Every separator boards actually use between two bounds. ASCII hyphen, en/em
+# dash, the real minus sign, and the tilde -- which CJK-aware input methods turn
+# into its full-width or wave-dash form, so "2000～3000 USD" arrives looking like
+# a range to a human and like one number to this module.
+_SEP = r"-|–|—|−|~|～|〜|to|đến"
+
+# A currency or scale marker can sit *after* the first figure ("15tr - 25tr") or
+# *before* the second ("$2,000 - $3,000"). Both are ordinary on real boards, and
+# missing either one is the same bug twice: the range pattern fails, parsing
+# falls through to the single-number branch, and the floor is reported as both
+# bounds. A ceiling quietly replaced by the floor is the kind of wrong that looks
+# right -- see the note on this failure in jobpilot/analytics/CLAUDE.md.
+_UNIT = r"(?:\s*(?:tr|triệu|m|k|usd|vnd|vnđ|\$))?"
+_SYMBOL = r"(?:\$\s*)?"
+_RANGE = re.compile(rf"({_NUM}){_UNIT}\s*(?:{_SEP})\s*{_SYMBOL}({_NUM})", re.I)
+
+# "Up to 3000 USD", "tới 25 triệu", "dưới 30 triệu"
+_MAX_ONLY = re.compile(rf"\b(?:up\s*to|tới|đến|max|dưới|under|below)\s*({_NUM})", re.I)
+# "From 2000 USD", "từ 15 triệu", "trên 30 triệu", "at least 2000 USD"
+_MIN_ONLY = re.compile(
+    rf"\b(?:from|từ|starting|min|at\s*least|ít\s*nhất|trên)\s*({_NUM})", re.I
+)
+
+# The floor written as a suffix: "160 triệu+", "15tr+", "20 triệu trở lên".
+#
+# The ceiling here is genuinely unstated, so ``max`` stays None -- the mirror of
+# "up to 3000" leaving ``min`` None. Writing the floor into *both* bounds instead
+# asserts a ceiling the ad never gave, and every such ad then understates the top
+# of the market by exactly the amount that made it worth posting.
+#
+# ``\+(?!\s*\w)`` is what keeps "2000 USD + phụ cấp" out of here. That plus sign
+# introduces an extra component, not an open range, and it is common enough in
+# Vietnamese ads that treating it as "or more" would be a second guess dressed as
+# a fact. A trailing "+" bound to the figure, or one before punctuation such as
+# "160 triệu+ (gross)", is the open-ended reading.
+_MIN_SUFFIX = re.compile(
+    rf"({_NUM})\s*(?:tr|triệu|m|k|usd|vnd|vnđ|\$)?\s*"
+    rf"(?:\+(?!\s*\w)|trở\s*lên|or\s*more|and\s*up|or\s*above)",
+    re.I,
+)
 _ANY_NUM = re.compile(_NUM)
 
 _USD = re.compile(r"\$|usd|dollar", re.I)
@@ -142,7 +172,11 @@ def parse(text: str | None) -> Salary | None:
         high = _number(m.group(1), millions)
     elif (m := _MIN_ONLY.search(s)) is not None:
         low = _number(m.group(1), millions)
+    elif (m := _MIN_SUFFIX.search(s)) is not None:
+        low = _number(m.group(1), millions)
     elif (m := _ANY_NUM.search(s)) is not None:
+        # A bare figure with no modifier is a point salary, not a range, so both
+        # bounds are the same number on purpose.
         low = high = _number(m.group(0), millions)
 
     if low is None and high is None:

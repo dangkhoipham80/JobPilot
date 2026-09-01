@@ -22,9 +22,30 @@
      fold ASCII (cùng cách `apply/inbox.fold` làm) rồi map alias.
   3. `"15tr - 25tr"` parse ra **15–15**: unit nằm giữa số và dấu gạch làm vỡ regex range, rơi
      xuống nhánh một-số. Trần bị giảm một nửa mà không báo gì.
+- **Nhánh một-số (`_ANY_NUM`) là cái bẫy có hệ thống, không phải một bug lẻ.** Mỗi lần
+  `_RANGE` không khớp, parse **rơi xuống đó và báo sàn thành cả hai đầu** — im lặng, trông
+  hợp lý. Đã dẫm **ba lần nữa** sau ca `15tr - 25tr`, cùng một hình dạng:
+  - `"2000～3000 USD"` → 2000–2000. Dấu ngăn là **tilde**, và bộ gõ CJK biến nó thành
+    full-width `～` / wave dash `〜`. `_SEP` giờ có `- – — − ~ ～ 〜 to đến`.
+  - `"$2,000 - $3,000"` → 2000–2000. Unit được cho phép **sau** số thứ nhất nhưng không có gì
+    được phép **trước** số thứ hai, mà board Mỹ ghi ký hiệu ở **cả hai** đầu.
+  - `"Lương admin 5 triệu"` → sàn mở 5tr. Từ khoá `min` **không có `\b`** nên khớp vào giữa
+    chữ "ad**min**". Mọi keyword trong `_MIN_ONLY`/`_MAX_ONLY` giờ phải có `\b`.
+
+  ⇒ Sửa parser lương thì **thêm case vào `test_market.py`**, và nhớ `min == max` là một tín
+  hiệu đáng nghi: nó chỉ đúng cho lương một mốc ("2000 USD"), còn lại thường là range vỡ.
 - **Lương: không đoán.** Không có ký hiệu tiền tệ ⇒ `None` ("20 - 60" là triệu VND hay USD/giờ
   tuỳ board). "Up to 3000" ⇒ `min=None`, **không** bịa 0. Quy đổi sang USD/tháng dùng
   `salary.USD_VND_RATE` có `FX_CHECKED_ON` — là **ước tính**, UI phải nói thế.
+- **Sàn mở cũng phải để `max=None`** — đối xứng với "up to". `"160 triệu+"`, `"20 triệu trở
+  lên"`, `"Trên 30 triệu"` trước đây ra `min=max=160tr`, tức **khẳng định một cái trần mà tin
+  không hề nói**, và mọi tin loại đó kéo tụt phần đỉnh của thị trường đúng bằng cái phần khiến
+  nó đáng đăng. Nhưng `"2000 USD + phụ cấp"` **không phải** sàn mở — dấu `+` đó giới thiệu một
+  khoản cộng thêm, và kiểu viết này rất phổ biến trong tin Việt. Phân biệt bằng
+  `\+(?!\s*\w)`: `+` dính số hoặc đứng trước dấu câu là sàn mở, `+` rồi tới **chữ** thì không.
+- **Đổi parser thì phải `backfill --force`.** `salary_range` là **dữ liệu đã ghi** trong
+  `payload`, không tính lại lúc đọc — sửa regex xong mà không backfill thì `/market` vẫn vẽ
+  bằng số cũ và mọi verify đều "xanh" một cách vô nghĩa.
 - **`repeat_postings` group bằng chính luật normalize của crawler** (`crawler.text.
   normalize_company` + `normalize_title`), khác `dedup_key` **đúng một tham số**
   `strip_level=False`: dedup hỏi "board khác đã đưa tin này chưa" (chữ level thường chỉ là
