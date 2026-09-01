@@ -5,13 +5,13 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
 [![Postgres](https://img.shields.io/badge/PostgreSQL-17-blue?logo=postgresql)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-LaTeX%20build-blue?logo=docker)](https://www.docker.com/)
+[![Tectonic](https://img.shields.io/badge/Tectonic-LaTeX%20build-blue?logo=latex)](https://tectonic-typesetting.github.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 This repo has two layers:
 
 1. **CV template** — the Awesome-CV LaTeX scaffolding (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`),
-   built in Docker. Useful by itself; see [Just the CV builder](#-just-the-cv-builder).
+   built with tectonic (or Docker). Useful by itself; see [Just the CV builder](#-just-the-cv-builder).
 2. **JobPilot** — a FastAPI + React + PostgreSQL pipeline that crawls jobs, tailors your CV per job
    with an LLM, dispatches applications and tracks what came back. Architecture in
    [`PLAN.md`](PLAN.md), CV-tailoring rules in [`SKILL.md`](SKILL.md), contributor guide in
@@ -235,22 +235,35 @@ Enable it under `apply.inbox` with `IMAP_USER` / `IMAP_PASSWORD` — for Gmail t
 The LaTeX scaffolding works standalone — put a `cv.tex` next to `awesome-cv.cls` and run:
 
 ```bash
+# tectonic — one static binary, no daemon (https://tectonic-typesetting.github.io)
+tectonic -X compile cv.tex
+```
+
+Output is `cv.pdf` in the same directory. JobPilot runs the same engine, writing tailored builds to
+`out/cv/<scope>/` and never touching your master.
+
+Docker still works and stays supported as a fallback:
+
+```bash
 # Linux / macOS / WSL
 docker run -u $UID:$GID --rm -v "$PWD:/work" csmith/awesome-cv-builder
 # Windows PowerShell
 docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder
 ```
 
-Output is `cv.pdf` in the same directory. JobPilot uses this exact image, writing tailored builds to
-`out/cv/<scope>/` and never touching your master.
+`cv.engine` picks between them — `auto` (default) prefers tectonic and falls back to docker. The two
+produce the same PDF; tectonic is the default only because it is ~10 MB and needs nothing running,
+against a 3.18 GB image behind a daemon.
 
 Prefer editing through the **CV Studio** rather than by hand: content is structured JSON that is
 serialized to `.tex` via Jinja2, so hand-edited `.tex` loses the round trip. Change the accent colour
 with `theme.color` in the Studio, not in the `.cls`.
 
-**Troubleshooting.** On Windows, give Docker Desktop access to the drive under
-Settings → Resources → File Sharing. On Linux/macOS the `-u $UID:$GID` flag keeps output files owned
-by you. Install the `[cv]` extra for `pypdf`, or the page count reads as unknown.
+**Troubleshooting.** Tectonic downloads the TeX packages the document asks for on its first run and
+caches them (~50 MB), so build #1 needs network and is slow; later builds are offline. With the
+docker engine on Windows, give Docker Desktop access to the drive under Settings → Resources → File
+Sharing; on Linux/macOS the `-u $UID:$GID` flag keeps output files owned by you. Install the `[cv]`
+extra for `pypdf`, or the page count reads as unknown.
 
 ---
 
@@ -260,7 +273,7 @@ by you. Install the `[cv]` extra for `pypdf`, or the page count reads as unknown
 jobpilot/
   api/        FastAPI: REST + WebSocket, one route module per surface · paging.py
   crawler/    base.py (contract + paging loop) · one module per source · feed.py for RSS/JSON
-  cv/         CvDocument schema · Jinja2 → .tex · Docker compile · version store · ats.py
+  cv/         CvDocument schema · Jinja2 → .tex · LaTeX compile · version store · ats.py
   tailor/     index-based plan schema · anti-fabrication guard · model engine · diff
   apply/      cover letter · email (3 gates) · portal hand-off · dispatcher
               followup.py (reminders) · outcome.py (what happened) · inbox.py (read replies)
@@ -284,6 +297,7 @@ MIT — see [LICENSE](LICENSE).
 ## ⭐ Acknowledgments
 
 - [Awesome-CV](https://github.com/posquit0/Awesome-CV) by Claud D. Park
-- [csmith/awesome-cv-builder](https://hub.docker.com/r/csmith/awesome-cv-builder) Docker image
+- [Tectonic](https://tectonic-typesetting.github.io/) — the default LaTeX engine
+- [csmith/awesome-cv-builder](https://hub.docker.com/r/csmith/awesome-cv-builder) Docker image (fallback engine)
 - Job data from [We Work Remotely](https://weworkremotely.com/) and
   [Arbeitnow](https://www.arbeitnow.com/) via their public feeds

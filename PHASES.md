@@ -1470,3 +1470,81 @@ không lệch, **0 console error**. Chạy thật trên Postgres 180 job: đi qu
 Guide / Market / Settings ở cả VI và EN, `1920×1080`. Đổi ngôn ngữ lật đúng cả **định dạng ngày**
 (`2/8/2026` ⇄ `8/2/2026`). Ba font (Inter, Space Grotesk, JetBrains Mono) đều **đã kiểm** là có
 subset `vietnamese` trên Google Fonts — không phải đoán, `curl` lấy CSS ra đọc `unicode-range`.
+
+## Bỏ Docker khi build CV PDF — engine tectonic, Docker thành đường lui (2026-09-01)
+
+**Vấn đề không phải tốc độ.** Docker đã chạy sẵn thì build hết 3.9s — chấp nhận được. Vấn đề là
+**3.18 GB ảnh**, là phải nhớ bật Docker Desktop, và là ba bước provisioning thừa trên VPS
+~100k/tháng (`apt install docker.io` + `usermod -aG docker` + pull 3.5 GB). Đo lại trên Linux:
+tectonic là **9.7 MB** tarball tĩnh + ~50 MB cache ⇒ nhẹ hơn ~50 lần, không daemon, không nhóm
+user, chạy được cả ARM64 (ảnh docker **chỉ có amd64**).
+
+### Spike trước, code sau — và spike suýt fail
+
+Luật đã đặt ra: 4 câu hỏi, fail câu nào thì giữ Docker. Câu 1 (`awesome_cv` có compile không)
+**fail ngay**, và fail theo kiểu chỉ lộ ra khi chạy thật:
+
+1. `fontawesome.sty:12` nạp font **theo tên** (`\newfontfamily{\FA}{FontAwesome}`). Tên chỉ
+   resolve được khi font **cài ở mức hệ thống** — ảnh docker có sẵn, nên đường này chạy suốt
+   nhiều tháng, và `fonts/FontAwesome.ttf` **trong repo chưa bao giờ được dùng**. Engine trần thì
+   chết: `The font "FontAwesome" cannot be found`. Đây đúng dạng "phụ thuộc ẩn vào môi trường" mà
+   refactor này sinh ra để giết. Sửa: ưu tiên `Path=fonts/`, giữ nhánh theo tên làm dự phòng.
+2. Sửa xong lộ lỗi thứ hai: `awesome-cv.cls:159` định nghĩa **lại** `\FA`. fontspec cũ (TeX Live
+   trong ảnh docker) cho ghi đè im lặng; fontspec mới (bundle tectonic) báo
+   `Command '\FA' already defined` và chết cả build.
+3. **`\renewfontfamily` là cái bẫy.** Nó là fix hiển nhiên, và nó **đổi lỗi tectonic lấy lỗi
+   docker** — TeX Live trong ảnh không có lệnh đó (`! Undefined control sequence`). Chỉ biết vì
+   ràng buộc "Docker vẫn phải chạy được" bắt build lại bằng cả hai. Cuối cùng dùng
+   `\let\FA\relax` trước `\newfontfamily`: cả fontspec cũ lẫn mới đều đọc là "chưa định nghĩa".
+
+⇒ Bài học: **hai file vendor này giờ phải build bằng CẢ HAI engine mới biết đúng**, vì mỗi engine
+chỉ bắt được một nửa số lỗi.
+
+### Output có giống hệt không — đo, không đoán
+
+Đọc lại **text layer** bằng pdfminer (không nhìn PDF bằng mắt: `cv/CLAUDE.md` ghi rõ thiếu glyph
+là khoảng trắng **im lặng**), trên **Master CV thật** *và* sample có tiêm tiếng Việt đủ dấu, cả
+hai template:
+
+| | awesome_cv | plain |
+|---|---|---|
+| Số trang | 1 = 1 | 1 = 1 |
+| Glyph tiếng Việt | đủ ở cả hai engine | đủ ở cả hai engine |
+| Tập từ (chuẩn hoá) | **trùng khít** | **trùng khít** |
+| Verdict `ats.py` | **trùng** | **KHÁC** — xem dưới |
+
+Khác biệt còn lại, nói thẳng:
+
+- **20 token khác nhau ở text layer của `awesome_cv`**, hết. 14 token là chữ `I` hoa trong đoạn
+  small-caps bị trích ra thành `i` thường (`ENGINEER` → `ENGiNEER`); 6 token là dấu nối
+  U+002D ⇄ U+2010 (`real-time` → `real‐time`). **Không ảnh hưởng tìm kiếm**: `ats.py` hạ chữ
+  thường và `_WORD_RE` cắt ở dấu nối — và verdict trùng nhau đã chứng minh điều đó bằng thực
+  nghiệm, không phải bằng suy luận.
+- **`plain` build bằng docker nhả ra 2 ligature `ﬁ`, tectonic thì không** ⇒ finding `ligatures`
+  **biến mất** khi đổi engine. Đây là *tốt hơn* (recruiter search "office" không khớp "oﬃce"),
+  nhưng nó có nghĩa **báo cáo ATS của cùng một CV phụ thuộc engine đã build nó**. Ghi lại vì đúng
+  loại khác biệt sẽ làm người ta đi sửa nhầm template.
+- Thứ tự đọc của pdfminer khác nhau ở khối header và khối projects. Cả hai đều xáo; không mất chữ.
+
+Và kiểm ngược lại chiều còn lại: build docker với `.cls`/`.sty` lấy từ `HEAD` so với bản đã sửa —
+**cùng số trang, text layer giống hệt**. Hai file vendor sửa xong không đổi output của Docker.
+
+### Bẫy tự tay dẫm phải
+
+- **`config.local.yaml` nằm ở `jobpilot/`, không phải repo root.** Đặt nhầm chỗ ⇒ file bị bỏ qua
+  **im lặng**, `cv.engine` vẫn là `auto`, và lệnh `jobpilot cv build` báo "Built ... [OK: 1 page]"
+  bằng **Docker** trong khi mình tưởng đang verify tectonic. Suýt kết luận "tectonic chạy rồi"
+  từ một lần chạy không hề đụng tectonic. Đúng loại "báo cáo thành công" mà `CLAUDE.md` cảnh báo.
+- **Log của tectonic ghi `Output written on cv.xdv`, KHÔNG phải `cv.pdf`.** `_pages_from_log` khớp
+  được chỉ vì phần tên file là wildcard — đã thêm test ghim, đừng "dọn" regex chặt lại.
+- **Chỉ tectonic để lại `.log`; docker thì không.** Build dir dùng chung theo scope ⇒ log của lần
+  build tectonic trước còn nằm đó khi sau này build bằng docker, và nếu thiếu pypdf thì
+  `_pages_from_log` đọc log cũ rồi báo số trang của **một PDF đã không còn tồn tại**. Nên
+  `build_cv()` xoá `.log` cùng lúc với `.pdf` (có test).
+
+### Verify
+
+**854 test xanh** (844 + 10 mới). Chạy thật, không dừng ở test: build Master CV thật + sample
+tiếng Việt × 2 template × 2 engine, cover letter (`cover_letter.tex`, entry khác `cv.tex`) × 2
+engine — 1 trang, dấu tiếng Việt đủ. `jobpilot cv build` qua CLI ra `[OK: 1 page]` bằng tectonic.
+Build lần đầu ~3 phút (tải gói TeX về cache), lần sau **~1–2.5s offline** (`-C` không cần mạng).

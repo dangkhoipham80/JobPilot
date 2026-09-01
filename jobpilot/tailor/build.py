@@ -1,18 +1,28 @@
-"""Compile an Awesome-CV LaTeX project to PDF via the Docker builder image.
+"""Compile a LaTeX CV project to PDF, with two interchangeable engines.
 
-The `csmith/awesome-cv-builder` image (see README.md) mounts `/work` and runs
-xelatex. This wrapper runs it, then reports the page count (parsed from the
-xelatex `.log`, with a PDF fallback).
+**tectonic** (default) is a single static binary that fetches the TeX packages a
+document actually asks for and caches them: ~10 MB to install on Linux plus a
+~50 MB cache, and nothing to start before building. **docker** runs the
+`csmith/awesome-cv-builder` image, which is 3.18 GB, has to be pulled, and needs
+a daemon running. Both drive xelatex over the same generated `.tex` and produce
+the same PDF -- verified on both templates, including that Vietnamese diacritics
+survive into the text layer, which is the failure mode that would matter and the
+one that fails *silently* (see `jobpilot/cv/CLAUDE.md`).
 
-The image's built-in command hardcodes `cv.tex`:
+Docker is kept as the fallback rather than deleted: it is the engine every PDF in
+this repo's history was built with, so it stays the reference when a build looks
+wrong. `cv.engine` picks (`auto` prefers tectonic and falls back to docker).
+
+The Docker path spells the command out rather than using the image's built-in
+one, which hardcodes `cv.tex`:
 
     /bin/sh -c 'DIR=$(mktemp -d); xelatex -output-directory=$DIR cv.tex; \
                 mv $DIR/cv.pdf .; rm -rf $DIR'
 
 so passing ``entry="cover_letter.tex"`` and letting the image do its thing would
-rebuild the CV and then fail looking for a PDF nobody asked it to make. We spell
-the command out instead, which is the only way ``entry`` means anything. The
-default path renders the same command the image ships with.
+rebuild the CV and then fail looking for a PDF nobody asked it to make. Spelling
+it out is the only way ``entry`` means anything; the default path renders the
+same command the image ships with.
 """
 
 from __future__ import annotations
@@ -22,10 +32,27 @@ import re
 import shlex
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from jobpilot.config import get_config
+
+#: Engines we know how to drive, in the order ``auto`` tries them.
+ENGINES = ("tectonic", "docker")
+
+_INSTALL_HINT = {
+    "tectonic": (
+        "one static binary, no daemon: see https://tectonic-typesetting.github.io/install.html "
+        "(Linux/macOS: `curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net "
+        "| sh`; or download a release from "
+        "https://github.com/tectonic-typesetting/tectonic/releases and put it on PATH). "
+        "Point cv.tectonic_bin at it if you keep it somewhere off PATH"
+    ),
+    "docker": (
+        "install Docker, start the daemon, then `docker pull csmith/awesome-cv-builder` "
+        "(~3.2 GB)"
+    ),
+}
 
 
 class BuildError(RuntimeError):
@@ -55,10 +82,57 @@ class BuildResult:
     #: None when the page count could not be established (see ``build_cv``).
     pages: int | None
     log_tail: str = ""
+    #: Which engine produced this PDF. Appended with a default so existing
+    #: callers and their positional construction keep working.
+    engine: str = ""
+
+
+def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -> str:
+    """Which engine to build with, or raise explaining how to get one.
+
+    ``auto`` prefers tectonic purely on install cost -- the two produce the same
+    PDF, so there is nothing else to choose on.
+    """
+    cfg = get_config().cv
+    choice = (engine or cfg.engine or "auto").strip().lower()
+    if choice not in ("auto", *ENGINES):
+        raise BuildError(
+            f"unknown cv.engine {choice!r} — expected one of: auto, " + ", ".join(ENGINES)
+        )
+
+    binary = tectonic_bin or cfg.tectonic_bin
+    # shutil.which also accepts a path with a directory component, so
+    # cv.tectonic_bin works as either a command name or an absolute path.
+    found = {"tectonic": shutil.which(binary), "docker": shutil.which("docker")}
+
+    if choice != "auto":
+        if not found[choice]:
+            other = "docker" if choice == "tectonic" else "tectonic"
+            raise BuildError(
+                f"{choice} not found on PATH (cv.engine = {choice!r}) — "
+                f"{_INSTALL_HINT[choice]}. Or set cv.engine to {other!r} or 'auto'."
+            )
+        return choice
+
+    for name in ENGINES:
+        if found[name]:
+            return name
+    raise BuildError(
+        "no LaTeX engine found — a CV cannot be built without one of:\n"
+        f"  tectonic (recommended) — {_INSTALL_HINT['tectonic']}\n"
+        f"  docker (fallback) — {_INSTALL_HINT['docker']}\n"
+        "cv.engine selects between them (auto|tectonic|docker)."
+    )
 
 
 def _pages_from_log(log_path: Path) -> int | None:
-    """xelatex writes e.g. 'Output written on cv.pdf (1 page, 36973 bytes).'"""
+    """xelatex writes e.g. 'Output written on cv.pdf (1 page, 36973 bytes).'
+
+    Tectonic reaches the PDF through an intermediate and logs ``Output written on
+    cv.xdv (2 pages, ...)`` instead — same sentence, different extension. The
+    filename is a wildcard here, so both match; that is load-bearing rather than
+    incidental, hence the test pinning the .xdv wording.
+    """
     if not log_path.is_file():
         return None
     text = log_path.read_text(encoding="utf-8", errors="ignore")
@@ -113,48 +187,108 @@ def _script(entry: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class _Invocation:
+    """One engine's command line, plus the directory it must run from."""
+
+    cmd: list[str] = field(default_factory=list)
+    cwd: Path | None = None
+
+
+def _docker_invocation(work_dir: Path, entry: str, image: str | None) -> _Invocation:
+    """Unchanged from before there were two engines — this is the fallback path."""
+    image = image or get_config().cv.docker_image
+    mount = f"{work_dir}:/work"
+    return _Invocation([
+        "docker", "run", "--rm",
+        *_user_args(),
+        "-v", mount,
+        image, "/bin/sh", "-c", _script(entry),
+    ])  # fmt: skip
+
+
+def _tectonic_invocation(work_dir: Path, entry: str) -> _Invocation:
+    """Run in ``work_dir``, which is what makes the relative paths resolve.
+
+    The generated project reaches its sections as ``\\input{resume/...}`` and its
+    fonts as ``Path=fonts/``, both relative to the working directory — Docker got
+    that from the bind mount, tectonic gets it from ``cwd``.
+
+    ``--untrusted`` disables \\write18 for the same reason ``compile.check_override``
+    validates paths: raw-LaTeX overrides come from a text box, and a `.tex` file
+    from a text box is input, not code we vouched for. ``--keep-logs`` leaves the
+    `.log` that :func:`_pages_from_log` needs when pypdf is missing.
+    """
+    cmd = [
+        get_config().cv.tectonic_bin,
+        "-X", "compile",
+        "--untrusted",
+        "--keep-logs",
+        "--outdir", str(work_dir),
+        entry,
+    ]  # fmt: skip
+    return _Invocation(cmd, cwd=work_dir)
+
+
 def build_cv(
     work_dir: Path | str,
     entry: str = "cv.tex",
     image: str | None = None,
     timeout: int = 300,
+    engine: str | None = None,
 ) -> BuildResult:
     work_dir = Path(work_dir).resolve()
     stem = Path(entry).stem
     if not (work_dir / entry).is_file():
         raise BuildError(f"entry not found: {work_dir / entry}")
-    if shutil.which("docker") is None:
-        raise BuildError("docker not found on PATH — is Docker installed and running?")
 
-    image = image or get_config().cv.docker_image
+    engine = resolve_engine(engine)
     pdf = work_dir / f"{stem}.pdf"
-    # Drop the previous PDF first. The image's command is `xelatex …; mv …; rm …`
-    # with no `set -e`, so a LaTeX error still exits 0 (the trailing `rm` decides
-    # the status) and the only tell that the build failed is the missing PDF —
-    # which yesterday's file would answer for. That reports success and hands
-    # back stale content, the worst of the two failure modes.
+    log = work_dir / f"{stem}.log"
+    # Drop the previous PDF first. The Docker image's command is
+    # `xelatex …; mv …; rm …` with no `set -e`, so a LaTeX error still exits 0
+    # (the trailing `rm` decides the status) and the only tell that the build
+    # failed is the missing PDF — which yesterday's file would answer for. That
+    # reports success and hands back stale content, the worst of the two failure
+    # modes. Tectonic does set a real exit code, but the check costs nothing and
+    # a build dir is shared by both engines.
     pdf.unlink(missing_ok=True)
+    # The log goes too, and for a sharper reason: only tectonic writes one, so a
+    # log left by an earlier tectonic build would still be sitting here during a
+    # later docker build. With pypdf missing, _pages_from_log would then read a
+    # page count off a PDF that no longer exists and report it as this build's.
+    log.unlink(missing_ok=True)
 
-    mount = f"{work_dir}:/work"
-    cmd = [
-        "docker", "run", "--rm",
-        *_user_args(),
-        "-v", mount,
-        image, "/bin/sh", "-c", _script(entry),
-    ]  # fmt: skip
+    run = (
+        _tectonic_invocation(work_dir, entry)
+        if engine == "tectonic"
+        else _docker_invocation(work_dir, entry, image)
+    )
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(
+            run.cmd,
+            cwd=str(run.cwd) if run.cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
     except subprocess.TimeoutExpired as exc:  # pragma: no cover - env dependent
-        raise BuildError(f"LaTeX build timed out after {timeout}s") from exc
+        raise BuildError(f"LaTeX build timed out after {timeout}s ({engine})") from exc
 
     if proc.returncode != 0 or not pdf.is_file():
+        # Which engine failed decides what the fix is, so it leads the message:
+        # "is Docker running?" is useless advice when tectonic did the building.
         tail = (proc.stdout or "")[-1500:] + "\n" + (proc.stderr or "")[-1500:]
-        raise BuildError(f"LaTeX build failed (rc={proc.returncode}).\n{tail}")
+        raise BuildError(f"LaTeX build failed via {engine} (rc={proc.returncode}).\n{tail}")
 
     # None when nothing could read it — "unknown" and "zero pages" are different
     # claims, and a CV that built fine should not be badged as 0 pages in red.
     # That is the live failure mode when pypdf is missing: xelatex writes its PDF
-    # with compressed object streams, so the regex fallback finds no /Type /Page,
-    # and the builder image doesn't leave a .log behind either.
-    pages = _pages_from_pdf(pdf) or _pages_from_log(work_dir / f"{stem}.log")
-    return BuildResult(pdf=pdf, pages=pages, log_tail=(proc.stdout or "")[-500:])
+    # with compressed object streams, so the regex fallback finds no /Type /Page.
+    # Docker leaves no .log to fall back to; tectonic does, so under tectonic a
+    # missing pypdf degrades to a real count instead of to "unknown".
+    pages = _pages_from_pdf(pdf) or _pages_from_log(log)
+    # Tectonic reports on stderr, Docker on stdout; a tail of the wrong stream is
+    # an empty string that looks like a build with nothing to say.
+    chatter = proc.stderr if engine == "tectonic" else proc.stdout
+    return BuildResult(pdf=pdf, pages=pages, log_tail=(chatter or "")[-500:], engine=engine)

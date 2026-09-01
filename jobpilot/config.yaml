@@ -92,7 +92,9 @@ apply:
 cv:
   master_dir: resume          # Master CV source of truth
   out_dir: out                # tailored CVs land in out/<job_id>/
-  docker_image: csmith/awesome-cv-builder
+  engine: auto                # auto | tectonic | docker — auto prefers tectonic
+  tectonic_bin: tectonic      # command or absolute path (engine: tectonic)
+  docker_image: csmith/awesome-cv-builder   # (engine: docker)
   theme: awesome-red          # default Awesome-CV color theme
 
 # --------------------------------------------------------------------------- #

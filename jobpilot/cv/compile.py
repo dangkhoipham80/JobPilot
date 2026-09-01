@@ -1,4 +1,4 @@
-"""Compile a ``CvDocument`` to PDF: JSON -> .tex -> Docker LaTeX -> cv.pdf.
+"""Compile a ``CvDocument`` to PDF: JSON -> .tex -> LaTeX -> cv.pdf.
 
 Each scope ("master", or ``job:<id>`` for a tailored CV) gets its own build dir
 under ``out/cv/<scope>/`` so builds never touch the tracked Master ``resume/``
@@ -115,7 +115,11 @@ def compile_document(
     root: Path | None = None,
     override: dict[str, str] | None = None,
 ) -> BuildResult:
-    """Render + build. Raises ``BuildError`` if LaTeX or Docker fails."""
+    """Render + build. Raises ``BuildError`` if the LaTeX build fails.
+
+    Which engine runs is ``cv.engine`` (see ``tailor/build.py``); both produce
+    the same PDF.
+    """
     return build_cv(prepare_build_dir(doc, scope, root, override))
 
 
