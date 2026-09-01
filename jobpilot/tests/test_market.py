@@ -194,15 +194,20 @@ def test_a_trailing_marker_may_be_bracketed_or_written_us_dollar():
     assert parse_salary("$2000+ (gross)").max is None
 
 
-def test_k_means_thousands():
-    """"$50k - $70k/year" read as fifty to seventy dollars a year — off by
-    1000x, and the commonest format on the US boards this crawler enables. It
-    landed in the "<$500" band instead of near the top of the corpus."""
-    paid = parse_salary("$50k - $70k/year")
-    assert (paid.min, paid.max) == (50_000, 70_000)
-    assert paid.usd_month == 5000
-    # A figure already written out in full is left alone.
-    assert parse_salary("1,500 - 2,500 USD").min == 1500
+def test_k_is_not_read_as_thousands_and_that_is_deliberate():
+    """"$50k" parses as 50, which is wrong by 1000x. It stays that way because
+    the cheap fix is worse than the bug: a whole-label "this says k" flag, like
+    the one `millions` uses, multiplies bounds that were already correct —
+    "401k" and "thưởng 500k" sit beside ordinary salaries all the time. That
+    was tried, and "$800 - $900/month, 401k" came back as 800,000–900,000 a
+    month. Doing it properly means binding the scale to the figure carrying the
+    "k". This test pins the limitation so the shortcut is not retried."""
+    assert parse_salary("$50k - $70k/year").min == 50
+    # The shape that made the whole-label flag unsafe.
+    beside = parse_salary("$800 - $900/month, 401k")
+    assert (beside.min, beside.max) == (800, 900)
+    bonus = parse_salary("1,500 - 2,500 USD, thưởng 500k")
+    assert (bonus.min, bonus.max) == (1500, 2500)
 
 
 def test_min_does_not_match_inside_another_word():

@@ -63,10 +63,21 @@
   `"Thưởng 2 tháng, up to 3000 US$"` rơi xuống `_ANY_NUM` và báo lương = **2** (số "2 tháng").
   Lần thứ hai xảy ra **ngay trong commit tuyên bố đã gộp bảng**. Cùng bài học với
   `normalize_title` ở `crawler/CLAUDE.md`: hai bộ luật song song sẽ lệch, chỉ là lúc nào.
-- **`k` = nghìn.** `"$50k - $70k/year"` từng ra 50–70 USD/năm ⇒ `usd_month = 5.0`, rơi vào band
-  `<$500` thay vì gần đỉnh corpus. Sai **1000 lần**, mà đó lại là cách viết phổ biến nhất của
-  board Mỹ (WWR/Arbeitnow đang bật). Guard `value < 1000` giữ cho nhãn đã viết đủ số (`"1,500 -
-  2,500 USD"`) không bị nhân thêm.
+- **`k` CHƯA được đọc thành nghìn, và đó là quyết định có chủ đích.** `"$50k - $70k/year"` ra
+  50–70 (sai 1000 lần, mà là cách viết phổ biến nhất của board Mỹ). Cách sửa rẻ — một cờ
+  "nhãn này có chữ k" **toàn nhãn**, y như `millions` — **tệ hơn chính cái bug**: `401k` và
+  `"thưởng 500k"` là boilerplate nằm cạnh lương bình thường, nên cờ đó nhân ×1000 những bound
+  vốn đã đúng. Đã thử và **đã revert**: `"$800 - $900/month, 401k"` ra 800.000–900.000/tháng,
+  và ca `"800 - 1200 USD + thưởng 500k"` còn tệ hơn — chỉ bound thấp bị scale rồi guard
+  `low > high` **đảo hai đầu**, giấu luôn dấu hiệu bất thường.
+  ⇒ `millions` sống được như cờ toàn nhãn **chỉ vì** tin VN có quy ước "số trần cạnh *triệu* là
+  triệu"; `k` không có quy ước tương đương. Làm đúng = gắn scale vào **chính figure mang chữ
+  `k`**, là một thay đổi riêng. Có test ghim giới hạn này để không ai thử lại lối tắt.
+- **Fence KHÔNG cứu được nhãn dẫn đầu bằng số không-phải-tiền.** `"2 - 3 năm KN, 20 triệu"` ra
+  **2 triệu**: `_RANGE` từ chối `"2 - 3"` (đúng), rồi `_ANY_NUM` lấy số đầu tiên. `_ANY_NUM` cố
+  ý **không** có fence — phải có ai đó trả lời — và "lấy số đầu tiên" đúng nhiều hơn sai vì nhãn
+  lương thường dẫn bằng lương, nhưng đó là **heuristic, không phải bảo đảm**. Đừng ghi nó thành
+  "cửa đã đóng hết".
 - **Lương: không đoán.** Không có ký hiệu tiền tệ ⇒ `None` ("20 - 60" là triệu VND hay USD/giờ
   tuỳ board). "Up to 3000" ⇒ `min=None`, **không** bịa 0. Quy đổi sang USD/tháng dùng
   `salary.USD_VND_RATE` có `FX_CHECKED_ON` — là **ước tính**, UI phải nói thế.

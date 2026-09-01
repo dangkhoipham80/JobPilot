@@ -16,6 +16,22 @@ than no number.
   near-universal convention, and is left explicit for everything else.
 * **No inventing a midpoint.** "Up to 3000 USD" has no minimum. It stays
   ``None`` rather than becoming 0, which would drag every average down.
+
+Two known limitations, written down rather than half-fixed:
+
+* **"k" is not read as thousands.** "$50k - $70k/year" parses as 50 to 70, which
+  is wrong by 1000x on the commonest US-board format. The obvious fix -- a
+  whole-label "this label says k" flag, mirroring ``millions`` -- is *worse than
+  the bug*: "401k" and "thưởng 500k" are ordinary boilerplate beside a normal
+  salary, so the flag multiplies bounds that were already right. It was tried
+  and reverted after "$800 - $900/month, 401k" came back as 800,000-900,000 a
+  month. Doing this properly means attaching the scale to the figure that
+  carries the "k", not to the label, and that is its own change.
+* **A label that leads with non-pay numbers can still lose.** "2 - 3 năm KN, 20
+  triệu" reports 2 million: the range fence correctly rejects "2 - 3" as not
+  money, and the fallback then takes the first figure in the string. The
+  fallback is right far more often than not -- salary labels lead with the
+  salary -- but it is a heuristic, not a guarantee.
 """
 
 from __future__ import annotations
@@ -139,11 +155,6 @@ def _figure(m: re.Match) -> str:
 _USD = re.compile(r"\$|usd|dollar", re.I)
 _VND = re.compile(r"vnd|vnđ|đ\b|triệu|tr\b|million", re.I)
 _MILLION_UNIT = re.compile(r"triệu|tr\b|million|m\b", re.I)
-#: "50k" is fifty thousand. Without this "$50k - $70k/year" reads as fifty to
-#: seventy dollars a year -- the commonest US-board format, off by 1000x, and
-#: landing in the "<$500" band rather than near the top of the corpus.
-_THOUSAND_UNIT = re.compile(r"\d\s*k\b", re.I)
-
 _YEARLY = re.compile(r"/\s*(y|yr|year|năm)|per\s+year|annum|annual", re.I)
 _HOURLY = re.compile(r"/\s*(h|hr|hour|giờ)|per\s+hour", re.I)
 
@@ -183,16 +194,17 @@ class Salary:
         return {**asdict(self), "usd_month": self.usd_month}
 
 
-def _number(raw: str, millions: bool, thousands: bool = False) -> float | None:
+def _number(raw: str, millions: bool) -> float | None:
     """A figure like ``1,500`` or ``2.500`` as a float.
 
     Both separators appear, and they mean opposite things by locale. The rule
     that works on real ads: a separator with exactly three digits after it is a
     thousands grouping; anything else is a decimal point.
 
-    The scale guards are ``value < 1000`` so that a figure already written out
-    in full is left alone: "1,500 - 2,500 USD" must not become millions because
-    the word "triệu" appears elsewhere in the label.
+    ``millions`` is a whole-label flag, which is only safe because Vietnamese
+    ads carry the convention that a bare figure next to "triệu" is millions.
+    **"k" has no equivalent convention and must not be added this way** -- see
+    the note in :func:`parse`.
     """
     text = raw.strip().rstrip(".,")
     if not text:
@@ -205,8 +217,6 @@ def _number(raw: str, millions: bool, thousands: bool = False) -> float | None:
         return None
     if millions and value < 1000:
         value *= _MILLION
-    elif thousands and value < 1000:
-        value *= 1000
     return value
 
 
@@ -243,9 +253,8 @@ def parse(text: str | None) -> Salary | None:
         return None
 
     millions = currency == "VND" and bool(_MILLION_UNIT.search(s))
-    thousands = not millions and bool(_THOUSAND_UNIT.search(s))
     period = "year" if _YEARLY.search(s) else ("hour" if _HOURLY.search(s) else "month")
-    num = lambda raw: _number(raw, millions, thousands)  # noqa: E731
+    num = lambda raw: _number(raw, millions)  # noqa: E731
 
     low = high = None
     if (m := _first_range(s)) is not None:
@@ -258,9 +267,13 @@ def parse(text: str | None) -> Salary | None:
         low = num(_figure(m))
     elif (m := _ANY_NUM.search(s)) is not None:
         # A bare figure with no modifier is a point salary, not a range, so both
-        # bounds are the same number on purpose. This is also where every label
-        # whose numbers are not money ends up, and it is the right place for
-        # them: the first number in a salary label is almost always the salary.
+        # bounds are the same number on purpose.
+        #
+        # This is also where every label whose numbers are not money lands, and
+        # it is deliberately *not* fenced -- something has to answer. Taking the
+        # first figure is right far more often than not, because salary labels
+        # lead with the salary, but it is a heuristic: "2 - 3 năm KN, 20 triệu"
+        # comes back as 2 million. See the limitations in the module docstring.
         low = high = num(m.group(0))
 
     if low is None and high is None:

@@ -1539,8 +1539,28 @@ tiên** mới là câu trả lời đúng.
 ⚠️ **Thêm keyword / separator / hình dạng mới mà không đi qua `_LEAD`/`_TRAIL` là cách cả bốn
 regression trên lọt vào.** Không có ngoại lệ nào đáng.
 
-Sửa kèm: **`k` = nghìn** (`"$50k - $70k/year"` từng ra 50–70 USD/năm ⇒ `usd_month = 5.0`, band
-`<$500` thay vì gần đỉnh corpus — sai 1000 lần, mà đó là cách viết phổ biến nhất của board Mỹ).
+**Regression thứ NĂM — và lần này câu trả lời đúng là REVERT, không phải sửa tiếp.** Tôi tự ý
+thêm `k` = nghìn (không nằm trong bug được báo; nhặt từ một gợi ý của reviewer). Cờ `thousands`
+làm **toàn nhãn** giống `millions`, nên nó nhân ×1000 cả những bound **vốn đã đúng**:
+`"$800 - $900/month, 401k"` → 800.000–900.000/tháng; `"800 - 1200 USD + thưởng 500k"` còn tệ hơn
+— chỉ bound thấp bị scale, rồi guard `low > high` **đảo hai đầu**, giấu luôn dấu hiệu bất thường.
+`401k` là chữ chuẩn của board Mỹ, `"thưởng 500k"` là boilerplate tin Việt.
+
+`millions` sống được như cờ toàn nhãn **chỉ vì** tin VN có quy ước "số trần cạnh *triệu* là
+triệu". `k` không có quy ước đó. Làm đúng = gắn scale vào **chính figure mang chữ `k`** — một
+thay đổi riêng, cho một bug **có sẵn trên `main`** và **không** nằm trong phạm vi được giao. Nên:
+revert, ghi vào docstring của module như **giới hạn đã biết**, và có test ghim để không ai thử
+lại lối tắt.
+
+Kèm một bài học về test: test tôi viết cho guard của `k` là **test rỗng** — nó assert trên
+`"1,500 - 2,500 USD"`, nhãn **không hề có chữ `k`**, nên `thousands` không bao giờ bật và assert
+pass bất kể guard đúng hay sai. Đúng loại "test xanh không chứng minh gì" mà `CLAUDE.md` cảnh báo,
+lần thứ hai trong cùng một task (lần trước là test ghim cái mock của `shutil.which`).
+
+**Giới hạn còn lại, nói thẳng**: fence không cứu được nhãn **dẫn đầu bằng số không-phải-tiền** —
+`"2 - 3 năm KN, 20 triệu"` vẫn ra 2 triệu, vì `_ANY_NUM` (cố ý không fence, phải có ai đó trả lời)
+lấy số đầu tiên. `main` cũng sai ca này. "Lấy số đầu tiên" đúng nhiều hơn sai, nhưng là
+**heuristic, không phải bảo đảm**.
 
 **Chỗ tinh tế, và bản đầu sửa NGƯỢC**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó
 giới thiệu một khoản cộng thêm, rất phổ biến trong tin Việt. Đọc nó thành "2000 trở lên" là **đổi
