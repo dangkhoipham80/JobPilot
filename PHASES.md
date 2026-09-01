@@ -1499,18 +1499,45 @@ Không có lỗi, không có cảnh báo — chỉ là một cái trần bị th
 4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
    "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
 
-**Chỗ tinh tế, suýt sửa sai**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó giới
-thiệu một khoản cộng thêm, và kiểu viết này rất phổ biến trong tin Việt. Đọc nó thành "2000 trở
-lên" là **đổi một con số sai lấy một con số sai khác**. Phân biệt bằng `\+(?!\s*\w)`: `+` dính số
-hoặc đứng trước dấu câu (`160 triệu+ (gross)`) là sàn mở; `+` rồi tới **chữ** thì không.
+**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BA VÒNG mới kín.** Hàng rào
+"con số chỉ là tiền khi được viết như tiền" lắp thiếu chỗ ba lần liên tiếp, mỗi lần đều là **đúng
+cái lỗi đang đi diệt**:
 
-Bản đầu key vào **thứ đứng sau** dấu `+` (`\+(?!\s*\w)`) và vì thế đọc ngược `"15tr+ gross"` với
-`"2000+ USD"` — cả hai đều là sàn mở mà vẫn bị bịa trần. Tín hiệu đúng là **khoảng trắng đứng
-trước** dấu `+`: `(?<!\s)\+`. Dính số = sàn mở, rời ra = khoản cộng thêm.
+1. Thêm `trên`/`dưới` vào `_MIN_ONLY`/`_MAX_ONLY` mà **không đòi con số dính đơn vị tiền**. Hai
+   từ đó phổ biến bậc nhất trong boilerplate tin Việt ⇒ `"Lương 20 triệu, trên 2 năm kinh
+   nghiệm"` báo sàn **2 triệu** (job 20tr rơi vào band `<$500`), `"20 triệu, dưới 30 tuổi"` lấy
+   **tuổi** làm trần lương. **Tệ hơn** nhánh một-số nó thay thế — nhánh đó lấy số đầu tiên, mà
+   label lương luôn dẫn bằng lương.
+2. Bản vá đầu của hàng rào lại nhận **"số nằm cuối label"** là đủ ⇒ đúng câu đó **đảo trật tự
+   chữ** là lọt lại: `"Lương 20 triệu, tuổi dưới 30"` → trần 30tr. **Một cái neo không phải là
+   một đơn vị.**
+3. `_MIN_SUFFIX` — nhánh **mới nhất, do chính lần sửa này thêm vào** — bị bỏ quên ngoài hàng rào,
+   nên mọi `<số>+` vẫn thành sàn mở: `"20 triệu, 3+ năm kinh nghiệm"` báo sàn **3 triệu**. Mà số
+   năm kinh nghiệm chính là thứ hay đi kèm dấu `+` nhất trong một tin tuyển dụng.
+
+Cộng một ca cùng gốc: **bảng ký hiệu tiền bị chép ra ba bản, và ba bản đã lệch nhau.** `$` là ký
+hiệu hợp lệ **sau** con số ở bản này mà không ở bản kia ⇒ `"Up to 2000$"` bịa ra sàn 2000 trong
+khi `"Up to 2000 USD"` thì không — vi phạm chính cái luật ghi trong docstring của module. Giờ chỉ
+còn **một** `_MONEY` dùng chung. (Cùng bài học với `normalize_title` ở `crawler/CLAUDE.md`: hai bộ
+luật song song sẽ lệch, chỉ là lúc nào.)
+
+**Luật cuối**: con số là tiền khi có **ký hiệu đứng trước** (`$2000`) **hoặc đơn vị đứng sau**
+(`2000 USD`, `20 triệu`). Hàng rào phủ `_MIN_ONLY` / `_MAX_ONLY` / `_MIN_SUFFIX`; **`_RANGE` thì
+CHƯA** — `"Lương 20 triệu, 2 - 3 năm kinh nghiệm"` vẫn ra `2tr–3tr` (có sẵn từ trước, không phải
+do lần sửa này). Đừng đọc đoạn này thành "cửa đã đóng hết".
+
+**Chỗ tinh tế, và bản đầu sửa NGƯỢC**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó
+giới thiệu một khoản cộng thêm, rất phổ biến trong tin Việt. Đọc nó thành "2000 trở lên" là **đổi
+một con số sai lấy một con số sai khác**.
+
+⚠️ Regex đúng là **`(?<!\s)\+`** — tín hiệu nằm ở **khoảng trắng ĐỨNG TRƯỚC** dấu `+`: dính số
+là sàn mở, rời ra là khoản cộng thêm. Bản đầu viết `\+(?!\s*\w)` (**SAI, đừng copy**), key vào
+thứ **đứng sau** dấu `+`, nên đọc ngược `"15tr+ gross"` và `"2000+ USD"`: cả hai đều là sàn mở mà
+vẫn bị bịa trần.
 
 ### Verify
 
-850 test xanh (844 + 6 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+852 test xanh (844 + 8 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 

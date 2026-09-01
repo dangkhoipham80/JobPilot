@@ -34,14 +34,27 @@
 
   ⇒ Sửa parser lương thì **thêm case vào `test_market.py`**, và nhớ `min == max` là một tín
   hiệu đáng nghi: nó chỉ đúng cho lương một mốc ("2000 USD"), còn lại thường là range vỡ.
-- **Con số chỉ là tiền khi nó ĐƯỢC VIẾT như tiền** — dính đơn vị (`tr/triệu/k/m/usd/vnd/đ`)
-  hoặc kết thúc label. Đây là hàng rào mới, và nó có **giá bằng máu**: lần sửa trên thêm
-  `trên`/`dưới` vào `_MIN_ONLY`/`_MAX_ONLY` mà **không** đòi đơn vị ⇒ `"Lương 20 triệu, trên
-  2 năm kinh nghiệm"` báo sàn **2 triệu** (job 20tr rơi vào band `<$500`), còn `"20 triệu,
-  dưới 30 tuổi"` lấy **tuổi** làm trần lương. Tệ hơn hẳn nhánh một-số nó thay thế — nhánh đó
-  lấy số đầu tiên, mà label lương thì luôn dẫn bằng lương. `trên`/`dưới` là hai từ phổ biến
-  nhất trong boilerplate tin Việt; thêm keyword mà không neo vào đơn vị là mở lại đúng cái
-  cửa vừa đóng.
+- **Con số chỉ là tiền khi nó ĐƯỢC VIẾT như tiền** — có ký hiệu **đứng trước** (`$2000`) hoặc
+  đơn vị **đứng sau** (`2000 USD`, `20 triệu`). "Nằm cuối label" **không** tính.
+
+  Hàng rào này có **giá bằng máu**, và phải lắp **ba lần** mới kín:
+  1. Thêm `trên`/`dưới` vào `_MIN_ONLY`/`_MAX_ONLY` mà không đòi đơn vị ⇒ `"Lương 20 triệu,
+     trên 2 năm kinh nghiệm"` báo sàn **2 triệu** (job 20tr rơi vào band `<$500`), `"20 triệu,
+     dưới 30 tuổi"` lấy **tuổi** làm trần.
+  2. Bản vá đầu cho phép "số ở cuối label" ⇒ đúng câu đó **đảo trật tự chữ** lại lọt:
+     `"Lương 20 triệu, tuổi dưới 30"`. **Một cái neo không phải là một đơn vị.**
+  3. `_MIN_SUFFIX` bị bỏ quên ⇒ mọi `<số>+` vẫn thành sàn mở: `"20 triệu, 3+ năm kinh
+     nghiệm"` báo sàn **3 triệu**. Số năm kinh nghiệm là thứ hay đi kèm dấu `+` nhất trong
+     một tin tuyển dụng.
+
+  ⚠️ **Hàng rào mới phủ `_MIN_ONLY` / `_MAX_ONLY` / `_MIN_SUFFIX`. `_RANGE` thì CHƯA** —
+  `"Lương 20 triệu, 2 - 3 năm kinh nghiệm"` vẫn ra `2tr–3tr` (có sẵn từ trước, không phải do
+  lần sửa này). Đừng đọc mục này thành "cửa đã đóng hết".
+- **Một bảng ký hiệu tiền duy nhất (`_MONEY`), đừng viết bản thứ hai.** Trước đây nó bị chép
+  ra ba chỗ và **ba bản đã lệch nhau**: `$` là ký hiệu hợp lệ sau con số ở bản này mà không
+  ở bản kia, nên `"Up to 2000$"` bịa ra sàn trong khi `"Up to 2000 USD"` thì không — tức là
+  vi phạm chính cái luật ghi trong docstring của module. Cùng một bài học với `normalize_title`
+  ở `crawler/CLAUDE.md`: hai bộ luật song song sẽ lệch, chỉ là lúc nào.
 - **Lương: không đoán.** Không có ký hiệu tiền tệ ⇒ `None` ("20 - 60" là triệu VND hay USD/giờ
   tuỳ board). "Up to 3000" ⇒ `min=None`, **không** bịa 0. Quy đổi sang USD/tháng dùng
   `salary.USD_VND_RATE` có `FX_CHECKED_ON` — là **ước tính**, UI phải nói thế.

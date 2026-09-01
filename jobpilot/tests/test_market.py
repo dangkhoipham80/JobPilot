@@ -97,11 +97,23 @@ def test_a_plus_that_introduces_a_bonus_is_not_an_open_range():
     The signal is the space *before* the plus, not what follows it. Keying on
     what follows gets "15tr+ gross" and "2000+ USD" backwards — both are open
     ranges whose plus happens to precede a word."""
-    for label in ("2000 USD + phụ cấp", "3000 USD + bonus"):
+    for label in ("2000 USD + phụ cấp", "3000 USD + bonus", "Lương cứng 15 triệu + hoa hồng"):
         parsed = parse_salary(label)
         assert parsed.min == parsed.max, f"{label!r} was read as an open range"
     for label in ("15tr+ gross", "2000+ USD", "5.000.000+ VNĐ"):
         assert parse_salary(label).max is None, f"{label!r} invented a ceiling"
+
+
+def test_an_open_floor_also_needs_a_figure_written_as_money():
+    """The money fence went on the floor/ceiling keywords but not on this branch,
+    so any "<digits>+" still qualified: "20 triệu, 3+ năm kinh nghiệm" reported a
+    floor of 3 million and put a 20tr job in the "<$500" band. Years of
+    experience are the most common thing a "+" is attached to in a job ad."""
+    for label in ("20 triệu, 3+ năm kinh nghiệm", "2000 USD, 5+ years experience"):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} read a year count as pay"
+    assert parse_salary("20 triệu, 3+ năm kinh nghiệm").min == 20e6
+    assert parse_salary("2000 USD, 5+ years experience").min == 2000
 
 
 def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():
@@ -114,6 +126,11 @@ def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():
     for label in (
         "Lương 20 triệu, trên 2 năm kinh nghiệm",
         "20 triệu, dưới 30 tuổi",
+        # The first fence also accepted a bare figure at end of label, which let
+        # the same sentence back in with the words reordered. An anchor is not
+        # a unit.
+        "Lương 20 triệu, tuổi dưới 30",
+        "Lương 20 triệu, trên 2",
     ):
         parsed = parse_salary(label)
         assert (parsed.min, parsed.max) == (20e6, 20e6), label
@@ -122,6 +139,21 @@ def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():
     # ...while the same keywords still work when they do introduce money.
     assert parse_salary("trên 30 triệu").min == 30e6
     assert parse_salary("dưới 30 triệu").max == 30e6
+    assert parse_salary("up to 25 million VND").max == 25e6
+    assert parse_salary("dưới 5.000.000 đ").max == 5e6
+
+
+def test_a_trailing_dollar_sign_is_a_currency_marker_like_a_leading_one():
+    """"$" counted as money before a figure but not after it, because the marker
+    list had been written out three times and the copies drifted. So "Up to
+    2000$" invented a floor of 2000 — breaking this module's own stated rule
+    that "up to" has no minimum — while "Up to 2000 USD" did not."""
+    capped = parse_salary("Up to 2000$")
+    assert capped.min is None and capped.max == 2000
+    floored = parse_salary("từ 2000$")
+    assert floored.min == 2000 and floored.max is None
+    # And the keyword must still find the right figure when another precedes it.
+    assert parse_salary("Thưởng 2 tháng, up to 3000 dollars").max == 3000
 
 
 def test_min_does_not_match_inside_another_word():
