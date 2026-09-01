@@ -1542,9 +1542,37 @@ Và kiểm ngược lại chiều còn lại: build docker với `.cls`/`.sty` l
   `_pages_from_log` đọc log cũ rồi báo số trang của **một PDF đã không còn tồn tại**. Nên
   `build_cv()` xoá `.log` cùng lúc với `.pdf` (có test).
 
+### Hai bug chỉ lộ ra ở review gate — cả hai đều "chạy được trên máy mình"
+
+Verify ở trên **không bắt được** hai lỗi này, vì nó build vào thư mục sạch trên một máy đã có
+Docker. Cả hai chỉ nổ **sau khi merge**, ở máy người khác:
+
+1. **`sync_assets()` ghim asset cũ vào build dir vĩnh viễn.** Nó `skip-if-exists`, mà
+   `out/cv/<scope>/` thì **sống lâu và dùng lại** ⇒ mỗi scope bị khoá vào bản `awesome-cv.cls` /
+   `fontawesome.sty` của lần build **đầu tiên**. Bản vá cho tectonic vì thế chỉ tới được scope
+   build mới; build lại một CV cũ chết ngay với `The font "FontAwesome" cannot be found` **trong
+   khi repo đã có fix** — nên thông báo lỗi trỏ sai hướng hoàn toàn. Tệ hơn: `build_cv()` xoá
+   `.pdf` trước khi build, nên scope đó **mất luôn PDF cũ**. Đã dựng lại đúng lỗi này trên
+   `out/cv/itviec_2156537` trước khi sửa.
+   ⚠️ **Đừng "tối ưu" `sync_assets` về skip-if-exists.** Nó so **nội dung** (`filecmp`,
+   `shallow=False`), kể cả file **bên trong** thư mục asset như `fonts/` — bản cũ chỉ copy khi cả
+   thư mục vắng mặt, nên một file font cũ là không bao giờ với tới được. Không dùng mtime:
+   `git checkout` đóng dấu lại mtime ⇒ báo "đã đổi" cho file không đổi, và **bỏ sót** file vendor
+   được restore từ commit cũ hơn.
+2. **`deploy/jobpilot-api.service` vẫn `Requires=docker.service`** sau khi DEPLOY.md bỏ cài Docker.
+   systemd **từ chối start** một unit có `Requires=` trỏ tới unit không tồn tại ⇒ làm đúng theo
+   hướng dẫn mới thì **cả API lẫn dashboard chết**, không phải chỉ build PDF. Hạ xuống `Wants=`
+   (giữ trong `After=` để ai cố ý chạy `cv.engine: docker` vẫn được thứ tự đúng).
+
+Và một bug thứ ba của chính vòng sửa: **test xanh vì nó ghim cái mock.** `resolve_engine` được
+sửa để trả path đã resolve, nhưng `shutil.which("./tools/tectonic")` **trả nguyên chuỗi tương
+đối** — nó chỉ check path đó có chạy được không, không đổi thành absolute. Test đầu tiên
+monkeypatch `which` trả sẵn `/opt/bin/tectonic` nên xanh mà **không chứng minh gì**. Đã thay bằng
+test đặt **file thật ở path tương đối thật**, và kiểm lại rằng nó **fail** khi gỡ `os.path.abspath`.
+
 ### Verify
 
-**854 test xanh** (844 + 10 mới). Chạy thật, không dừng ở test: build Master CV thật + sample
+**858 test xanh** (844 + 14 mới). Chạy thật, không dừng ở test: build Master CV thật + sample
 tiếng Việt × 2 template × 2 engine, cover letter (`cover_letter.tex`, entry khác `cv.tex`) × 2
 engine — 1 trang, dấu tiếng Việt đủ. `jobpilot cv build` qua CLI ra `[OK: 1 page]` bằng tectonic.
 Build lần đầu ~3 phút (tải gói TeX về cache), lần sau **~1–2.5s offline** (`-C` không cần mạng).

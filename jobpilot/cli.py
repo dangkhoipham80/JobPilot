@@ -497,14 +497,8 @@ def cmd_backup(args: argparse.Namespace) -> int:
     try:
         if args.dir:
             r = run_backup(args.dir, progress=step)
-            result = {
-                "dump": r.dump.name,
-                "cv": r.cv.name,
-                "size": r.size,
-                "mirrored_to": r.mirrored_to,
-                "pruned": len(r.pruned),
-                "notes": r.notes,
-            }
+            result = {"dump": r.dump.name, "cv": r.cv.name, "size": r.size,
+                      "mirrored_to": r.mirrored_to, "pruned": len(r.pruned), "notes": r.notes}
         else:
             result = backup_body(step or (lambda _m: None))
     except BackupError as exc:

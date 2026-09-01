@@ -1,5 +1,8 @@
 """Phase 1: build wrapper unit tests (no Docker and no tectonic needed)."""
 
+import os
+from pathlib import Path
+
 import pytest
 
 from jobpilot.tailor import build as build_mod
@@ -72,20 +75,32 @@ def test_an_unknown_engine_is_rejected_rather_than_silently_defaulted(monkeypatc
         resolve_engine("tectonik")
 
 
-def test_the_resolved_executable_is_used_not_the_configured_name(tmp_path, monkeypatch):
-    """The tectonic build runs with cwd set to the build dir. A relative
-    cv.tectonic_bin would be looked up against the process's directory (found)
-    and executed against the build dir (not found) — an exec failure several
-    directories away from anything that explains it."""
-    work = tmp_path / "work"
-    work.mkdir()
-    (work / "cv.tex").write_text("\\documentclass{article}", encoding="utf-8")
-    monkeypatch.setattr(build_mod.shutil, "which", lambda cmd: "/opt/bin/tectonic" if cmd else None)
-    seen, fake_run = _tectonic_run(work)
-    monkeypatch.setattr(build_mod.subprocess, "run", fake_run)
+def test_a_relative_tectonic_bin_is_made_absolute(tmp_path, monkeypatch):
+    """The tectonic build runs with cwd set to the build dir, so a relative
+    cv.tectonic_bin ("a path with a directory component works too", per the
+    config docs) gets looked up against the process's directory and executed
+    against the build dir — every CV build dies with an exec error several
+    directories away from anything that explains it.
 
-    build_cv(work, entry="cv.tex", engine="tectonic")
-    assert seen[0]["cmd"][0] == "/opt/bin/tectonic"
+    Deliberately no monkeypatching of shutil.which: given a string with a
+    directory component, which() checks that path and returns *the string as
+    passed*, still relative. A stubbed which() that hands back an absolute path
+    asserts the stub, not the behaviour — this test only fails if the real
+    resolution is real."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    # which() needs something it will accept as executable on this platform.
+    name = "tectonic.bat" if os.name == "nt" else "tectonic"
+    binary = tools / name
+    binary.write_text("", encoding="utf-8")
+    binary.chmod(0o755)
+    monkeypatch.chdir(tmp_path)
+
+    engine, resolved = resolve_engine("tectonic", tectonic_bin=f"./tools/{name}")
+
+    assert engine == "tectonic"
+    assert Path(resolved).is_absolute(), f"{resolved!r} is still relative"
+    assert Path(resolved).samefile(binary)
 
 
 def test_an_engine_that_cannot_be_executed_is_a_builderror_not_an_oserror(tmp_path, monkeypatch):

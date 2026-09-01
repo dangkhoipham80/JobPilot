@@ -94,12 +94,18 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
     ``auto`` prefers tectonic purely on install cost -- the two produce the same
     PDF, so there is nothing else to choose on.
 
-    Returns the *resolved* executable rather than the configured name, because
+    Returns an *absolute* executable rather than the configured name, because
     the tectonic build runs with ``cwd`` set to the build dir. A relative
-    ``cv.tectonic_bin`` like ``./tools/tectonic`` would then be looked up here
-    against the process's directory (found) and executed against the build dir
-    (not found) -- an exec failure rather than a BuildError, some directories
-    away from anything that explains it.
+    ``cv.tectonic_bin`` like ``./tools/tectonic`` would otherwise be looked up
+    here against the process's directory (found) and executed against the build
+    dir (not found) -- an exec failure some directories away from anything that
+    explains it.
+
+    The ``abspath`` is doing that work, not ``shutil.which``: given a string with
+    a directory component, ``which`` checks that path directly and hands back
+    *the string as passed*, still relative. Mocking ``which`` to return an
+    absolute path therefore proves nothing about this, which is why the test for
+    it puts a real file at a real relative path.
     """
     cfg = get_config().cv
     choice = (engine or cfg.engine or "auto").strip().lower()
@@ -120,11 +126,11 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
                 f"{choice} not found on PATH (cv.engine = {choice!r}) — "
                 f"{_INSTALL_HINT[choice]}. Or set cv.engine to {other!r} or 'auto'."
             )
-        return choice, found[choice]
+        return choice, os.path.abspath(found[choice])
 
     for name in ENGINES:
         if found[name]:
-            return name, found[name]
+            return name, os.path.abspath(found[name])
     raise BuildError(
         "no LaTeX engine found — a CV cannot be built without one of:\n"
         f"  tectonic (recommended) — {_INSTALL_HINT['tectonic']}\n"
