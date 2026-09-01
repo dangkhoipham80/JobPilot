@@ -78,8 +78,11 @@ docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder            # Windows P
 docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder # Linux/macOS/WSL
 # Output: cv.pdf
 ```
-`cv.engine` = `auto` (mặc định, ưu tiên tectonic) | `tectonic` | `docker`; `cv.tectonic_bin`
-trỏ tới binary nếu để ngoài PATH. Hai engine ra **cùng PDF** — luật + bẫy ở `jobpilot/cv/CLAUDE.md`.
+`cv.engine` = `auto` (mặc định, ưu tiên tectonic) | `tectonic` | `docker`. Tìm tectonic theo thứ tự
+**PATH → `tools/` trong repo** (thư mục này đã gitignore), nên **thả binary vào `tools/` là xong,
+không cần config gì**. `cv.tectonic_bin` vẫn dùng được nhưng một đường dẫn tuyệt đối chỉ đúng trên
+một máy — sai thì `auto` **lặng lẽ** build bằng Docker; `jobpilot cv build` in ra engine đã chạy để
+chuyện đó không còn im lặng. Hai engine ra **cùng PDF** — luật + bẫy ở `jobpilot/cv/CLAUDE.md`.
 
 ### JobPilot (khi đã scaffold — xem cấu trúc ở PLAN.md §8)
 ```bash

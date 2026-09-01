@@ -255,6 +255,12 @@ docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder
 produce the same PDF; tectonic is the default only because it is ~10 MB and needs nothing running,
 against a 3.18 GB image behind a daemon.
 
+Tectonic is looked for on `PATH` first, then in **`tools/`** inside the repo — so on a machine where
+you would rather not touch `PATH`, dropping the downloaded binary in `tools/` is enough and needs no
+configuration. (`cv.tectonic_bin` still works, but an absolute path there is true of one machine
+only, and when it is wrong `auto` quietly builds with Docker instead.) `jobpilot cv build` prints
+which engine ran, so that fallback is visible rather than silent.
+
 Prefer editing through the **CV Studio** rather than by hand: content is structured JSON that is
 serialized to `.tex` via Jinja2, so hand-edited `.tex` loses the round trip. Change the accent colour
 with `theme.color` in the Studio, not in the `.cls`.

@@ -52,6 +52,14 @@ list. `template.json`:
 `cv.engine` = `auto` | `tectonic` | `docker`; `auto` ưu tiên tectonic, không có thì rơi về
 docker, không có cả hai thì `BuildError` chỉ cách cài **cả hai**. Code: `tailor/build.py`.
 
+**Tìm tectonic: PATH trước, rồi `tools/` trong repo** (`_find_executable`). Thả binary vào `tools/`
+là chạy, **không cần config** — cố ý, vì `cv.tectonic_bin` với đường dẫn tuyệt đối chỉ đúng trên
+đúng một máy, và khi nó sai thì `auto` **lặng lẽ** rơi về Docker: build vẫn ra PDF nên không ai
+biết engine đã đổi. Chỉ **tên lệnh trần** mới được hưởng fallback `tools/`; một path đã cấu hình mà
+sai thì báo lỗi, không im lặng chạy file khác trùng tên.
+⚠️ Test nào stub `shutil.which` **phải** trỏ `build.REPO_ROOT` sang thư mục rỗng (fixture autouse
+`_empty_tools_dir` ở `test_build.py`), nếu không máy đã tải binary sẽ cho kết quả khác CI.
+
 - **Chọn tectonic chỉ vì chi phí cài, không phải vì output.** Đã đo trên **Master CV thật** +
   sample có tiếng Việt, cả hai template: **cùng số trang, cùng tập từ trong text layer, cùng
   verdict của `ats.py`** (trừ đúng một khác biệt, xem dưới). Tectonic ~10 MB binary tĩnh +

@@ -21,6 +21,18 @@ def _installed(*names):
     return lambda cmd: f"/usr/bin/{cmd}" if cmd in names else None
 
 
+@pytest.fixture(autouse=True)
+def _empty_tools_dir(tmp_path_factory, monkeypatch):
+    """Point REPO_ROOT at an empty directory for every test in this module.
+
+    resolve_engine falls back to ``<repo>/tools/`` when tectonic is not on PATH,
+    which means a developer who has actually downloaded the binary would see
+    different results from CI for the tests that stub ``which`` to return
+    nothing. Whether an engine is installed on the machine running the suite is
+    not something these tests are about."""
+    monkeypatch.setattr(build_mod, "REPO_ROOT", tmp_path_factory.mktemp("no_tools"))
+
+
 def test_build_raises_when_entry_missing(tmp_path):
     with pytest.raises(BuildError, match="entry not found"):
         build_cv(tmp_path, entry="nope.tex")
@@ -73,6 +85,52 @@ def test_an_unknown_engine_is_rejected_rather_than_silently_defaulted(monkeypatc
     monkeypatch.setattr(build_mod.shutil, "which", _installed("tectonic", "docker"))
     with pytest.raises(BuildError, match="unknown cv.engine"):
         resolve_engine("tectonik")
+
+
+def _drop_binary(directory, name="tectonic"):
+    """A file `which`-style lookups will accept as executable on this platform."""
+    directory.mkdir(parents=True, exist_ok=True)
+    binary = directory / (f"{name}.exe" if os.name == "nt" else name)
+    binary.write_text("", encoding="utf-8")
+    binary.chmod(0o755)
+    return binary
+
+
+def test_tectonic_is_found_in_the_repo_tools_dir_without_any_config(tmp_path, monkeypatch):
+    """So nobody has to write an absolute path into cv.tectonic_bin. That
+    setting works but it names one machine: the file it points at is absent on
+    every other checkout, and the failure is quiet — `auto` falls back to Docker
+    and builds keep working, just not the way the config says."""
+    binary = _drop_binary(tmp_path / build_mod.TOOLS_DIR)
+    monkeypatch.setattr(build_mod, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(build_mod.shutil, "which", _installed())  # nothing on PATH
+
+    engine, resolved = resolve_engine("auto")
+
+    assert engine == "tectonic"
+    assert Path(resolved).samefile(binary)
+
+
+def test_path_wins_over_the_repo_tools_dir(tmp_path, monkeypatch):
+    """A system install is the one the rest of the machine already agrees on."""
+    _drop_binary(tmp_path / build_mod.TOOLS_DIR)
+    monkeypatch.setattr(build_mod, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(build_mod.shutil, "which", _installed("tectonic"))
+
+    assert resolve_engine("tectonic")[1].endswith("tectonic")
+    assert build_mod.TOOLS_DIR not in resolve_engine("tectonic")[1]
+
+
+def test_a_configured_path_that_is_wrong_is_not_quietly_replaced(tmp_path, monkeypatch):
+    """cv.tectonic_bin naming a file that does not exist is a mistake worth
+    reporting. Falling back to some other file with the same basename would
+    run a binary the config never pointed at."""
+    _drop_binary(tmp_path / build_mod.TOOLS_DIR)
+    monkeypatch.setattr(build_mod, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(build_mod.shutil, "which", _installed())
+
+    with pytest.raises(BuildError, match="tectonic not found"):
+        resolve_engine("tectonic", tectonic_bin="/nowhere/special/tectonic")
 
 
 def test_a_relative_tectonic_bin_is_made_absolute(tmp_path, monkeypatch):

@@ -35,24 +35,58 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from jobpilot.config import get_config
+from jobpilot.config import REPO_ROOT, get_config
 
 #: Engines we know how to drive, in the order ``auto`` tries them.
 ENGINES = ("tectonic", "docker")
+
+#: Where a tectonic binary is looked for when it is not on PATH, relative to the
+#: repo. Checked *after* PATH, so a system install always wins.
+#:
+#: This exists so nobody has to write an absolute path into
+#: ``cv.tectonic_bin``. That setting works, but it names one machine: the file
+#: it points at does not exist on anyone else's checkout, and the failure is
+#: quiet -- ``auto`` simply falls back to Docker and builds keep working, just
+#: not the way the config says. Dropping the binary in ``tools/`` is the same
+#: gesture on every OS, needs no config at all, and travels with the checkout
+#: rather than with one laptop's PATH.
+TOOLS_DIR = "tools"
 
 _INSTALL_HINT = {
     "tectonic": (
         "one static binary, no daemon: see https://tectonic-typesetting.github.io/install.html "
         "(Linux/macOS: `curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net "
         "| sh`; or download a release from "
-        "https://github.com/tectonic-typesetting/tectonic/releases and put it on PATH). "
-        "Point cv.tectonic_bin at it if you keep it somewhere off PATH"
+        "https://github.com/tectonic-typesetting/tectonic/releases). Put it on PATH, or drop "
+        f"it in {TOOLS_DIR}/ inside the repo, or point cv.tectonic_bin at it"
     ),
     "docker": (
         "install Docker, start the daemon, then `docker pull csmith/awesome-cv-builder` "
         "(~3.2 GB)"
     ),
 }
+
+
+def _find_executable(command: str) -> str | None:
+    """``shutil.which``, then the repo's ``tools/`` directory.
+
+    ``which`` covers a system install and an absolute path in the config alike.
+    The ``tools/`` fallback covers the case that is otherwise fiddly on Windows:
+    a downloaded binary that nobody wants to put on PATH.
+    """
+    found = shutil.which(command)
+    if found:
+        return found
+    # Only a bare command name gets the fallback. A configured path that does
+    # not resolve is a mistake worth reporting, not one to paper over by
+    # running some other file that happens to share its name.
+    if os.path.dirname(command):
+        return None
+    candidate = REPO_ROOT / TOOLS_DIR / command
+    for path in (candidate, candidate.with_suffix(".exe")):
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+    return None
 
 
 class BuildError(RuntimeError):
@@ -106,6 +140,9 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
     *the string as passed*, still relative. Mocking ``which`` to return an
     absolute path therefore proves nothing about this, which is why the test for
     it puts a real file at a real relative path.
+
+    Tectonic is looked up with :func:`_find_executable`, which also checks the
+    repo's ``tools/`` directory, so a downloaded binary needs no config entry.
     """
     cfg = get_config().cv
     choice = (engine or cfg.engine or "auto").strip().lower()
@@ -117,7 +154,7 @@ def resolve_engine(engine: str | None = None, tectonic_bin: str | None = None) -
     binary = tectonic_bin or cfg.tectonic_bin
     # shutil.which also accepts a path with a directory component, so
     # cv.tectonic_bin works as either a command name or a path.
-    found = {"tectonic": shutil.which(binary), "docker": shutil.which("docker")}
+    found = {"tectonic": _find_executable(binary), "docker": shutil.which("docker")}
 
     if choice != "auto":
         if not found[choice]:
