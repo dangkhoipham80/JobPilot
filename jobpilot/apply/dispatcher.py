@@ -58,7 +58,7 @@ class LetterArtifacts:
     """What the cover letter step produced, if it ran at all.
 
     ``text`` is the letter; ``pdf`` is a rendering of it. They are tracked apart
-    because they fail apart: the text can exist with no PDF (Docker down), and
+    because they fail apart: the text can exist with no PDF (LaTeX build down), and
     that is a degraded application, not a failed one. ``pdf_error`` carries the
     reason onto the Application row so "no PDF" never has to be guessed at.
     """
@@ -164,11 +164,11 @@ def apply_job(
         except (TailorError, GuardrailViolation) as exc:
             return _fail(db, run, job, channel, cv_pdf, f"cover letter: {exc}")
 
-        # The PDF is a rendering; the text is the letter. Docker being down or a
+        # The PDF is a rendering; the text is the letter. The LaTeX build failing or a
         # LaTeX error must not withhold an application whose CV already built, so
         # this failure is recorded on the row and the dispatch goes ahead.
         #
-        # Deliberately broad. `BuildError` alone covers LaTeX and Docker, but the
+        # Deliberately broad. `BuildError` alone covers LaTeX and the engine, but the
         # same call also copies assets (OSError on a full disk or a read-only
         # dir) and renders a template (RenderError). Those escaping would leave
         # the job stuck in SUBMITTING with no error_msg — the one outcome this

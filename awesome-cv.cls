@@ -156,6 +156,17 @@
 %                Configuration for fonts
 %-------------------------------------------------------------------------------
 % Set the FontAwesome font to be up-to-date.
+%
+% JobPilot: the \let is load-bearing. fontawesome.sty (\RequirePackage'd at line
+% 77, so always before this) has already defined \FA; this line is the one that
+% matters, because only it honours \@fontdir. Upstream redefines it with a plain
+% \newfontfamily and gets away with that on the TeX Live in the Docker builder
+% image, whose fontspec redefines silently -- a newer fontspec (tectonic's
+% bundle) raises "Command '\FA' already defined" and takes the whole build down.
+% \renewfontfamily would be the obvious fix and is the wrong one: that TeX Live
+% is old enough not to have it, so it trades a tectonic failure for a Docker one.
+% Clearing \FA to \relax first reads as "undefined" to both.
+\let\FA\relax
 \newfontfamily\FA[Path=\@fontdir]{FontAwesome}
 % Set font for header (default is Roboto)
 \newfontfamily\headerfont[

@@ -46,7 +46,7 @@ class JobPilotClient:
         self.base_url = base_url.rstrip("/")
         self.token = token if token is not None else get_secrets().jobpilot_api_token
         self._owns_client = http_client is None
-        # Tailor and apply are slow (a Claude call plus a Docker build), so the
+        # Tailor and apply are slow (a Claude call plus a LaTeX build), so the
         # default timeout is generous rather than the usual few seconds.
         self._client = http_client or httpx.Client(base_url=self.base_url, timeout=timeout)
 

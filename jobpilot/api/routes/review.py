@@ -3,7 +3,7 @@
 Registered **before** ``routes.jobs`` in the app: that router's
 ``GET /{job_id:path}`` is greedy and would otherwise swallow ``/jobs/x/review``.
 
-Tailoring is a Claude call plus a Docker LaTeX build — tens of seconds to a
+Tailoring is a Claude call plus a LaTeX build — tens of seconds to a
 couple of minutes. It runs on the task queue, so ``POST .../tailor`` answers 202
 with a task id and progress arrives over the WebSocket as ``task_updated``.
 

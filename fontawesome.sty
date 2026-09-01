@@ -9,7 +9,17 @@
 \usepackage{fontspec}
 
 % Define shortcut to load the Font Awesome font.
-\newfontfamily{\FA}{FontAwesome}
+%
+% JobPilot: prefer the copy in fonts/, which sync_assets() (jobpilot/cv/compile.py)
+% copies into every build dir alongside this file. Upstream looks the font up by
+% *name*, which only resolves against a system-installed FontAwesome -- the Docker
+% builder image has one, so the by-name form worked there while fonts/FontAwesome.ttf
+% sat unused. Any plain LaTeX engine (tectonic) has no such system font and the
+% whole build dies with "The font FontAwesome cannot be found". The by-name branch
+% is kept for a build dir that somehow has no fonts/.
+\IfFileExists{fonts/FontAwesome.ttf}
+  {\newfontfamily{\FA}{FontAwesome.ttf}[Path=fonts/]}
+  {\newfontfamily{\FA}{FontAwesome}}
 % Generic command displaying an icon by its name.
 \newcommand*{\faicon}[1]{{
   \FA\csname faicon@#1\endcsname

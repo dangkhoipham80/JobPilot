@@ -1,20 +1,18 @@
-brew install pandoc
-brew tap homebrew/cask
-brew install --cask basictex
-eval "$(/usr/libexec/path_helper)"
-# Update $PATH to include `/usr/local/texlive/2022basic/bin/universal-darwin`
-sudo tlmgr update --self
-sudo tlmgr install texliveonfly
-sudo tlmgr install xelatex
-sudo tlmgr install adjustbox
-sudo tlmgr install tcolorbox
-sudo tlmgr install collectbox
-sudo tlmgr install ucs
-sudo tlmgr install environ
-sudo tlmgr install trimspaces
-sudo tlmgr install titling
-sudo tlmgr install enumitem
-sudo tlmgr install rsfs
-sudo tlmgr install sourcesanspro
+#!/bin/sh
+# Build cv.tex to cv.pdf.
+#
+# This used to be a macOS BasicTeX setup: `brew install --cask basictex` plus a
+# hand-maintained `tlmgr install` list (adjustbox, tcolorbox, collectbox, ucs,
+# environ, trimspaces, titling, enumitem, rsfs, sourcesanspro, ...) that had to
+# be kept in sync with whatever the templates happened to \usepackage, ending in
+# a `docker run csmith/awesome-cv-builder`. Tectonic fetches exactly the packages
+# a document asks for and caches them, so neither half is needed any more.
+#
+# Docker is still supported as JobPilot's fallback engine (`cv.engine`, see
+# README.md); it is just no longer the thing you install first.
+#
+#   macOS:  brew install tectonic
+#   Linux:  see DEPLOY.md, or https://tectonic-typesetting.github.io/install.html
+set -e
 
-docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder
+tectonic -X compile "${1:-cv.tex}"

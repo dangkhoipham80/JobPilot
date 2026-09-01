@@ -636,7 +636,15 @@ export interface Settings {
     };
     portal_prefill: boolean;
   };
-  cv: { master_dir: string; out_dir: string; docker_image: string; theme: string };
+  cv: {
+    master_dir: string;
+    out_dir: string;
+    /** Which LaTeX engine builds the PDF; "auto" prefers tectonic. */
+    engine: string;
+    tectonic_bin: string;
+    docker_image: string;
+    theme: string;
+  };
   llm: LlmSettings;
   /** Dotted paths the API refuses to change (config.LOCKED_SETTINGS) — the email
    *  gates. Rendered read-only rather than left to fail on save. Server-supplied
