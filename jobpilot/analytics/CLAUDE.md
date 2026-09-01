@@ -47,14 +47,26 @@
      nghiệm"` báo sàn **3 triệu**. Số năm kinh nghiệm là thứ hay đi kèm dấu `+` nhất trong
      một tin tuyển dụng.
 
-  ⚠️ **Hàng rào mới phủ `_MIN_ONLY` / `_MAX_ONLY` / `_MIN_SUFFIX`. `_RANGE` thì CHƯA** —
-  `"Lương 20 triệu, 2 - 3 năm kinh nghiệm"` vẫn ra `2tr–3tr` (có sẵn từ trước, không phải do
-  lần sửa này). Đừng đọc mục này thành "cửa đã đóng hết".
-- **Một bảng ký hiệu tiền duy nhất (`_MONEY`), đừng viết bản thứ hai.** Trước đây nó bị chép
-  ra ba chỗ và **ba bản đã lệch nhau**: `$` là ký hiệu hợp lệ sau con số ở bản này mà không
-  ở bản kia, nên `"Up to 2000$"` bịa ra sàn trong khi `"Up to 2000 USD"` thì không — tức là
-  vi phạm chính cái luật ghi trong docstring của module. Cùng một bài học với `normalize_title`
-  ở `crawler/CLAUDE.md`: hai bộ luật song song sẽ lệch, chỉ là lúc nào.
+  4. `_RANGE` bị bỏ ngoài hàng rào, mà lần sửa này lại **nới `_SEP` thêm `~ ～ 〜 −`** ⇒
+     `"Lương 20 triệu, 2 ~ 3 năm kinh nghiệm"` ra `2tr–3tr`. **Khoảng số năm kinh nghiệm được
+     viết y hệt khoảng lương**, chỉ khác cái đơn vị — nên nới separator mà không có hàng rào là
+     mở cửa cho đúng thứ đó. Nay `_RANGE` đòi **ít nhất một trong bốn ô marker** (lead/unit ×
+     hai bound) được điền; tiện thể đóng luôn ca `-` vốn sai sẵn trên `main`.
+
+  ⚠️ Hàng rào giờ phủ **cả bốn** nhánh. Nhánh cuối cùng (`_ANY_NUM`) **cố ý** không có hàng
+  rào: nó là chỗ mọi nhãn "không phải tiền" rơi xuống, và lấy **số đầu tiên** là câu trả lời
+  đúng ở đó — nhãn lương hầu như luôn dẫn bằng lương.
+- **Marker đứng trước (`_LEAD`) và marker đứng sau (`_MONEY`) mỗi thứ CHỈ ĐƯỢC CÓ MỘT BẢN.**
+  Đã lệch **hai lần**: (1) `$` là marker hợp lệ *sau* con số ở bản này mà không ở bản kia ⇒
+  `"Up to 2000$"` bịa ra sàn trong khi `"Up to 2000 USD"` thì không; (2) `US$` là tiền ở
+  `_RANGE` (có test ghim hẳn `"US$ 2,000 - US$ 3,000"`) nhưng **không** ở `_MAX_ONLY` ⇒
+  `"Thưởng 2 tháng, up to 3000 US$"` rơi xuống `_ANY_NUM` và báo lương = **2** (số "2 tháng").
+  Lần thứ hai xảy ra **ngay trong commit tuyên bố đã gộp bảng**. Cùng bài học với
+  `normalize_title` ở `crawler/CLAUDE.md`: hai bộ luật song song sẽ lệch, chỉ là lúc nào.
+- **`k` = nghìn.** `"$50k - $70k/year"` từng ra 50–70 USD/năm ⇒ `usd_month = 5.0`, rơi vào band
+  `<$500` thay vì gần đỉnh corpus. Sai **1000 lần**, mà đó lại là cách viết phổ biến nhất của
+  board Mỹ (WWR/Arbeitnow đang bật). Guard `value < 1000` giữ cho nhãn đã viết đủ số (`"1,500 -
+  2,500 USD"`) không bị nhân thêm.
 - **Lương: không đoán.** Không có ký hiệu tiền tệ ⇒ `None` ("20 - 60" là triệu VND hay USD/giờ
   tuỳ board). "Up to 3000" ⇒ `min=None`, **không** bịa 0. Quy đổi sang USD/tháng dùng
   `salary.USD_VND_RATE` có `FX_CHECKED_ON` — là **ước tính**, UI phải nói thế.

@@ -1499,7 +1499,7 @@ Không có lỗi, không có cảnh báo — chỉ là một cái trần bị th
 4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
    "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
 
-**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BA VÒNG mới kín.** Hàng rào
+**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BỐN VÒNG mới kín.** Hàng rào
 "con số chỉ là tiền khi được viết như tiền" lắp thiếu chỗ ba lần liên tiếp, mỗi lần đều là **đúng
 cái lỗi đang đi diệt**:
 
@@ -1514,6 +1514,10 @@ cái lỗi đang đi diệt**:
 3. `_MIN_SUFFIX` — nhánh **mới nhất, do chính lần sửa này thêm vào** — bị bỏ quên ngoài hàng rào,
    nên mọi `<số>+` vẫn thành sàn mở: `"20 triệu, 3+ năm kinh nghiệm"` báo sàn **3 triệu**. Mà số
    năm kinh nghiệm chính là thứ hay đi kèm dấu `+` nhất trong một tin tuyển dụng.
+4. `_RANGE` cũng bị bỏ ngoài hàng rào, mà lần sửa này lại **nới `_SEP` thêm `~ ～ 〜 −`** ⇒
+   `"Lương 20 triệu, 2 ~ 3 năm kinh nghiệm"` ra `2tr–3tr`. **Khoảng số năm kinh nghiệm được viết
+   y hệt khoảng lương**, chỉ khác cái đơn vị — nới separator mà không có hàng rào là mở cửa cho
+   đúng thứ đó, và lần này nó làm **hỏng những nhãn `main` đọc đúng**.
 
 Cộng một ca cùng gốc: **bảng ký hiệu tiền bị chép ra ba bản, và ba bản đã lệch nhau.** `$` là ký
 hiệu hợp lệ **sau** con số ở bản này mà không ở bản kia ⇒ `"Up to 2000$"` bịa ra sàn 2000 trong
@@ -1521,10 +1525,22 @@ khi `"Up to 2000 USD"` thì không — vi phạm chính cái luật ghi trong do
 còn **một** `_MONEY` dùng chung. (Cùng bài học với `normalize_title` ở `crawler/CLAUDE.md`: hai bộ
 luật song song sẽ lệch, chỉ là lúc nào.)
 
-**Luật cuối**: con số là tiền khi có **ký hiệu đứng trước** (`$2000`) **hoặc đơn vị đứng sau**
-(`2000 USD`, `20 triệu`). Hàng rào phủ `_MIN_ONLY` / `_MAX_ONLY` / `_MIN_SUFFIX`; **`_RANGE` thì
-CHƯA** — `"Lương 20 triệu, 2 - 3 năm kinh nghiệm"` vẫn ra `2tr–3tr` (có sẵn từ trước, không phải
-do lần sửa này). Đừng đọc đoạn này thành "cửa đã đóng hết".
+Và marker **đứng trước** thì lệch thêm một lần nữa: `US$` là tiền ở `_RANGE` (có test ghim hẳn)
+nhưng không phải tiền ở `_MAX_ONLY`, nên `"Thưởng 2 tháng, up to 3000 US$"` rơi xuống `_ANY_NUM`
+và báo lương = **2** (số của "2 tháng"). Lệch **ngay trong chính commit tuyên bố đã gộp bảng**.
+
+**Luật cuối**: con số là tiền khi có **ký hiệu đứng trước** (`$2000`, `USD 2000`, `US$ 2000`)
+**hoặc marker đứng sau** (`2000 USD`, `2000 (USD)`, `20 triệu`, `2000$`). Marker đứng trước nằm ở
+**một** hằng `_LEAD`, marker đứng sau ở **một** hằng `_MONEY`, và **cả bốn** nhánh
+(`_RANGE`/`_MIN_ONLY`/`_MAX_ONLY`/`_MIN_SUFFIX`) dựng từ hai hằng đó. Nhánh thứ năm `_ANY_NUM`
+**cố ý** không có hàng rào — nó là chỗ mọi nhãn "không phải tiền" rơi xuống, và ở đó lấy **số đầu
+tiên** mới là câu trả lời đúng.
+
+⚠️ **Thêm keyword / separator / hình dạng mới mà không đi qua `_LEAD`/`_TRAIL` là cách cả bốn
+regression trên lọt vào.** Không có ngoại lệ nào đáng.
+
+Sửa kèm: **`k` = nghìn** (`"$50k - $70k/year"` từng ra 50–70 USD/năm ⇒ `usd_month = 5.0`, band
+`<$500` thay vì gần đỉnh corpus — sai 1000 lần, mà đó là cách viết phổ biến nhất của board Mỹ).
 
 **Chỗ tinh tế, và bản đầu sửa NGƯỢC**: `"2000 USD + phụ cấp"` **không** phải sàn mở — dấu `+` đó
 giới thiệu một khoản cộng thêm, rất phổ biến trong tin Việt. Đọc nó thành "2000 trở lên" là **đổi
@@ -1537,7 +1553,7 @@ vẫn bị bịa trần.
 
 ### Verify
 
-852 test xanh (844 + 8 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+855 test xanh (844 + 11 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 

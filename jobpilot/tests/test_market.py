@@ -156,6 +156,55 @@ def test_a_trailing_dollar_sign_is_a_currency_marker_like_a_leading_one():
     assert parse_salary("Thưởng 2 tháng, up to 3000 dollars").max == 3000
 
 
+def test_a_range_also_needs_a_bound_written_as_money():
+    """Widening the separators to include "~" turned "2 ~ 3 năm kinh nghiệm"
+    into a salary range, on labels the previous version read correctly — a year
+    range is written exactly like a pay range apart from the unit. So a range
+    needs at least one of its four marker slots filled. That also closes the
+    plain-dash version of the same thing, which was wrong before this change."""
+    for label in (
+        "Lương 20 triệu, 2 ~ 3 năm kinh nghiệm",
+        "20 triệu, kinh nghiệm 2~3 năm",
+        "Lương 20 triệu, tuổi 25 ~ 30",
+        "20 triệu, 2 − 3 năm KN",
+        "Lương 20 triệu, 2 - 3 năm kinh nghiệm",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (20e6, 20e6), label
+
+    # ...and a rejected range must not stop the scan, or the real one is missed.
+    real = parse_salary("2 - 3 năm KN, lương 20 - 60 triệu")
+    assert (real.min, real.max) == (20e6, 60e6)
+
+
+def test_a_trailing_marker_may_be_bracketed_or_written_us_dollar():
+    """"US$" counted as money in the range pattern but not in the bounded one,
+    because the leading-marker list still had two copies. The label then fell to
+    the bare-figure branch, which took the *first* number in the string — the
+    "2" of "Thưởng 2 tháng"."""
+    for label, ceiling in (
+        ("Thưởng 2 tháng, up to 3000 (USD)", 3000),
+        ("Thưởng 2 tháng, up to 3000 US$", 3000),
+        ("Lương thử việc 85%, up to 3000 (USD)", 3000),
+        ("Lương tháng 13, up to 2000 US$", 2000),
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (None, ceiling), label
+    # A leading marker makes an open floor money too, same as a trailing one.
+    assert parse_salary("$2000+ (gross)").max is None
+
+
+def test_k_means_thousands():
+    """"$50k - $70k/year" read as fifty to seventy dollars a year — off by
+    1000x, and the commonest format on the US boards this crawler enables. It
+    landed in the "<$500" band instead of near the top of the corpus."""
+    paid = parse_salary("$50k - $70k/year")
+    assert (paid.min, paid.max) == (50_000, 70_000)
+    assert paid.usd_month == 5000
+    # A figure already written out in full is left alone.
+    assert parse_salary("1,500 - 2,500 USD").min == 1500
+
+
 def test_min_does_not_match_inside_another_word():
     """The floor keyword had no word boundary, so "Lương admin 5 triệu" matched
     the "min" inside "admin" and became an open-ended floor of 5 triệu."""
