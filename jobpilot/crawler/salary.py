@@ -99,8 +99,9 @@ _MONEY = r"(?:tr|triệu|k|m|million|us\s*\$|usd|vnd|vnđ|đ|dollars?|\$)"
 #: A marker ends where the word ends -- "5m VND" is money, "5months" is not.
 #: ``\b`` cannot be used: it fails after "$", so "2000$" would not count.
 _END = r"(?!\w)"
-#: A trailing marker, optionally wrapped: "3000 USD", "3000 (USD)", "3000 US$".
-_TRAIL = rf"\s*[(\[]?\s*{_MONEY}{_END}"
+#: A trailing marker, optionally wrapped and optionally behind a "net"/"gross"
+#: qualifier: "3000 USD", "3000 (USD)", "3000 US$", "3000 net USD".
+_TRAIL = rf"\s*[(\[]?\s*(?:net|gross)?\s*{_MONEY}{_END}"
 
 #: A figure written as money, captured. Two alternatives, so two groups.
 _BOUND = rf"(?:{_LEAD}\s*({_NUM})|({_NUM}){_TRAIL})"
@@ -154,6 +155,16 @@ _MIN_SUFFIX = re.compile(
     re.I,
 )
 _ANY_NUM = re.compile(_NUM)
+#: "a figure written as money", for asking whether one appears in a prefix.
+_BOUND_ONLY = re.compile(_BOUND, re.I)
+
+#: The bound keywords on their own, with no demand that a figure follow them.
+#: Used to tell "this label states a bound we failed to read" apart from "this
+#: label states no bound", which are different answers -- see :func:`parse`.
+_BOUND_WORD = re.compile(
+    r"\b(?:up\s*to|tới|max|dưới|under|below|from|từ|starting|min" r"|at\s*least|ít\s*nhất|trên)\b",
+    re.I,
+)
 
 
 def _figure(m: re.Match) -> str:
@@ -234,6 +245,42 @@ def _number(raw: str, millions: bool) -> float | None:
     return value
 
 
+def _bound_word_owns_the_only_figure(s: str) -> bool:
+    """True when the label declares a bound whose figure we could not read.
+
+    Only when the bare-figure fallback would answer with a number that sits
+    *after* the keyword -- that number is the one the keyword was talking about,
+    and reporting it as ``min == max`` invents the bound the label declared open.
+    A keyword later in the label ("Lương 20 triệu, trên 2 năm kinh nghiệm") is
+    not talking about the leading figure, so that one is still answered.
+    """
+    keyword = _BOUND_WORD.search(s)
+    first = _ANY_NUM.search(s)
+    return keyword is not None and first is not None and first.start() > keyword.start()
+
+
+def _leading_suffix_floor(s: str) -> re.Match | None:
+    """A ``_MIN_SUFFIX`` match, unless an earlier figure was *also* money.
+
+    Being money is not the same as being *pay*. "Lương 20 triệu, thưởng 500k+"
+    contains a perfectly well-formed open floor -- the bonus -- and taking it
+    put a 20tr job at 500 million, near the top of the market instead of the
+    middle of it.
+
+    Position alone does not separate that from "Thưởng 2 tháng, 160 triệu+",
+    where the open floor *is* the salary; requiring the floor to be the first
+    figure fixes the first case and breaks twelve of the second. What does
+    separate them is whether the earlier figure is money at all: "20 triệu" is,
+    "2 tháng" and "tháng 13" and "85%" are not. So the rule is the module's own
+    heuristic sharpened by one word -- a salary label leads with the salary,
+    where "the salary" means the first figure *written as money*.
+    """
+    m = _MIN_SUFFIX.search(s)
+    if m is None or _BOUND_ONLY.search(s[: m.start()]) is not None:
+        return None
+    return m
+
+
 def _first_range(s: str) -> re.Match | None:
     """The first range in ``s`` with at least one bound written as money.
 
@@ -277,8 +324,17 @@ def parse(text: str | None) -> Salary | None:
         high = num(_figure(m))
     elif (m := _MIN_ONLY.search(s)) is not None:
         low = num(_figure(m))
-    elif (m := _MIN_SUFFIX.search(s)) is not None:
+    elif (m := _leading_suffix_floor(s)) is not None:
         low = num(_figure(m))
+    elif _bound_word_owns_the_only_figure(s):
+        # The label says "up to" or "từ" but no figure beside it reads as money.
+        # Falling through would hand the bare-figure branch the job, and that
+        # branch answers with min == max — inventing the very bound the label
+        # declared open. "Lương USD, up to 3000" came back as a floor *and* a
+        # ceiling of 3000, which contradicts this module's first stated rule.
+        # Not knowing is the honest answer, and it is the one the caller can
+        # act on: `salary_range` stays None instead of holding a made-up floor.
+        return None
     elif (m := _ANY_NUM.search(s)) is not None:
         # A bare figure with no modifier is a point salary, not a range, so both
         # bounds are the same number on purpose.

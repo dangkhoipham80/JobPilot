@@ -77,6 +77,20 @@
   `1500–1500`. Đã thử nới (cho dấu câu xen giữa marker và số) và **đo được là đổi lỗi lấy lỗi**:
   sửa 3 ca detached-marker nhưng đẻ ra `"Lương USD, 2 - 3 năm kinh nghiệm"` → `2–3`. Giữ fence
   chặt, ghi thành giới hạn. **Đừng nới lại mà không đo.**
+- **"Là tiền" ≠ "là TIỀN LƯƠNG".** Hàng rào chỉ chứng nhận một figure được *viết như tiền*; nó
+  không biết đó là lương hay **thưởng/phụ cấp**. `"Lương 20 triệu, thưởng 500k+"` từng ra sàn
+  **500 triệu** (đẩy job lên đỉnh biểu đồ, tệ hơn mọi ca đẩy-xuống-đáy trước đó). Luật tie-break:
+  một open-floor chỉ được tính khi **không có figure viết-như-tiền nào đứng trước nó**.
+  ⚠️ Phân biệt **theo vị trí** ("phải là số đầu tiên") là SAI — đã đo: sửa 4 ca, **hỏng 12 ca**
+  kiểu `"Thưởng 2 tháng, 160 triệu+"` (ở đó floor chính là lương). `"2 tháng"`/`"85%"` không phải
+  tiền, `"20 triệu"` thì có — đó mới là tín hiệu.
+- **Keyword bound đọc không ra figure tiền ⇒ trả `None`, đừng để `_ANY_NUM` trả lời thay.** Nhánh
+  đó trả `min == max`, tức **bịa ra đúng cái bound mà tin tuyên bố là mở**: `"Lương USD, up to
+  3000"` → `3000|3000`. Đó là gương ngược của luật `"up to ⇒ min=None"` ghi ngay đầu module.
+- **Đo differential thì `main` phải lấy bằng `git show main:<file>`.** `git stash` **chỉ cất phần
+  chưa commit**, nên trên một branch đã có commit thì "bản main" dựng theo cách đó thực ra là
+  *HEAD trừ vài sửa đang dở* — và mọi kết luận "không có regression" rút ra từ đó là vô nghĩa.
+  Đã dẫm đúng bẫy này ba vòng liền trong chính task sửa parser lương.
 - **Fence KHÔNG cứu được nhãn dẫn đầu bằng số không-phải-tiền.** `"2 - 3 năm KN, 20 triệu"` ra
   **2 triệu**: `_RANGE` từ chối `"2 - 3"` (đúng), rồi `_ANY_NUM` lấy số đầu tiên. `_ANY_NUM` cố
   ý **không** có fence — phải có ai đó trả lời — và "lấy số đầu tiên" đúng nhiều hơn sai vì nhãn

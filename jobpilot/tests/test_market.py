@@ -126,6 +126,43 @@ def test_an_open_floor_also_needs_a_figure_written_as_money():
     assert parse_salary("20 triệu, 3+").min == 20e6
 
 
+def test_an_open_floor_on_a_bonus_is_not_the_salary():
+    """Being money is not the same as being pay. "Lương 20 triệu, thưởng 500k+"
+    contains a well-formed open floor — the bonus — and taking it put a 20tr job
+    at 500 million, near the top of the market instead of the middle.
+
+    Position alone does not separate that from "Thưởng 2 tháng, 160 triệu+",
+    where the open floor *is* the salary: requiring the floor to be the label's
+    first figure fixes the first case and breaks twelve of the second. What
+    separates them is whether the *earlier* figure is money at all."""
+    for label in (
+        "Lương 20 triệu, thưởng 500k+",
+        "Lương 20 triệu, thưởng 500k trở lên",
+        "20 triệu, phụ cấp 2 tr+",
+        "2000 USD, bonus 401k+",
+    ):
+        parsed = parse_salary(label)
+        assert parsed.min == parsed.max, f"{label!r} reported the bonus as the floor"
+    assert parse_salary("Lương 20 triệu, thưởng 500k+").min == 20e6
+
+    # ...but an open floor preceded by a number that is *not* money still wins.
+    for label in ("Thưởng 2 tháng, 160 triệu+", "Lương tháng 13, 15tr+"):
+        assert parse_salary(label).max is None, label
+    assert parse_salary("Thưởng 2 tháng, 160 triệu+").min == 160e6
+
+
+def test_a_bound_we_cannot_read_is_unknown_not_a_point_salary():
+    """"Lương USD, up to 3000" came back as 3000–3000 — a floor invented for a
+    label that explicitly declared none, which is the mirror image of the bug
+    this whole change exists to fix. When the label states a bound and no figure
+    beside it reads as money, the honest answer is None."""
+    assert parse_salary("Lương USD, up to 3000") is None
+    # A "net"/"gross" qualifier between figure and currency is still readable.
+    assert parse_salary("Thưởng 2 tháng, up to 3000 net USD").max == 3000
+    # A bound keyword that appears *after* the salary is not talking about it.
+    assert parse_salary("Lương 20 triệu, trên 2 năm kinh nghiệm").min == 20e6
+
+
 def test_and_up_does_not_match_inside_a_longer_word():
     """"3000 USD and updated benefits" is not an open range."""
     parsed = parse_salary("3000 USD and updated benefits")

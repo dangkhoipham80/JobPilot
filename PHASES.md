@@ -1499,7 +1499,7 @@ Không có lỗi, không có cảnh báo — chỉ là một cái trần bị th
 4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
    "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
 
-**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá SÁU VÒNG mới kín.** Hàng rào
+**Bug do CHÍNH lần sửa này đẻ ra — review gate bắt, và phải vá BẢY VÒNG mới kín.** Hàng rào
 "con số chỉ là tiền khi được viết như tiền" lắp thiếu chỗ ba lần liên tiếp, mỗi lần đều là **đúng
 cái lỗi đang đi diệt**:
 
@@ -1576,6 +1576,41 @@ trade đã thua sáu lần trong chính task này. ⇒ **Revert, giữ fence ch�
 ba** trong docstring của module. Tin ghi currency **cạnh** con số — gần như toàn bộ, và **tất cả**
 nguồn JSON-LD — không bị ảnh hưởng.
 
+**Regression thứ BẢY**: hàng rào chỉ hỏi *"đây có phải tiền không"*, **không bao giờ hỏi *"đây có
+phải TIỀN LƯƠNG không"***. `_MIN_SUFFIX` (nhánh mới của branch này) vì thế bám vào **tiền thưởng**:
+`"Lương 20 triệu, thưởng 500k+"` → sàn **500 triệu** — đẩy job 20tr lên gần **đỉnh** biểu đồ, tệ
+hơn mọi ca trước (các ca trước chỉ đẩy xuống đáy). Và ở chiều ngược lại, `"Lương USD, up to 3000"`
+→ `3000|3000`: keyword trượt fence rồi rơi xuống `_ANY_NUM`, mà nhánh đó trả `min == max` ⇒ **bịa
+ra đúng cái bound mà tin tuyên bố là mở** — gương ngược của chính fix headline (`160 triệu+`).
+
+Sửa: (1) `_MIN_SUFFIX` chỉ thắng khi **không có figure NÀO viết-như-tiền đứng trước nó**. (2)
+Keyword bound đã xuất hiện mà không đọc được figure tiền ⇒ trả `None` ("không biết"), **không** để
+`_ANY_NUM` trả lời thay bằng một mốc bịa.
+
+⚠️ Cách phân biệt **theo vị trí** ("floor phải là số đầu tiên") là **sai và đã bị bỏ**: nó sửa 4 ca
+`thưởng 500k+` nhưng **làm hỏng 12 ca** kiểu `"Thưởng 2 tháng, 160 triệu+"` (ở đó floor **chính là**
+lương). Tín hiệu đúng không phải vị trí mà là **figure đứng trước có phải tiền hay không**:
+`"20 triệu"` là tiền, `"2 tháng"` / `"tháng 13"` / `"85%"` thì không.
+
+### Sai sót về PHƯƠNG PHÁP ĐO — tự phát hiện, phải ghi lại
+
+Ba vòng đầu tôi chạy differential bằng `git stash` rồi copy `salary.py` ra so sánh. **`git stash`
+chỉ cất phần CHƯA COMMIT** — mà lúc đó đã có 3–5 commit trên branch ⇒ cái tôi gọi là "main" thực
+ra là **HEAD trừ đi mấy sửa đang dở**. Nên con số *"230 nhãn, 25 ca đổi, toàn cải thiện"* ở các
+vòng trước **không phải** so với `main`; nó chỉ so với chính branch vài phút trước đó. Lấy `main`
+thật phải là `git show main:jobpilot/crawler/salary.py`.
+
+Đo lại cho đúng, với oracle "**nhiễu không được làm đổi đáp án**" (parse riêng phần lương sạch rồi
+so với khi có nhiễu bao quanh) trên 289 nhãn:
+
+| | khớp đáp án sạch |
+|---|---|
+| `main` | 141/289 — **49%** |
+| branch | 283/289 — **98%** |
+
+**142 ca tốt hơn, 0 ca tệ hơn.** 6 ca còn lại đều là giới hạn #2 đã ghi (`"Thưởng 2 tháng, 2000
+USD"` → 2), và `main` cũng sai y hệt.
+
 **Giới hạn còn lại, nói thẳng**: fence không cứu được nhãn **dẫn đầu bằng số không-phải-tiền** —
 `"2 - 3 năm KN, 20 triệu"` vẫn ra 2 triệu, vì `_ANY_NUM` (cố ý không fence, phải có ai đó trả lời)
 lấy số đầu tiên. `main` cũng sai ca này. "Lấy số đầu tiên" đúng nhiều hơn sai, nhưng là
@@ -1592,7 +1627,7 @@ vẫn bị bịa trần.
 
 ### Verify
 
-857 test xanh (844 + 13 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+859 test xanh (844 + 15 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 
