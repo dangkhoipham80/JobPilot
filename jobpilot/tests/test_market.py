@@ -151,16 +151,41 @@ def test_an_open_floor_on_a_bonus_is_not_the_salary():
     assert parse_salary("Thưởng 2 tháng, 160 triệu+").min == 160e6
 
 
-def test_a_bound_we_cannot_read_is_unknown_not_a_point_salary():
+def test_a_stated_ceiling_never_becomes_a_floor():
     """"Lương USD, up to 3000" came back as 3000–3000 — a floor invented for a
-    label that explicitly declared none, which is the mirror image of the bug
-    this whole change exists to fix. When the label states a bound and no figure
-    beside it reads as money, the honest answer is None."""
-    assert parse_salary("Lương USD, up to 3000") is None
+    label that explicitly declared none, the mirror image of the bug this whole
+    change exists to fix.
+
+    Answering None instead was the first attempt and was a straight loss:
+    `usd_month` averages the *known* bounds, so the invented floor never changed
+    the number, while the None dropped the job out of the chart entirely. The
+    keyword itself says which end the figure belongs to, so when nothing in the
+    label is written as money there is a better answer than "unknown"."""
+    for label in ("Lương USD, up to 3000", "Up to: 3000 USD", "Up to (3000 USD)"):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (None, 3000), label
     # A "net"/"gross" qualifier between figure and currency is still readable.
     assert parse_salary("Thưởng 2 tháng, up to 3000 net USD").max == 3000
     # A bound keyword that appears *after* the salary is not talking about it.
     assert parse_salary("Lương 20 triệu, trên 2 năm kinh nghiệm").min == 20e6
+
+
+def test_a_bound_keyword_must_sit_next_to_the_figure_it_bounds():
+    """"Từ Hà Nội: 20 triệu" has a "Từ" that introduces a city. Treating any
+    keyword earlier in the label as a bound threw the salary away completely —
+    a measurable loss of coverage, not just a wrong number, since the job then
+    vanishes from `salary_bands` and from its `covered/total`."""
+    assert parse_salary("Từ Hà Nội: 20 triệu").min == 20e6
+    assert parse_salary("Mức lương từ : 25 triệu").min == 25e6
+
+    # ...and the Vietnamese bound words the earlier lists had missed entirely,
+    # which were still inventing floors.
+    assert (parse_salary("tối đa 30 triệu").min, parse_salary("tối đa 30 triệu").max) == (
+        None,
+        30e6,
+    )
+    assert parse_salary("không quá 30 triệu").max == 30e6
+    assert parse_salary("tối thiểu 20 triệu").min == 20e6
 
 
 def test_and_up_does_not_match_inside_a_longer_word():

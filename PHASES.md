@@ -1733,9 +1733,39 @@ vẫn bị bịa trần.
 
 ### Verify
 
-**+16 test mới** (877 tổng sau khi merge cùng phase tectonic). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+**+18 test mới** (878 tổng). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
+
+### Vòng review thứ 7 (sau merge) — mất độ phủ, và một bài học ngược
+
+Chạy `phase-reviewer` một vòng nữa **sau khi merge**. Verdict: `main` **an toàn, không blocker**,
+nhưng bắt được một **hồi quy về ĐỘ PHỦ** do chính guard tôi thêm ở vòng 6:
+
+`_bound_word_owns_the_only_figure` bail ra `None` khi **có keyword nào đứng trước chữ số đầu
+tiên** — không hỏi keyword đó có **dính** vào chữ số đó không. Hậu quả:
+
+| nhãn | trước 2 PR | sau vòng 6 |
+|---|---|---|
+| `Up to: 3000 USD` | `3000\|3000`, usd 3000 | **`None`** |
+| `Up to (3000 USD)` | `3000\|3000`, usd 3000 | **`None`** |
+| `Từ Hà Nội: 20 triệu` | `20tr`, usd 787 | **`None`** |
+
+**Bài học ngược với trực giác**: `usd_month` lấy trung bình **các bound đã biết**, nên
+`min=3000,max=3000` và `min=None,max=3000` ra **cùng một số**. Tức cái "sàn bịa" mà guard đi dẹp
+**chưa bao giờ đổi con số trên `/market`** — còn cái `None` nó trả về **thì có**: job **rơi hẳn**
+khỏi `salary_bands` và khỏi mẫu số `covered/total`. Đổi một lỗi mô hình hoá **vô hại** lấy một
+mất mát **đo được**. `None` không phải lúc nào cũng là "câu trả lời thật thà".
+
+Sửa: (1) keyword phải **dính** figure (`_KEYWORD_GAP` = chỉ dấu câu + space, không phải `.*`);
+(2) khi nhãn **không có figure nào viết-như-tiền**, lấy figure của keyword làm bound đơn —
+**chính keyword đã nói đó là đầu nào** (`_unfenced_bound`); (3) gộp keyword về **một** cặp hằng
+`_MAX_WORDS`/`_MIN_WORDS` (trước đó `_BOUND_WORD` là **bản thứ tư** chép tay, thiếu `đến`), tiện
+thể thêm `tối đa`/`không quá`/`tối thiểu` vốn thiếu ở mọi bản ⇒ `"tối đa 30 triệu"` từng ra
+`30|30`.
+
+Đo lại bằng oracle so với `main` **trước cả hai PR** trên 506 nhãn: **44% → 98%, 0 ca tệ hơn,
+0 ca mất độ phủ**.
 
 ### Verify trên DỮ LIỆU THẬT (chạy crawl mới, không chỉ nhãn tự bịa)
 
@@ -1751,6 +1781,11 @@ Nhãn lương **thật** thu được, cộng chuỗi lương nằm trong **titl
 | `IT Salary Report 2024-2025` | ITviec | `None` | `None` |
 | `$42/hr` | WWR (title) | 42, hour | 42, hour |
 | **`Up to $3500`** | **ITviec (title `SA Java - Up to $3500`)** | **3500–3500** ❌ | **None–3500** ✅ |
+
+⚠️ **Chú ý về `$42/hr` và `Up to $3500`: hai chuỗi đó nằm ở TITLE, không phải field `salary`.**
+Production chỉ gọi `salary.parse` trên `salary_raw` (`normalize.derived_facets`), **chưa bao giờ**
+trên title — nên ca dưới đây là *format có thật ngoài đời*, nhưng **hôm nay chưa có đường nào dẫn
+nó vào parser**. Đừng đọc thành "đã sửa một chart đang sai".
 
 ⇒ **Có một ca thật sự sai trên `main` và branch sửa đúng**: `$` nằm **giữa keyword và con số**, mà
 pattern cũ đòi ngay sau `up to` phải là chữ số ⇒ rơi xuống nhánh một-số và **bịa ra một cái sàn**
