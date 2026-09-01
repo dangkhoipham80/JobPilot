@@ -48,21 +48,30 @@ def test_a_tilde_is_a_range_separator_like_a_dash():
     tilde, and a CJK-aware input method turns it full-width, so the label reads
     as a range to a human and as one number to the parser — the ceiling is
     replaced by the floor with nothing to show for it."""
-    for label in ("2000～3000 USD", "1500~2500 USD", "1000 ~ 2000 USD", "2000〜3000 USD"):
+    for label, low, high in (
+        ("2000～3000 USD", 2000, 3000),
+        ("1500~2500 USD", 1500, 2500),
+        ("1000 ~ 2000 USD", 1000, 2000),
+        ("2000〜3000 USD", 2000, 3000),
+        # The real minus sign turns up too, and is not the ASCII hyphen.
+        ("2000 − 3000 USD", 2000, 3000),
+    ):
         parsed = parse_salary(label)
-        assert parsed.min != parsed.max, f"{label!r} collapsed to a single figure"
-    assert (parse_salary("2000～3000 USD").min, parse_salary("2000～3000 USD").max) == (2000, 3000)
-    # The real minus sign turns up too, and is not the ASCII hyphen.
-    assert (parse_salary("2000 − 3000 USD").min, parse_salary("2000 − 3000 USD").max) == (2000, 3000)
+        assert (parsed.min, parsed.max) == (low, high), label
 
 
 def test_a_currency_symbol_on_the_second_bound_does_not_break_the_range():
     """"$2,000 - $3,000" reported 2000-2000. The unit was allowed *after* the
     first figure but nothing was allowed *before* the second, and US boards
     write the symbol on both. Same failure as "15tr - 25tr", other end."""
-    both = parse_salary("$2,000 - $3,000")
-    assert (both.min, both.max) == (2000, 3000)
-    assert (parse_salary("$2,000-$3,000").min, parse_salary("$2,000-$3,000").max) == (2000, 3000)
+    for label in (
+        "$2,000 - $3,000",
+        "$2,000-$3,000",
+        "USD 2,000 - USD 3,000",
+        "US$ 2,000 - US$ 3,000",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (2000, 3000), label
 
 
 def test_an_open_ended_floor_does_not_invent_a_ceiling():
@@ -83,10 +92,36 @@ def test_an_open_ended_floor_does_not_invent_a_ceiling():
 def test_a_plus_that_introduces_a_bonus_is_not_an_open_range():
     """"2000 USD + phụ cấp" is a base plus allowances, not "2000 or more" — and
     it is common enough in Vietnamese ads that reading it as an open range would
-    be a guess rendered as a fact. It stays a point salary."""
+    be a guess rendered as a fact. It stays a point salary.
+
+    The signal is the space *before* the plus, not what follows it. Keying on
+    what follows gets "15tr+ gross" and "2000+ USD" backwards — both are open
+    ranges whose plus happens to precede a word."""
     for label in ("2000 USD + phụ cấp", "3000 USD + bonus"):
         parsed = parse_salary(label)
         assert parsed.min == parsed.max, f"{label!r} was read as an open range"
+    for label in ("15tr+ gross", "2000+ USD", "5.000.000+ VNĐ"):
+        assert parse_salary(label).max is None, f"{label!r} invented a ceiling"
+
+
+def test_a_bounded_keyword_only_binds_to_a_figure_written_as_money():
+    """"trên" and "dưới" are among the commonest words in Vietnamese ads and
+    almost never introduce a salary. Letting them take any following number made
+    "Lương 20 triệu, trên 2 năm kinh nghiệm" report a floor of 2 million — a
+    20tr job dropped into the "<$500" band — and made "20 triệu, dưới 30 tuổi"
+    use an *age* as the pay ceiling. Both are worse than the bare-figure branch
+    they displaced, and both fail plausibly."""
+    for label in (
+        "Lương 20 triệu, trên 2 năm kinh nghiệm",
+        "20 triệu, dưới 30 tuổi",
+    ):
+        parsed = parse_salary(label)
+        assert (parsed.min, parsed.max) == (20e6, 20e6), label
+    assert parse_salary("Lương 25 triệu (trên 3 năm KN)").min == 25e6
+
+    # ...while the same keywords still work when they do introduce money.
+    assert parse_salary("trên 30 triệu").min == 30e6
+    assert parse_salary("dưới 30 triệu").max == 30e6
 
 
 def test_min_does_not_match_inside_another_word():

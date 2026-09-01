@@ -34,15 +34,26 @@
 
   ⇒ Sửa parser lương thì **thêm case vào `test_market.py`**, và nhớ `min == max` là một tín
   hiệu đáng nghi: nó chỉ đúng cho lương một mốc ("2000 USD"), còn lại thường là range vỡ.
+- **Con số chỉ là tiền khi nó ĐƯỢC VIẾT như tiền** — dính đơn vị (`tr/triệu/k/m/usd/vnd/đ`)
+  hoặc kết thúc label. Đây là hàng rào mới, và nó có **giá bằng máu**: lần sửa trên thêm
+  `trên`/`dưới` vào `_MIN_ONLY`/`_MAX_ONLY` mà **không** đòi đơn vị ⇒ `"Lương 20 triệu, trên
+  2 năm kinh nghiệm"` báo sàn **2 triệu** (job 20tr rơi vào band `<$500`), còn `"20 triệu,
+  dưới 30 tuổi"` lấy **tuổi** làm trần lương. Tệ hơn hẳn nhánh một-số nó thay thế — nhánh đó
+  lấy số đầu tiên, mà label lương thì luôn dẫn bằng lương. `trên`/`dưới` là hai từ phổ biến
+  nhất trong boilerplate tin Việt; thêm keyword mà không neo vào đơn vị là mở lại đúng cái
+  cửa vừa đóng.
 - **Lương: không đoán.** Không có ký hiệu tiền tệ ⇒ `None` ("20 - 60" là triệu VND hay USD/giờ
   tuỳ board). "Up to 3000" ⇒ `min=None`, **không** bịa 0. Quy đổi sang USD/tháng dùng
   `salary.USD_VND_RATE` có `FX_CHECKED_ON` — là **ước tính**, UI phải nói thế.
 - **Sàn mở cũng phải để `max=None`** — đối xứng với "up to". `"160 triệu+"`, `"20 triệu trở
   lên"`, `"Trên 30 triệu"` trước đây ra `min=max=160tr`, tức **khẳng định một cái trần mà tin
-  không hề nói**, và mọi tin loại đó kéo tụt phần đỉnh của thị trường đúng bằng cái phần khiến
-  nó đáng đăng. Nhưng `"2000 USD + phụ cấp"` **không phải** sàn mở — dấu `+` đó giới thiệu một
-  khoản cộng thêm, và kiểu viết này rất phổ biến trong tin Việt. Phân biệt bằng
-  `\+(?!\s*\w)`: `+` dính số hoặc đứng trước dấu câu là sàn mở, `+` rồi tới **chữ** thì không.
+  không hề nói**. ⚠️ Nói cho đúng mức: ca này **không đổi con số nào hôm nay** — `usd_month`
+  lấy trung bình các bound *đã biết* nên `min=max=160tr` và `min=160tr, max=None` ra **cùng
+  6299.21**, mà `market.py` chỉ đọc `usd_month`. Sửa vì mô hình hoá sai, không vì biểu đồ sai.
+- **Phân biệt sàn mở với "cộng thêm" bằng KHOẢNG TRẮNG TRƯỚC dấu `+`**, không phải thứ đứng sau
+  nó: `(?<!\s)\+`. `"2000 USD + phụ cấp"` (rời) là một khoản cộng thêm — rất phổ biến trong tin
+  Việt — còn `"2000+"` (dính) là sàn mở. Bản đầu nhìn ký tự **sau** dấu `+` và vì thế đọc ngược
+  `"15tr+ gross"` với `"2000+ USD"`: cả hai đều là sàn mở mà lại bị bịa trần trở lại.
 - **Đổi parser thì phải `backfill --force`.** `salary_range` là **dữ liệu đã ghi** trong
   `payload`, không tính lại lúc đọc — sửa regex xong mà không backfill thì `/market` vẫn vẽ
   bằng số cũ và mọi verify đều "xanh" một cách vô nghĩa.

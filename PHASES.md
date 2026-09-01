@@ -1492,7 +1492,10 @@ Không có lỗi, không có cảnh báo — chỉ là một cái trần bị th
    một bug với ca `15tr`, chỉ khác đầu.
 3. **Sàn mở bịa ra trần.** `160 triệu+` ra `min=max=160tr` — **khẳng định một cái trần mà tin
    không hề nói**. Đối xứng với luật "up to 3000 ⇒ min=None" đã có sẵn: bound không được nói thì
-   để `None`. Mỗi tin loại này kéo tụt phần đỉnh thị trường đúng bằng cái phần khiến nó đáng đăng.
+   để `None`. ⚠️ Nói cho đúng mức: ca này **không đổi con số nào hôm nay**, vì `usd_month` lấy
+   trung bình các bound *đã biết* nên cả hai cách đều ra 6299.21, và `market.py` chỉ đọc
+   `usd_month`. Sửa vì mô hình hoá sai, **không** vì biểu đồ đang sai — hai ca range ở trên mới
+   là chỗ con số thật sự đổi.
 4. **Bug thứ tư tự tìm thấy khi đang sửa**: `_MIN_ONLY` không có `\b` nên `min` khớp vào giữa chữ
    "ad**min**" ⇒ `"Lương admin 5 triệu"` thành sàn mở 5tr. Đã thêm `\b` cho mọi keyword.
 
@@ -1501,9 +1504,13 @@ thiệu một khoản cộng thêm, và kiểu viết này rất phổ biến tr
 lên" là **đổi một con số sai lấy một con số sai khác**. Phân biệt bằng `\+(?!\s*\w)`: `+` dính số
 hoặc đứng trước dấu câu (`160 triệu+ (gross)`) là sàn mở; `+` rồi tới **chữ** thì không.
 
+Bản đầu key vào **thứ đứng sau** dấu `+` (`\+(?!\s*\w)`) và vì thế đọc ngược `"15tr+ gross"` với
+`"2000+ USD"` — cả hai đều là sàn mở mà vẫn bị bịa trần. Tín hiệu đúng là **khoảng trắng đứng
+trước** dấu `+`: `(?<!\s)\+`. Dính số = sàn mở, rời ra = khoản cộng thêm.
+
 ### Verify
 
-849 test xanh (844 + 5 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
+850 test xanh (844 + 6 mới). Verify qua **đường production `derived_facets()`**, không chỉ gọi
 `parse()` — vì thứ đi vào `payload` là hàm đó. `usd_month` của ca range sửa từ **2000 → 2500**,
 tức **+25%** vào đúng con số dựng nên median của `/market`.
 

@@ -50,14 +50,29 @@ _SEP = r"-|–|—|−|~|～|〜|to|đến"
 # bounds. A ceiling quietly replaced by the floor is the kind of wrong that looks
 # right -- see the note on this failure in jobpilot/analytics/CLAUDE.md.
 _UNIT = r"(?:\s*(?:tr|triệu|m|k|usd|vnd|vnđ|\$))?"
-_SYMBOL = r"(?:\$\s*)?"
+_SYMBOL = r"(?:(?:us\s*\$|\$|usd|vnd|vnđ)\s*)?"
 _RANGE = re.compile(rf"({_NUM}){_UNIT}\s*(?:{_SEP})\s*{_SYMBOL}({_NUM})", re.I)
 
+# A figure only counts as money when it is written as money -- attached to a
+# currency or scale marker, or ending the label.
+#
+# This is what keeps the bounded forms below off the numbers in the boilerplate
+# around them. "trên" and "dưới" are two of the commonest words in Vietnamese
+# ads and they almost never introduce a salary: "Lương 20 triệu, trên 2 năm kinh
+# nghiệm" would otherwise report a floor of 2 *million* and drop a 20tr job into
+# the "<$500" band, and "20 triệu, dưới 30 tuổi" would take an **age** as the
+# pay ceiling. Both are worse than the single-number branch they replaced, and
+# both fail silently and plausibly -- the exact shape this module keeps losing
+# to. Requiring the unit sends them back to the bare-figure branch, which picks
+# the salary because the salary is what the label leads with.
+_MONEY = r"(?:tr|triệu|k|m|million|usd|vnd|vnđ|đ)"
+_BOUND = rf"\$?\s*({_NUM})\s*(?:{_MONEY}\b|$)"
+
 # "Up to 3000 USD", "tới 25 triệu", "dưới 30 triệu"
-_MAX_ONLY = re.compile(rf"\b(?:up\s*to|tới|đến|max|dưới|under|below)\s*({_NUM})", re.I)
+_MAX_ONLY = re.compile(rf"\b(?:up\s*to|tới|đến|max|dưới|under|below)\s*{_BOUND}", re.I)
 # "From 2000 USD", "từ 15 triệu", "trên 30 triệu", "at least 2000 USD"
 _MIN_ONLY = re.compile(
-    rf"\b(?:from|từ|starting|min|at\s*least|ít\s*nhất|trên)\s*({_NUM})", re.I
+    rf"\b(?:from|từ|starting|min|at\s*least|ít\s*nhất|trên)\s*{_BOUND}", re.I
 )
 
 # The floor written as a suffix: "160 triệu+", "15tr+", "20 triệu trở lên".
@@ -67,14 +82,18 @@ _MIN_ONLY = re.compile(
 # asserts a ceiling the ad never gave, and every such ad then understates the top
 # of the market by exactly the amount that made it worth posting.
 #
-# ``\+(?!\s*\w)`` is what keeps "2000 USD + phụ cấp" out of here. That plus sign
+# ``(?<!\s)\+`` is what keeps "2000 USD + phụ cấp" out of here. That plus sign
 # introduces an extra component, not an open range, and it is common enough in
 # Vietnamese ads that treating it as "or more" would be a second guess dressed as
-# a fact. A trailing "+" bound to the figure, or one before punctuation such as
-# "160 triệu+ (gross)", is the open-ended reading.
+# a fact.
+#
+# The signal is the space *before* the plus, not what follows it: "2000+" is bound
+# to the figure and open-ended, "2000 + phụ cấp" is detached and additive. Keying
+# on what follows instead gets "15tr+ gross" and "2000+ USD" backwards — both are
+# open-ended, and both would have gone back to inventing a ceiling.
 _MIN_SUFFIX = re.compile(
-    rf"({_NUM})\s*(?:tr|triệu|m|k|usd|vnd|vnđ|\$)?\s*"
-    rf"(?:\+(?!\s*\w)|trở\s*lên|or\s*more|and\s*up|or\s*above)",
+    rf"({_NUM})\s*(?:tr|triệu|m|k|usd|vnd|vnđ|\$)?"
+    rf"(?:(?<!\s)\+|\s*(?:trở\s*lên|or\s*more|and\s*up|or\s*above))",
     re.I,
 )
 _ANY_NUM = re.compile(_NUM)
