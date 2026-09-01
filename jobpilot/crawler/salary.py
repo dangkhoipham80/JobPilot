@@ -32,6 +32,12 @@ Three known limitations, written down rather than half-fixed:
   money, and the fallback then takes the first figure in the string. The
   fallback is right far more often than not -- salary labels lead with the
   salary -- but it is a heuristic, not a guarantee.
+
+  The same asymmetry limits the bonus rule. "Lương 20 triệu, thưởng 500k+" is
+  handled, because the salary comes first and is money; reversed, "Thưởng 500k+,
+  lương 20 triệu" reports the *bonus* as a floor of 500 million. Telling pay from
+  other money needs to read the words around the figure, which nothing here
+  does.
 * **A marker detached from both bounds is not seen.** "Lương USD, 1,500 - 2,500"
   gives 1500-1500, because the fence wants a marker touching one of the bounds
   and this one sits in front of the whole phrase. Allowing punctuation between
@@ -119,10 +125,23 @@ _RANGE = re.compile(
 )
 _RANGE_MARKERS = ("lead1", "unit1", "lead2", "unit2")
 
-# "Up to 3000 USD", "tới 25 triệu", "dưới 30 triệu"
-_MAX_ONLY = re.compile(rf"\b(?:up\s*to|tới|đến|max|dưới|under|below)\s*{_BOUND}", re.I)
-# "From 2000 USD", "từ 15 triệu", "trên 30 triệu", "at least 2000 USD"
-_MIN_ONLY = re.compile(rf"\b(?:from|từ|starting|min|at\s*least|ít\s*nhất|trên)\s*{_BOUND}", re.I)
+# The bound keywords, written once. Every pattern that needs them is built from
+# these two, for the same reason the currency markers are: this module has twice
+# paid for a hand-copied second list that then drifted from the first.
+#: "Up to 3000 USD", "tới 25 triệu", "dưới 30 triệu", "tối đa 30 triệu"
+_MAX_WORDS = r"(?:up\s*to|tới|đến|max|tối\s*đa|không\s*quá|dưới|under|below)"
+#: "From 2000 USD", "từ 15 triệu", "trên 30 triệu", "at least 2000 USD"
+_MIN_WORDS = r"(?:from|từ|starting|min|at\s*least|ít\s*nhất|tối\s*thiểu|trên)"
+
+#: What may sit between a bound keyword and its figure. Punctuation and space
+#: only -- boards write "Up to: 3000 USD" and "Up to (3000 USD)", and requiring
+#: the two to be flush dropped both. Deliberately *not* `.*`: a word in the gap
+#: means the keyword is talking about something else, as in "Từ Hà Nội: 20
+#: triệu", where "Từ" introduces a city and not a floor.
+_KEYWORD_GAP = r"[\s:：,(\[\-–]*"
+
+_MAX_ONLY = re.compile(rf"\b{_MAX_WORDS}{_KEYWORD_GAP}{_BOUND}", re.I)
+_MIN_ONLY = re.compile(rf"\b{_MIN_WORDS}{_KEYWORD_GAP}{_BOUND}", re.I)
 
 #: "or more", spelled out. The trailing guard keeps "and up" from matching
 #: inside "and updated benefits".
@@ -158,11 +177,19 @@ _ANY_NUM = re.compile(_NUM)
 #: "a figure written as money", for asking whether one appears in a prefix.
 _BOUND_ONLY = re.compile(_BOUND, re.I)
 
-#: The bound keywords on their own, with no demand that a figure follow them.
-#: Used to tell "this label states a bound we failed to read" apart from "this
-#: label states no bound", which are different answers -- see :func:`parse`.
+#: A bound keyword immediately in front of a figure, capturing which kind of
+#: bound it is and the figure itself, with no demand that the figure be money.
+#:
+#: Built from the same two word lists as the patterns above, and it has to stay
+#: that way: a keyword added to _MAX_WORDS but forgotten here would silently
+#: switch off the fallback for that keyword alone.
+#:
+#: ``_KEYWORD_GAP`` is what makes it *immediately* in front. Matching a keyword
+#: anywhere earlier in the label cost real coverage: "Từ Hà Nội: 20 triệu" has a
+#: "Từ" that introduces a city, and treating it as a bound threw the salary away.
 _BOUND_WORD = re.compile(
-    r"\b(?:up\s*to|tới|max|dưới|under|below|from|từ|starting|min" r"|at\s*least|ít\s*nhất|trên)\b",
+    rf"\b(?:(?P<ceiling>{_MAX_WORDS})|(?P<floor>{_MIN_WORDS}))"
+    rf"{_KEYWORD_GAP}(?P<figure>{_NUM})",
     re.I,
 )
 
@@ -245,18 +272,27 @@ def _number(raw: str, millions: bool) -> float | None:
     return value
 
 
-def _bound_word_owns_the_only_figure(s: str) -> bool:
-    """True when the label declares a bound whose figure we could not read.
+def _unfenced_bound(s: str) -> re.Match | None:
+    """A bound keyword and its figure, when nothing better is on offer.
 
-    Only when the bare-figure fallback would answer with a number that sits
-    *after* the keyword -- that number is the one the keyword was talking about,
-    and reporting it as ``min == max`` invents the bound the label declared open.
-    A keyword later in the label ("Lương 20 triệu, trên 2 năm kinh nghiệm") is
-    not talking about the leading figure, so that one is still answered.
+    The fence exists because a figure next to "trên" is usually years, not pay.
+    But when the label holds *no* money-written figure at all, there is nothing
+    to prefer over the one the keyword introduced -- and the keyword itself says
+    which end it is: "Lương USD, up to 3000" is a ceiling of 3000, not a point
+    salary of 3000, and not an unknown.
+
+    Consulted only after every fenced pattern has failed, and only when
+    :data:`_BOUND_ONLY` finds no money anywhere. Otherwise "Lương 20 triệu, trên
+    2 năm kinh nghiệm" would come back with a floor of 2 million, which is the
+    failure the fence was built for.
+
+    Returning None here instead was tried and was a straight loss: `usd_month`
+    averages the *known* bounds, so the invented floor it avoided never changed
+    the number, while the None dropped the job out of the chart altogether.
     """
-    keyword = _BOUND_WORD.search(s)
-    first = _ANY_NUM.search(s)
-    return keyword is not None and first is not None and first.start() > keyword.start()
+    if _BOUND_ONLY.search(s) is not None:
+        return None
+    return _BOUND_WORD.search(s)
 
 
 def _leading_suffix_floor(s: str) -> re.Match | None:
@@ -326,15 +362,15 @@ def parse(text: str | None) -> Salary | None:
         low = num(_figure(m))
     elif (m := _leading_suffix_floor(s)) is not None:
         low = num(_figure(m))
-    elif _bound_word_owns_the_only_figure(s):
-        # The label says "up to" or "từ" but no figure beside it reads as money.
-        # Falling through would hand the bare-figure branch the job, and that
-        # branch answers with min == max — inventing the very bound the label
-        # declared open. "Lương USD, up to 3000" came back as a floor *and* a
-        # ceiling of 3000, which contradicts this module's first stated rule.
-        # Not knowing is the honest answer, and it is the one the caller can
-        # act on: `salary_range` stays None instead of holding a made-up floor.
-        return None
+    elif (m := _unfenced_bound(s)) is not None:
+        # Nothing in this label is written as money, so the keyword's own figure
+        # is the best reading available — and the keyword says which end it is.
+        # Letting the bare-figure branch answer instead would give min == max,
+        # inventing the bound the label declared open.
+        if m.group("ceiling"):
+            high = num(m.group("figure"))
+        else:
+            low = num(m.group("figure"))
     elif (m := _ANY_NUM.search(s)) is not None:
         # A bare figure with no modifier is a point salary, not a range, so both
         # bounds are the same number on purpose.

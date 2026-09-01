@@ -78,15 +78,27 @@
   sửa 3 ca detached-marker nhưng đẻ ra `"Lương USD, 2 - 3 năm kinh nghiệm"` → `2–3`. Giữ fence
   chặt, ghi thành giới hạn. **Đừng nới lại mà không đo.**
 - **"Là tiền" ≠ "là TIỀN LƯƠNG".** Hàng rào chỉ chứng nhận một figure được *viết như tiền*; nó
-  không biết đó là lương hay **thưởng/phụ cấp**. `"Lương 20 triệu, thưởng 500k+"` từng ra sàn
-  **500 triệu** (đẩy job lên đỉnh biểu đồ, tệ hơn mọi ca đẩy-xuống-đáy trước đó). Luật tie-break:
+  không biết đó là lương hay **thưởng/phụ cấp**. ⚠️ Luật hiện tại chỉ đỡ được **một chiều**:
+  `"Thưởng 500k+, lương 20 triệu"` (thưởng đứng trước) **vẫn** ra sàn 500 triệu. Phân biệt
+  lương với tiền-khác cần đọc **chữ quanh con số**, thứ mà module này không làm.
+  `"Lương 20 triệu, thưởng 500k+"` từng ra sàn **500 triệu** (đẩy job lên đỉnh biểu đồ, tệ hơn mọi ca đẩy-xuống-đáy trước đó). Luật tie-break:
   một open-floor chỉ được tính khi **không có figure viết-như-tiền nào đứng trước nó**.
   ⚠️ Phân biệt **theo vị trí** ("phải là số đầu tiên") là SAI — đã đo: sửa 4 ca, **hỏng 12 ca**
   kiểu `"Thưởng 2 tháng, 160 triệu+"` (ở đó floor chính là lương). `"2 tháng"`/`"85%"` không phải
   tiền, `"20 triệu"` thì có — đó mới là tín hiệu.
-- **Keyword bound đọc không ra figure tiền ⇒ trả `None`, đừng để `_ANY_NUM` trả lời thay.** Nhánh
-  đó trả `min == max`, tức **bịa ra đúng cái bound mà tin tuyên bố là mở**: `"Lương USD, up to
-  3000"` → `3000|3000`. Đó là gương ngược của luật `"up to ⇒ min=None"` ghi ngay đầu module.
+- **Keyword bound đọc không ra figure tiền: đừng để `_ANY_NUM` trả lời thay** (nó trả
+  `min == max`, tức **bịa ra đúng cái bound mà tin tuyên bố là mở**: `"Lương USD, up to 3000"` →
+  `3000|3000`, gương ngược của luật `"up to ⇒ min=None"`). ⚠️ Nhưng **trả `None` cũng SAI** — đã
+  thử và đo được là **lỗ ròng**: `usd_month` lấy trung bình các bound *đã biết* nên cái sàn bịa
+  kia **chưa bao giờ đổi con số**, còn `None` thì **đá hẳn job khỏi `salary_bands` và khỏi
+  `covered/total`**. Câu trả lời đúng: chính **keyword đã nói đó là đầu nào**, nên khi nhãn không
+  có figure nào viết-như-tiền thì lấy figure của keyword làm bound đơn (`_unfenced_bound`).
+- **Keyword phải DÍNH vào figure nó bound** (`_KEYWORD_GAP`: chỉ dấu câu + khoảng trắng, **không**
+  phải `.*`). Nhận keyword ở bất kỳ đâu phía trước làm mất lương thật: `"Từ Hà Nội: 20 triệu"` —
+  `"Từ"` ở đây giới thiệu một **thành phố**. Và có chữ chen giữa thì keyword đang nói về thứ khác.
+- **Danh sách keyword cũng chỉ được có MỘT bản** (`_MAX_WORDS`/`_MIN_WORDS`), y như `_LEAD`/
+  `_MONEY`. Đã có lúc `_BOUND_WORD` là **bản thứ tư** chép tay, thiếu `đến`, và thiếu hẳn
+  `tối đa`/`không quá`/`tối thiểu` ⇒ `"tối đa 30 triệu"` vẫn ra `30|30` (bịa sàn).
 - **Đo differential thì `main` phải lấy bằng `git show main:<file>`.** `git stash` **chỉ cất phần
   chưa commit**, nên trên một branch đã có commit thì "bản main" dựng theo cách đó thực ra là
   *HEAD trừ vài sửa đang dở* — và mọi kết luận "không có regression" rút ra từ đó là vô nghĩa.
