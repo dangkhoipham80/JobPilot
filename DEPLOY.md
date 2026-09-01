@@ -82,13 +82,18 @@ Ba lớp phòng thủ hiện có, theo thứ tự quan trọng:
 | Yêu cầu | Số tối thiểu | Vì sao |
 |---|---|---|
 | RAM | 2 GB (+2 GB swap) | Chromium (~0.5–1 GB lúc crawl) + Postgres + xelatex |
-| Đĩa | **25 GB** | ảnh Docker LaTeX ~3.5 GB, Chromium ~0.5 GB, OS ~5 GB, còn lại cho DB |
+| Đĩa | **15 GB** | tectonic ~10 MB + cache ~50 MB, Chromium ~0.5 GB, OS ~5 GB, còn lại cho DB |
 | CPU | 2 vCPU | build PDF là CPU-bound, nhưng chỉ chạy từng lúc |
-| Kiến trúc | **x86-64** | `csmith/awesome-cv-builder` **chỉ có amd64** — ARM phải tự build image TeXLive |
+| Kiến trúc | x86-64 hoặc ARM64 | tectonic có binary cho cả hai |
 | Vị trí | **Việt Nam** | ITviec/TopCV/VietnamWorks sau Cloudflare; IP datacenter nước ngoài bị challenge nhiều hơn |
 
-⚠️ Nhiều gói 50–66k/tháng chỉ có 20 GB đĩa — **chật**, LaTeX image ăn hết một phần
-lớn. Nhắm gói ~100–120k có ≥25 GB NVMe.
+Đĩa và kiến trúc **đã nới ra** từ khi build PDF bỏ Docker: trước đây cần 25 GB
+(ảnh `csmith/awesome-cv-builder` 3.18 GB) và **bắt buộc** x86-64 vì ảnh đó chỉ có
+amd64. Giờ engine mặc định là tectonic — một binary tĩnh ~10 MB — nên gói
+50–66k/tháng 20 GB cũng đủ, và ARM64 dùng được.
+
+⚠️ Nếu **vẫn** muốn chạy engine Docker (`cv.engine: docker`) thì các con số cũ
+quay lại: ≥25 GB đĩa và **chỉ** x86-64.
 
 ## 2. Cài trên VPS
 
@@ -100,14 +105,23 @@ sudo timedatectl set-timezone Asia/Ho_Chi_Minh
 timedatectl | grep "Time zone"
 
 sudo adduser --system --group --home /opt/jobpilot jobpilot
-sudo apt update && sudo apt install -y git curl postgresql docker.io python3.11-venv
+sudo apt update && sudo apt install -y git curl postgresql python3.11-venv
 
 # Node 20 cho việc build dashboard trên chính host
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs
 
-# jobpilot phải gọi được docker (build PDF) — không có nhóm này thì
-# tailor/build.py raise BuildError và KHÔNG có fallback nào cả.
-sudo usermod -aG docker jobpilot
+# tectonic — engine build PDF. Một binary tĩnh, không daemon, không nhóm user,
+# không image. Cài vào /usr/local/bin cho cả `jobpilot` lẫn root cùng thấy.
+#
+# Ghim hẳn tag, ĐỪNG dùng `releases/latest/download/<tên-có-version>`: hai thứ đó
+# mâu thuẫn nhau — khi upstream lên 0.18 thì asset tên 0.17.0 không còn nằm trong
+# `latest` nữa, curl trả rỗng, và lỗi hiện ra dưới dạng `tar: unexpected EOF`.
+# Tải rồi mới giải nén (không pipe thẳng): pipe thì curl fail nhưng tar vẫn chạy.
+ARCH=$(uname -m)   # x86_64 hoặc aarch64
+curl -fsSL -o /tmp/tectonic.tar.gz \
+  "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.17.0/tectonic-0.17.0-${ARCH}-unknown-linux-musl.tar.gz"
+sudo tar xzf /tmp/tectonic.tar.gz -C /usr/local/bin tectonic && rm /tmp/tectonic.tar.gz
+tectonic --version    # phải in ra "Tectonic 0.17.0"
 
 sudo -u postgres psql -c "CREATE DATABASE jobpilot;"
 sudo -u postgres psql -c "CREATE USER jobpilot WITH PASSWORD '<đặt-mật-khẩu>';"
@@ -123,8 +137,13 @@ git clone <repo> .
 python3.11 -m venv .venv
 .venv/bin/pip install -e '.[all]'
 .venv/bin/playwright install --with-deps chromium   # cần cho ITviec/TopCV/VietnamWorks
-docker pull csmith/awesome-cv-builder                # ~3.5 GB, kéo trước cho đỡ timeout lần đầu
 ```
+
+Không có bước "pull image" nữa. Tectonic tải các gói TeX **document thật sự dùng**
+ở lần build đầu (~50 MB, mất thêm vài chục giây) rồi cache lại; từ lần hai trở đi
+build chạy offline. Cache nằm ở `~/.cache/Tectonic` của user chạy service — nghĩa
+là **build thử một lần bằng đúng user `jobpilot`**, đừng warm cache bằng root rồi
+tưởng service đã sẵn sàng.
 
 `.env` (chmod 600, **không bao giờ commit**):
 
@@ -204,8 +223,13 @@ Theo đúng luật trong `CLAUDE.md`: test xanh không chứng minh nó chạy.
 - [ ] Dashboard load, chấm **LIVE** sáng (WS đã auth xong — nó chỉ sáng khi nhận
       được `hello`, không phải khi socket vừa mở).
 - [ ] Chạy 1 crawl, xem progress chảy realtime ở trang Runs.
-- [ ] Build 1 CV PDF → kiểm đường Docker. Chạy **lần thứ hai** nữa: lần 2 là lúc
-      lộ ra lỗi quyền file nếu container ghi PDF bằng root.
+- [ ] Build 1 CV PDF → kiểm đường LaTeX. Chạy **lần thứ hai** nữa: lần 1 tectonic
+      còn đang tải gói TeX về cache (chậm, cần mạng), lần 2 mới là tốc độ thật và
+      là lúc lộ ra lỗi quyền ghi cache. Nếu đang chạy `cv.engine: docker` thì lần 2
+      còn là lúc lộ lỗi quyền file khi container ghi PDF bằng root.
+- [ ] **Đọc lại PDF vừa build, đừng chỉ xem nó tồn tại**: `jobpilot cv build` in số
+      trang, và nếu CV có tiếng Việt thì mở PDF kiểm dấu. Thiếu glyph là một khoảng
+      trắng im lặng, không phải lỗi build (`jobpilot/cv/CLAUDE.md`).
 - [ ] Tailor 1 job → kiểm LLM key.
 - [ ] Apply 1 job ở `dry_run` → **xác nhận không có mail nào rời máy**.
 - [ ] Vào trang Settings: 3 gate email phải hiện **khoá** ("host only"), không bấm được.

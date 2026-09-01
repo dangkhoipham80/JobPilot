@@ -47,6 +47,47 @@ list. `template.json`:
   không có glyph tiếng Việt và chỗ thiếu glyph là một **khoảng trắng im lặng** trong PDF, không
   phải lỗi build. Verify bằng cách đọc lại text layer (`pypdf`), đừng nhìn số trang rồi kết luận.
 
+### Hai engine build PDF: tectonic (mặc định) và docker (đường lui)
+
+`cv.engine` = `auto` | `tectonic` | `docker`; `auto` ưu tiên tectonic, không có thì rơi về
+docker, không có cả hai thì `BuildError` chỉ cách cài **cả hai**. Code: `tailor/build.py`.
+
+**Tìm tectonic: PATH trước, rồi `tools/` trong repo** (`_find_executable`). Thả binary vào `tools/`
+là chạy, **không cần config** — cố ý, vì `cv.tectonic_bin` với đường dẫn tuyệt đối chỉ đúng trên
+đúng một máy, và khi nó sai thì `auto` **lặng lẽ** rơi về Docker: build vẫn ra PDF nên không ai
+biết engine đã đổi. Chỉ **tên lệnh trần** mới được hưởng fallback `tools/`; một path đã cấu hình mà
+sai thì báo lỗi, không im lặng chạy file khác trùng tên.
+⚠️ Test nào stub `shutil.which` **phải** trỏ `build.REPO_ROOT` sang thư mục rỗng (fixture autouse
+`_empty_tools_dir` ở `test_build.py`), nếu không máy đã tải binary sẽ cho kết quả khác CI.
+
+- **Chọn tectonic chỉ vì chi phí cài, không phải vì output.** Đã đo trên **Master CV thật** +
+  sample có tiếng Việt, cả hai template: **cùng số trang, cùng tập từ trong text layer, cùng
+  verdict của `ats.py`** (trừ đúng một khác biệt, xem dưới). Tectonic ~10 MB binary tĩnh +
+  ~50 MB cache, không daemon; ảnh docker 3.18 GB + phải nhớ bật Docker Desktop.
+- **Khác biệt thật DUY NHẤT: template `plain` build bằng docker nhả ra 2 ligature `ﬁ`, tectonic
+  thì không** ⇒ finding `ligatures` của `ats.py` **biến mất** khi đổi engine. Đây là *tốt hơn*
+  (recruiter search "office" không khớp "oﬃce"), nhưng nó có nghĩa: **báo cáo ATS của cùng một
+  CV phụ thuộc engine đã build nó**. Thấy finding đổi mà JSON không đổi thì nghi engine trước,
+  đừng đi sửa template.
+- **`fontawesome.sty` + `awesome-cv.cls` đã phải sửa để chạy được tectonic** — cả hai là file
+  vendor, sửa tối thiểu, có comment tại chỗ:
+  - `.sty` nạp FontAwesome **theo tên**, chỉ tìm thấy khi font được cài ở mức hệ thống. Ảnh
+    docker có sẵn nên đường này chạy suốt và `fonts/FontAwesome.ttf` trong repo **chưa bao giờ
+    được dùng**. Engine trần thì chết ngay. Nay ưu tiên `Path=fonts/`.
+  - Sửa xong thì lộ lỗi thứ hai: `.cls:159` định nghĩa **lại** `\FA`. fontspec của TeX Live cũ
+    (docker) cho ghi đè im lặng, fontspec mới (tectonic) báo `Command '\FA' already defined`.
+    `\renewfontfamily` là cái bẫy — TeX Live trong ảnh docker **không có** lệnh đó, dùng nó là
+    đổi lỗi tectonic lấy lỗi docker. Đang dùng `\let\FA\relax` trước `\newfontfamily`: cả hai
+    đều đọc là "chưa định nghĩa". **Đổi bất cứ dòng nào trong hai file này thì phải build lại
+    bằng CẢ HAI engine**, vì mỗi engine chỉ bắt được một nửa số lỗi.
+- **Tectonic để lại `.log`, docker thì không** — nên `build_cv()` xoá `.log` cùng lúc với
+  `.pdf`. Không xoá thì: build bằng tectonic (có log) → đổi sang docker → thiếu pypdf →
+  `_pages_from_log` đọc log cũ và báo số trang của **một PDF đã không còn tồn tại**.
+- **Log của tectonic ghi `Output written on cv.xdv`, không phải `cv.pdf`.** Regex hiện khớp
+  được chỉ vì phần tên file là wildcard — có test ghim, đừng "dọn" nó chặt lại.
+- Build **lần đầu** cần mạng (tectonic tải gói TeX về cache) và chậm; lần sau offline, ~1–2s.
+  Cache theo **user**, nên warm bằng root rồi tưởng service chạy được là một cái bẫy deploy.
+
 ### Sửa Master CV bằng câu lệnh — guardrail ở đây NGƯỢC với tailor
 
 `POST /api/cv/master/edit` (chỉ master; scope tailored trả 400 và chỉ sang

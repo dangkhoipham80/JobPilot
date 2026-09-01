@@ -199,7 +199,7 @@ async def delete_tex(scope: str, db: Session = Depends(get_db)) -> CvTexOut:
 
 @router.post("/{scope}/compile", response_model=CvCompileOut)
 async def compile_cv(scope: str, db: Session = Depends(get_db)) -> CvCompileOut:
-    """Build the current version to PDF via the Docker LaTeX image (slow: ~10-30s)."""
+    """Build the current version to PDF via the configured LaTeX engine (slow: ~10-30s)."""
     doc = _load(db, scope)
     row = store.latest_version(db, scope)
     try:

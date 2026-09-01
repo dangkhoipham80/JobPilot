@@ -5,7 +5,7 @@ Hướng dẫn cho Claude Code khi làm việc trong repo này.
 ## Repo là gì
 
 Hai lớp:
-1. **CV Template** — bộ khung LaTeX [Awesome-CV](https://github.com/posquit0/Awesome-CV) (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`), build bằng Docker. Repo **chỉ chứa khung**, không chứa CV nào.
+1. **CV Template** — bộ khung LaTeX [Awesome-CV](https://github.com/posquit0/Awesome-CV) (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`), build bằng tectonic (Docker là đường lui). Repo **chỉ chứa khung**, không chứa CV nào.
 2. **JobPilot (đang xây)** — agent crawl job (ITviec/TopCV/VietnamWorks) → quản lý qua **Web Dashboard local** (control plane chính; Slack là kênh phụ) → tailor CV → duyệt/sửa → apply hybrid. Stack: FastAPI + React + PostgreSQL. Xem `PLAN.md` (kiến trúc) và `SKILL.md` (logic tailor).
 
 ## Đọc trước khi làm
@@ -71,12 +71,18 @@ Ràng buộc:
 
 ### Build CV (Master hoặc tailored)
 ```bash
-# Windows PowerShell (tại thư mục chứa cv.tex)
-docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder
-# Linux/macOS/WSL
-docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder
+# Engine mặc định: tectonic (một binary tĩnh, không cần daemon). Tại thư mục chứa cv.tex:
+tectonic -X compile cv.tex
+# Docker vẫn chạy được — engine dự phòng, xem `cv.engine`:
+docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder            # Windows PowerShell
+docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder # Linux/macOS/WSL
 # Output: cv.pdf
 ```
+`cv.engine` = `auto` (mặc định, ưu tiên tectonic) | `tectonic` | `docker`. Tìm tectonic theo thứ tự
+**PATH → `tools/` trong repo** (thư mục này đã gitignore), nên **thả binary vào `tools/` là xong,
+không cần config gì**. `cv.tectonic_bin` vẫn dùng được nhưng một đường dẫn tuyệt đối chỉ đúng trên
+một máy — sai thì `auto` **lặng lẽ** build bằng Docker; `jobpilot cv build` in ra engine đã chạy để
+chuyện đó không còn im lặng. Hai engine ra **cùng PDF** — luật + bẫy ở `jobpilot/cv/CLAUDE.md`.
 
 ### JobPilot (khi đã scaffold — xem cấu trúc ở PLAN.md §8)
 ```bash
@@ -129,7 +135,7 @@ make dev
 - **Web/Frontend**: React + Vite + TS + TailwindCSS + shadcn/ui; charts theo skill `dataviz`, UI theo skill `frontend-design` (palette nhất quán light/dark, có cá tính riêng). **uvicorn luôn bind `127.0.0.1`** — ra ngoài chỉ qua `tailscale serve` proxy vào loopback, **không bao giờ** bind `0.0.0.0`, không mở port firewall, không `tailscale funnel`. Bundle chứa token nên tầng mạng mới là auth thật (`jobpilot/api/CLAUDE.md`). DB migrations bằng Alembic — đổi schema phải tạo migration, không sửa tay.
 - **Chạy service thì `--workers 1`, không `--reload`.** `TaskQueue` là ThreadPoolExecutor **trong tiến trình** (`orchestrator.py`, bind ở lifespan), nên worker thứ hai = hàng đợi thứ hai + WS manager thứ hai: guard "1 task/1 job" thôi giữ, và progress của task chạy ở worker A không tới dashboard đang nối worker B. Cả hai đều hỏng **im lặng** — `cli serve` vì thế **từ chối** `--workers > 1` thay vì cảnh báo.
 - **CV inline markup**: text trong `CvDocument` **không bao giờ** chứa LaTeX thô. Dùng subset markdown: `**bold**` → `\textbf`, `` `x` `` → `\tech`, `~x~` → `\techfe`, `[label](url)` → `\hreficon`. Mọi thứ còn lại được escape (`jobpilot/cv/latex.py`). Agent tailor (Phase 5) phải xuất đúng subset này.
-- **CV data flow (quan trọng)**: nguồn sự thật là **JSON structured** (CV Studio + agent tailor cùng dùng) → serialize ra `.tex` qua Jinja2 → Docker build PDF. Không sửa `.tex` tailored bằng tay ngoài luồng này (trừ raw-mode trong Studio, có cảnh báo mất round-trip). Mọi lần save = 1 row `cv_versions` (author = user|agent).
+- **CV data flow (quan trọng)**: nguồn sự thật là **JSON structured** (CV Studio + agent tailor cùng dùng) → serialize ra `.tex` qua Jinja2 → LaTeX build PDF (`cv.engine`). Không sửa `.tex` tailored bằng tay ngoài luồng này (trừ raw-mode trong Studio, có cảnh báo mất round-trip). Mọi lần save = 1 row `cv_versions` (author = user|agent).
 - **Verify thay đổi runtime**: sau khi sửa scraper/tailor/apply, chạy thử flow tương ứng và quan sát output thật, đừng chỉ dựa vào test. Sau khi sửa template Jinja2 hoặc `cv/latex.py` phải build lại PDF để chắc không lỗi LaTeX.
 
 ## Trạng thái hiện tại
@@ -181,9 +187,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | deploy | FastAPI serve `web/dist` **same-origin** (API xuống `/api`), siết token + khoá gate email, systemd/timer + backup, CI/CD | `api/static.py`, `api/security.py`, `deploy/`, `.github/workflows/ci.yml`, `DEPLOY.md` |
 | cv-A | Template thứ hai **`plain`** (ATS-first, bỏ `.cls`) + picker trong Studio; template tự khai `template.json` | `cv/templates/plain/`, `cv/render.py`, `web/src/components/cv/TemplatePicker.tsx` |
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
+| cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** mặc định, Docker thành đường lui (`cv.engine`); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
 | i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 17 namespace / 751 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 
-844 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+858 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 Docker LaTeX build (Master + tailored), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
@@ -212,6 +219,12 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
 - **Raw LaTeX đã có** (bẫy preview ở `PHASES.md`): `cv_versions.meta.tex_override` đè cách JSON *serialize*, không thay JSON. **Một chiều** — không gì parse `.tex` về JSON — nên khi nó còn hiệu lực thì sửa field **không tới được PDF**, UI phải nói ra. Lưu document không xoá nó; `rollback` mang nó theo.
 - **CV Studio còn thiếu**: HTML live preview, theme gallery. Template thì **đã có 2** (`awesome_cv`,
   `plain`) và thêm cái nữa = thêm một thư mục — luật + bẫy ở `jobpilot/cv/CLAUDE.md`. Diff 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới = thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
+- **Build PDF cần một engine LaTeX trên máy**: `tectonic` (mặc định, một binary tĩnh ~10 MB,
+  không daemon) hoặc `docker`. Không có cả hai thì `BuildError` chỉ cách cài **cả hai**;
+  `cv.engine` = `auto|tectonic|docker`, `cv.tectonic_bin` trỏ tới binary để ngoài PATH. Hai engine
+  ra cùng PDF — **một khác biệt đã biết**: `plain` build bằng docker nhả 2 ligature `ﬁ` nên có
+  thêm finding `ligatures`, tectonic thì không. Chi tiết + bẫy khi sửa `.cls`/`.sty`:
+  `jobpilot/cv/CLAUDE.md`.
 - **Cần `pip install -e '.[cv]'`** cho `pypdf`, nếu không page count trả `None` (badge "1 trang" biến mất, không còn cảnh báo CV tràn 2 trang). Build PDF vẫn chạy bình thường — chỉ mất phần đếm trang.
 - **Queue vẫn 1 worker**: tailor xếp sau một crawl đang chạy sẽ đứng `queued` vài phút. Đúng nghĩa "queued", nhưng nếu thấy vướng thì nâng `max_workers` — task body đã mở session riêng nên an toàn về mặt DB.
 - **Slack đã verify thật** (2026-08-08): cần đúng **một** scope `chat:write`, Socket Mode +
@@ -239,6 +252,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   tailnet — xem `DEPLOY.md §0` trước khi đụng vào chuyện phơi ra ngoài.
   VPS đặt ở **VN** vì ITviec/TopCV/VietnamWorks sau Cloudflare, IP datacenter nước ngoài
   bị challenge nhiều hơn; đường lui nếu vẫn bị chặn: crawl ở laptop, DB ở VPS, chỉ đổi
-  `DATABASE_URL` (`DEPLOY.md §7`). Máy phải **x86-64** — ảnh Docker LaTeX chỉ có amd64.
-- Stack = Python (FastAPI + Playwright stealth + Docker LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
+  `DATABASE_URL` (`DEPLOY.md §7`). Kiến trúc nào cũng được kể từ khi build PDF mặc định
+  dùng **tectonic**; chỉ `cv.engine: docker` mới bắt buộc **x86-64** (ảnh chỉ có amd64).
+- Stack = Python (FastAPI + Playwright stealth + tectonic LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
 - LLM = **Claude mặc định**, openai/gemini chọn được **theo từng việc** (`llm.*`, Phase 20b). Không chạy model local.

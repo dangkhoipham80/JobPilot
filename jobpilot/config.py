@@ -233,6 +233,23 @@ class ApplyCfg(BaseModel):
 class CvCfg(BaseModel):
     master_dir: str = "resume"
     out_dir: str = "out"
+
+    #: Which LaTeX engine builds the PDF: ``auto`` | ``tectonic`` | ``docker``.
+    #: ``auto`` prefers tectonic and falls back to docker.
+    #:
+    #: Deliberately a plain str rather than a Literal: get_config() is called on
+    #: nearly every request, so a Literal turns one typo in config.local.yaml
+    #: into a ValidationError that takes the whole app down instead of one
+    #: build. jobpilot/tailor/build.py:resolve_engine validates it at the point
+    #: of use and names the valid values.
+    engine: str = "auto"
+
+    #: Command or absolute path for the tectonic binary; only used when the
+    #: chosen engine is tectonic. A path with a directory component works too,
+    #: for a binary kept off PATH.
+    tectonic_bin: str = "tectonic"
+
+    #: Only used when the chosen engine is docker.
     docker_image: str = "csmith/awesome-cv-builder"
     theme: str = "awesome-red"
 

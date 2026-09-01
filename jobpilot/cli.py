@@ -89,7 +89,10 @@ def cmd_build(args: argparse.Namespace) -> int:
     except BuildError as exc:
         print(f"BUILD FAILED: {exc}", file=sys.stderr)
         return 1
-    print(f"Built {result.pdf}  [{page_summary(result.pages)}]")
+    # Naming the engine is not cosmetic: the two are interchangeable enough that
+    # you cannot tell from the PDF which one ran, and ats.py's `ligatures` finding
+    # differs between them on the `plain` template.
+    print(f"Built {result.pdf}  [{page_summary(result.pages)}]  via {result.engine}")
     return 0
 
 
@@ -154,7 +157,10 @@ def cmd_cv(args: argparse.Namespace) -> int:
     except BuildError as exc:
         print(f"BUILD FAILED: {exc}", file=sys.stderr)
         return 1
-    print(f"Built {result.pdf}  [{page_summary(result.pages)}]")
+    # Naming the engine is not cosmetic: the two are interchangeable enough that
+    # you cannot tell from the PDF which one ran, and ats.py's `ligatures` finding
+    # differs between them on the `plain` template.
+    print(f"Built {result.pdf}  [{page_summary(result.pages)}]  via {result.engine}")
     return 0
 
 
@@ -559,7 +565,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_backfill.set_defaults(func=cmd_backfill)
 
-    p_build = sub.add_parser("build", help="compile a CV to PDF via Docker (Phase 1)")
+    p_build = sub.add_parser(
+        "build", help="compile a CV to PDF (tectonic or docker, see cv.engine)"
+    )
     p_build.add_argument("dir", nargs="?", default=None, help="work dir (default: repo root)")
     p_build.add_argument("--entry", default="cv.tex", help="LaTeX entry file")
     p_build.set_defaults(func=cmd_build)
@@ -576,7 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--scope", default="master", help="'master' or a job id")
     for name, helptext in (
         ("render", "write the structured CV out as .tex"),
-        ("build", "render + compile to PDF via Docker"),
+        ("build", "render + compile to PDF (see cv.engine)"),
         ("versions", "list the version history"),
     ):
         sp = cv_sub.add_parser(name, help=helptext)

@@ -1,13 +1,13 @@
 """In-process task queue for the long-running work (PLAN.md §5.5).
 
 Crawling walks several sites behind a rate limiter and takes minutes; tailoring
-is a Claude call plus a Docker LaTeX build; applying may write a cover letter and
+is a Claude call plus a LaTeX build; applying may write a cover letter and
 talk to an SMTP server. None of them can answer inside a request. This runs them
 on a worker thread, tracks their state, and pushes progress to the dashboard over
 the existing WebSocket.
 
 **One worker by default.** This is a single-user tool on a laptop that also runs
-Docker and a browser — fanning out would fight for the same resources, and a
+a LaTeX engine and a browser — fanning out would fight for the same resources, and a
 serial queue makes "queued" mean something. Raise ``max_workers`` if that ever
 stops being true.
 

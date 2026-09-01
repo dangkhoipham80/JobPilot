@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from jobpilot.cv.latex import escape_tex, tex
-from jobpilot.cv.compile import template_assets
+from jobpilot.cv.compile import sync_assets, template_assets
 from jobpilot.cv.render import (
     RenderError,
     list_templates,
@@ -200,6 +200,49 @@ def test_a_template_declares_the_assets_it_needs():
     """`plain` builds on stock `article`, so it must not drag the .cls along."""
     assert template_assets("awesome_cv") == ("awesome-cv.cls", "fontawesome.sty", "fonts")
     assert template_assets("plain") == ("fonts",)
+
+
+def test_sync_assets_refreshes_a_stale_asset_instead_of_keeping_it(tmp_path):
+    """Build dirs under out/cv/<scope>/ are long-lived and reused, so a
+    skip-if-exists copy pins each one to whatever awesome-cv.cls was checked out
+    the first time it built. That is how the tectonic engine's fix to
+    awesome-cv.cls + fontawesome.sty reached freshly-built scopes only, while
+    every previously-built scope kept the old pair and died on a missing font —
+    with the repo holding the fix, so the error pointed at the wrong thing."""
+    source, dest = tmp_path / "repo", tmp_path / "build"
+    (source / "fonts").mkdir(parents=True)
+    (source / "awesome-cv.cls").write_text("new class", encoding="utf-8")
+    (source / "fontawesome.sty").write_text("new sty", encoding="utf-8")
+    (source / "fonts" / "Roboto-Regular.ttf").write_bytes(b"new font")
+
+    dest.mkdir()
+    (dest / "fonts").mkdir()
+    (dest / "awesome-cv.cls").write_text("OLD class", encoding="utf-8")
+    (dest / "fontawesome.sty").write_text("OLD sty", encoding="utf-8")
+    (dest / "fonts" / "Roboto-Regular.ttf").write_bytes(b"OLD font")
+
+    sync_assets(dest, source=source, template="awesome_cv")
+
+    assert (dest / "awesome-cv.cls").read_text(encoding="utf-8") == "new class"
+    assert (dest / "fontawesome.sty").read_text(encoding="utf-8") == "new sty"
+    # Fonts live in a directory asset, which the old code copied only when the
+    # whole directory was absent — a stale font file was unreachable forever.
+    assert (dest / "fonts" / "Roboto-Regular.ttf").read_bytes() == b"new font"
+
+
+def test_sync_assets_leaves_unrelated_files_in_the_build_dir_alone(tmp_path):
+    """Refreshing assets must not turn into wiping the build dir: the rendered
+    .tex and any raw-LaTeX override live here too."""
+    source, dest = tmp_path / "repo", tmp_path / "build"
+    source.mkdir()
+    (source / "awesome-cv.cls").write_text("class", encoding="utf-8")
+    (source / "fontawesome.sty").write_text("sty", encoding="utf-8")
+    dest.mkdir()
+    (dest / "cv.tex").write_text("hand-written", encoding="utf-8")
+
+    sync_assets(dest, source=source, template="awesome_cv")
+
+    assert (dest / "cv.tex").read_text(encoding="utf-8") == "hand-written"
 
 
 def test_a_template_id_may_not_walk_out_of_the_templates_dir():

@@ -81,6 +81,6 @@ def compile_letter(
     dest: Path,
     today: date_cls | None = None,
 ) -> BuildResult:
-    """Render + build the letter. Raises ``BuildError`` if LaTeX or Docker fails."""
+    """Render + build the letter. Raises ``BuildError`` if the LaTeX build fails."""
     path = write_letter_tex(letter, doc, job, dest, today)
     return build_cv(path.parent, entry=LETTER_FILE)
