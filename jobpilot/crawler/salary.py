@@ -221,6 +221,30 @@ class Salary:
     period: str
 
     @property
+    def kind(self) -> str:
+        """Which shape of pay this is, as a word the UI can show.
+
+        Four, not three. The obvious three are ``fixed`` ("25 triệu"), ``up_to``
+        ("Up to $3000") and ``range`` ("20 - 60 triệu") — but Vietnamese ads
+        also write a *floor* with no ceiling ("Từ 15 triệu", "trên 20 triệu"),
+        and the parser has always produced it. Folding that into ``range`` would
+        invent a ceiling and folding it into ``fixed`` would invent a salary;
+        both are the kind of wrong-but-plausible this repo keeps paying for.
+
+        Derived, never stored: it is a reading of ``min``/``max``, so it cannot
+        drift away from the numbers it describes.
+        """
+        if self.min is not None and self.max is not None:
+            return "fixed" if self.min == self.max else "range"
+        if self.max is not None:
+            return "up_to"
+        if self.min is not None:
+            return "from"
+        # `parse` never returns a Salary with neither bound, so this is only
+        # reachable by constructing one by hand.
+        return "unknown"
+
+    @property
     def usd_month(self) -> float | None:
         """A representative figure in US dollars per month, for one shared axis.
 
@@ -243,7 +267,7 @@ class Salary:
         return round(amount, 2)
 
     def as_dict(self) -> dict:
-        return {**asdict(self), "usd_month": self.usd_month}
+        return {**asdict(self), "usd_month": self.usd_month, "kind": self.kind}
 
 
 def _number(raw: str, millions: bool) -> float | None:

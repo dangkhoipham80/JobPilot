@@ -26,6 +26,7 @@ from jobpilot.api.routes import (
     backups,
     cv,
     inbox,
+    intake,
     jobs,
     ops,
     review,
@@ -83,12 +84,13 @@ def create_app(serve_spa: bool = True) -> FastAPI:
     def health() -> dict:
         return {"status": "ok", "version": __version__}
 
-    # review + apply first: jobs' GET /{job_id:path} is greedy and would shadow
-    # /jobs/{id}/review and /jobs/{id}/cv.
+    # review + apply + intake first: jobs' GET /{job_id:path} is greedy and would
+    # shadow /jobs/{id}/review, /jobs/{id}/cv and /jobs/{id}/fit.
     for router in (
         review.router,
         apply.router,
         apply.board,
+        intake.router,
         jobs.router,
         stats.router,
         analytics.router,

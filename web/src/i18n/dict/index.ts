@@ -11,6 +11,7 @@ import { backup } from "./backup";
 import { common } from "./common";
 import { cv } from "./cv";
 import { dashboard } from "./dashboard";
+import { fit } from "./fit";
 import { format } from "./format";
 import { guide } from "./guide";
 import { jobs } from "./jobs";
@@ -30,6 +31,7 @@ export const dict = {
   common,
   cv,
   dashboard,
+  fit,
   format,
   guide,
   jobs,

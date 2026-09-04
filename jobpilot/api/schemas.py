@@ -5,15 +5,25 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from jobpilot.apply import outcome as outcome_mod
 from jobpilot.apply.followup import describe, is_due
 from jobpilot.cv.schema import CvDocument
 from jobpilot.store.models import Job, JobStatus
+from jobpilot.crawler.normalize import WORK_MODES
 from jobpilot.tailor.diff import CvDiff
 
 T = TypeVar("T")
+
+#: The work-arrangement vocabulary as a request-body type. Built from
+#: ``WORK_MODES`` rather than restated, so the API and the crawler cannot come to
+#: know different words for the same thing. ``""`` is a member: "the posting does
+#: not say" is the common case and has to be expressible.
+WorkModeStr = Literal["", "onsite", "hybrid", "remote"]
+assert set(WORK_MODES) | {""} == set(WorkModeStr.__args__), (
+    "WORK_MODES and WorkModeStr disagree — update both or derive one from the other"
+)
 
 #: Rows per request when the caller doesn't say.
 DEFAULT_PAGE_SIZE = 25
@@ -70,6 +80,82 @@ class JobOut(BaseModel):
     quality: dict | None = None
 
 
+class JdSectionsOut(BaseModel):
+    """A posting's body, sorted into the parts a person reads separately.
+
+    Every entry is the posting's own line. This is a table of contents over
+    ``description_md``, never a replacement for it — both are stored, and the
+    raw text stays the evidence every guardrail downstream reads.
+    """
+
+    role: str = ""
+    responsibilities: list[str] = []
+    must_have: list[str] = []
+    nice_to_have: list[str] = []
+    soft_skills: list[str] = []
+    outputs: list[str] = []
+    benefits: list[str] = []
+    how_to_apply: str = ""
+
+    def is_empty(self) -> bool:
+        """True when nothing was found — a posting too thin to have a structure."""
+        return not any(
+            [
+                self.role.strip(),
+                self.how_to_apply.strip(),
+                self.responsibilities,
+                self.must_have,
+                self.nice_to_have,
+                self.soft_skills,
+                self.outputs,
+                self.benefits,
+            ]
+        )
+
+
+class FitOut(BaseModel):
+    """The advisory read on whether a job is worth applying to.
+
+    Never written to a CV and never fed to the tailor — see
+    ``jobpilot/intake/CLAUDE.md``. ``assessed_at`` is present so the page can say
+    when this was judged; a fit report against a CV that has since changed is
+    stale in a way only the timestamp reveals.
+
+    ``requirements`` stays a ``list[dict]`` rather than importing the tailor's
+    ``Requirement``: this is a response model reading a JSONB column, and
+    tightening it would turn a report written by an older build into a 500 on a
+    page that was only trying to display it.
+    """
+
+    match_score: float
+    verdict: str
+    summary: str
+    requirements: list[dict] = []
+    dealbreakers: list[str] = []
+    concerns: list[str] = []
+    assessed_at: datetime | None = None
+
+
+def _parse_fit(raw: Any) -> "FitOut | None":
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return FitOut.model_validate(raw)
+    except ValidationError:
+        return None
+
+
+def _parse_sections(raw: Any) -> "JdSectionsOut | None":
+    """Same fail-soft rule as ``_parse_fit`` — JSONB written by an older build
+    should render as an older reading, not blank the page."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return JdSectionsOut.model_validate(raw)
+    except ValidationError:
+        return None
+
+
 class JobDetailOut(JobOut):
     """Detail view: adds JD payload fields pulled from ``Job.payload``."""
 
@@ -79,6 +165,20 @@ class JobDetailOut(JobOut):
     # True when the source announced the job but couldn't carry its text —
     # LinkedIn alerts, mainly. Paste one in before tailoring.
     needs_jd: bool = False
+    # The last fit assessment, if one was ever run. Carried on the detail
+    # response rather than fetched separately because the page that shows it is
+    # this page, and a second round-trip to learn "nobody has assessed this" is
+    # a request whose most common answer is nothing.
+    fit: FitOut | None = None
+    # The bucketed body, when one was read. Null for every crawled job — the
+    # crawlers store the JD whole — so the UI must treat its absence as normal
+    # rather than as something missing.
+    sections: JdSectionsOut | None = None
+    work_mode: str | None = None
+    # Which shape of pay `salary` quotes: fixed / range / up_to / from. Derived
+    # from the parsed bounds, so it cannot disagree with them; null when the
+    # posting disclosed nothing parsable, which is most of this corpus.
+    salary_kind: str | None = None
 
     @classmethod
     def from_job(cls, job: Job, passes: list | None = None) -> "JobDetailOut":
@@ -89,6 +189,15 @@ class JobDetailOut(JobOut):
             description_md=payload.get("description_md", "") or "",
             is_fresh=bool(payload.get("is_fresh", False)),
             needs_jd=bool(payload.get("needs_jd", False)),
+            # Validated rather than passed through: `payload` is JSONB written by
+            # whatever version of the app was running at the time, and a report
+            # stored before a field existed should read as an older report, not
+            # blank a page. A shape this cannot parse is dropped — the button to
+            # re-run it is right there.
+            fit=_parse_fit(payload.get("fit")),
+            sections=_parse_sections(payload.get("sections")),
+            work_mode=payload.get("work_mode"),
+            salary_kind=(payload.get("salary_range") or {}).get("kind"),
         )
         # `not_seen` is attached here rather than stored beside the crawl-time
         # flags: those are a snapshot of one moment and never change, while this
@@ -245,10 +354,64 @@ class JobIn(BaseModel):
     level: str | None = None
     description_md: str = ""
     skills: list[str] = []
+    #: onsite | hybrid | remote, or "" — see ``crawler/normalize.WORK_MODES``.
+    #: A closed vocabulary, enforced *here* and not only in ``JdExtract``: this
+    #: field is reachable by any caller of the API, and a value off the list
+    #: reaches the UI as a title-cased mystery chip ("Work From Home (mostly)").
+    work_mode: WorkModeStr = ""
+    #: The bucketed body, when a model read one. Optional: typing a job in by
+    #: hand is still a complete way to add one, and always was.
+    sections: JdSectionsOut | None = None
     # Defaults to external — you submit it yourself, which is the honest default
     # for a job we couldn't crawl.
     apply_channel: str = "external"
     apply_target: str | None = None
+
+
+class IntakeIn(BaseModel):
+    """A job description pasted in from wherever the user found it."""
+
+    text: str
+    #: Optional, and only ever a hint: the address is often the one place a
+    #: careers page spells out the company, and it is what gives the saved job a
+    #: stable id so re-pasting the same posting updates it.
+    url: str = ""
+
+
+class IntakeOut(BaseModel):
+    """Fields read out of a paste — a filled-in form, not a saved job.
+
+    Shaped to drop straight into ``JobIn`` so the second step is the ordinary
+    ``POST /jobs`` and nothing about a hand-added job depends on whether a model
+    helped fill the form in.
+    """
+
+    title: str
+    company: str
+    location: str
+    salary: str
+    level: str
+    employment_type: str
+    #: onsite / hybrid / remote, or "" when the posting doesn't say.
+    work_mode: str = ""
+    #: Province/city through the same table the crawler uses, so a pasted job
+    #: lands in the same Market bar as a crawled one. Null when the label names
+    #: no province this app knows.
+    city: str | None = None
+    skills: list[str]
+    #: The body, bucketed. Shown for review beside the fields above.
+    sections: JdSectionsOut = JdSectionsOut()
+    #: The posting as it will be stored: the user's own paste. Returned rather
+    #: than kept server-side so the form can show exactly what will be saved.
+    description_md: str
+    #: An address the posting gave for applications, if it gave one. The client
+    #: offers it as ``apply_target``; it is never applied silently, because a
+    #: wrong address here is an application sent to a stranger.
+    apply_email: str
+    language: str
+    #: Same vocabulary as ``JobOut.quality.flags`` — computed here, not guessed.
+    flags: list[str] = []
+    notes: list[str] = []
 
 
 class JobPatch(BaseModel):
@@ -263,6 +426,8 @@ class JobPatch(BaseModel):
     url: str | None = None
     description_md: str | None = None
     skills: list[str] | None = None
+    work_mode: WorkModeStr | None = None
+    sections: JdSectionsOut | None = None
     apply_channel: str | None = None
     apply_target: str | None = None
 

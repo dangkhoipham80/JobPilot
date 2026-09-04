@@ -15,6 +15,16 @@ import { ns } from "../ns";
  */
 export const labels = ns({
   en: {
+    mode_onsite: "On-site",
+    mode_hybrid: "Hybrid",
+    mode_remote: "Remote",
+    // How a posting quoted its pay. Four shapes, not three: Vietnamese ads
+    // write a floor with no ceiling as readily as they write "up to".
+    pay_fixed: "fixed",
+    pay_up_to: "up to",
+    pay_from: "from",
+    pay_range: "range",
+
     quality_clean: "Clean",
     quality_no_jd: "No description",
     quality_thin_jd: "Thin description",
@@ -33,6 +43,16 @@ export const labels = ns({
     actor_done: "Done",
   },
   vi: {
+    mode_onsite: "Tại văn phòng",
+    // Kept English: dev job ads in VN say "hybrid", and every board prints it
+    // that way — the same rule the seniority levels follow.
+    mode_hybrid: "Hybrid",
+    mode_remote: "Từ xa",
+    pay_fixed: "cố định",
+    pay_up_to: "tối đa",
+    pay_from: "từ",
+    pay_range: "khoảng",
+
     quality_clean: "Đầy đủ",
     quality_no_jd: "Không có mô tả",
     quality_thin_jd: "Mô tả sơ sài",

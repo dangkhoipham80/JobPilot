@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, PenSquare } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { Markdown } from "@/components/Markdown";
+import { JdSectionsView } from "@/components/JdSectionsView";
 import { useT } from "@/i18n";
 import { titleCase } from "@/lib/format";
 import type { JobDetail } from "@/types";
@@ -23,6 +24,9 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
   const [draft, setDraft] = useState(job.description_md);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Structured by default when there is one: it is the faster read, and the raw
+  // text is one click away for anything that looks off.
+  const [view, setView] = useState<"structured" | "raw">("structured");
 
   useEffect(() => {
     setDraft(job.description_md);
@@ -74,6 +78,28 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
           </p>
         )}
 
+        {!editing && job.sections && (
+          <div className="mb-4 inline-flex rounded-lg border p-0.5 text-xs">
+            {/* A toggle, not a second card. The buckets are a reading *of* this
+                text, so the original has to stay one click away — that is what
+                makes it checkable, and checkable is the only reason it is safe
+                to show a model's arrangement of a posting. */}
+            {(["structured", "raw"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setView(mode)}
+                className={
+                  view === mode
+                    ? "rounded-md bg-surface-2 px-2.5 py-1 font-medium text-ink"
+                    : "px-2.5 py-1 text-ink-muted hover:text-ink"
+                }
+              >
+                {t(mode === "structured" ? "viewStructured" : "viewRaw")}
+              </button>
+            ))}
+          </div>
+        )}
+
         {editing ? (
           <div className="flex flex-col gap-2">
             <textarea
@@ -113,6 +139,8 @@ export function JobDescription({ job, onSaved }: { job: JobDetail; onSaved: () =
               </Button>
             </div>
           </div>
+        ) : job.sections && view === "structured" ? (
+          <JdSectionsView sections={job.sections} />
         ) : (
           <Markdown source={job.description_md} />
         )}

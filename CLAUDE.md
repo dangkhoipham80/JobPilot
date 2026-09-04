@@ -23,6 +23,7 @@ Hai lớp:
 |---|---|
 | `jobpilot/crawler/CLAUDE.md` | thêm site mới, robots, nguồn tier-2 đã loại, LinkedIn alerts, bẫy selector/fetch |
 | `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX |
+| `jobpilot/intake/CLAUDE.md` | dán JD → AI đọc + chấm độ khớp; JD lưu là bản của user, 3 loại `match_score` |
 | `jobpilot/llm/CLAUDE.md` | chọn provider/model theo việc, schema từng provider, đo chi phí, scrub key |
 | `jobpilot/api/CLAUDE.md` | hợp đồng phân trang `Page{items,total,…}`, `ORDER BY` unique, cap 200 |
 | `jobpilot/apply/CLAUDE.md` | outcome (`current` vs `reached`), inbox sync, cover letter PDF |
@@ -117,6 +118,8 @@ python -m jobpilot.cli llm providers # provider nào đang chạy việc gì, c�
 python -m jobpilot.cli llm stats    # chi phí / tỉ lệ qua guardrail lần đầu / độ trễ, theo backend
 python -m jobpilot.cli llm bench --task classify  # chấm trên 5 email có đáp án
 python -m jobpilot.cli llm bench --task tailor    # chạy 4 job thật, đếm plan qua guardrail
+python -m jobpilot.cli llm bench --task intake    # 3 tin có đáp án, chấm theo FIELD (11 field)
+                                    # chỉ đo nửa "trích field", KHÔNG đo nửa "chấm độ khớp"
 python -m jobpilot.cli slack        # (tùy chọn) Slack Bolt — kênh phụ; cần API đang chạy
 pytest jobpilot/tests               # test
 # tất cả trong 1 lệnh:
@@ -189,9 +192,11 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
 | salary | Parser lương: sàn không còn bị báo thành cả hai đầu; hàng rào **"số chỉ là tiền khi được viết như tiền"** (`_LEAD`/`_TRAIL`) áp cho cả 4 nhánh match | `crawler/salary.py`, `analytics/CLAUDE.md` |
 | cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** mặc định, Docker thành đường lui (`cv.engine`); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
-| i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 17 namespace / 751 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
+| i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 18 namespace / 796 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
+| intake | **Dán JD vào → AI đọc + chấm độ khớp.** Task LLM thứ 4 (`intake`); `POST /jobs/intake` điền form (không lưu), `POST /jobs/{id}/fit` chấm CV vs tin (advisory, không đụng CV). Job thêm tay giờ có quality + facet + `match_score` như job crawl | `jobpilot/intake/`, `api/routes/intake.py`, `web/src/components/FitCard.tsx` |
+| intake-2 | **JD có cấu trúc** (8 bucket: vai trò/nhiệm vụ/yêu cầu/ưu tiên/soft skill/output/quyền lợi/cách ứng tuyển) — 2 lượt gọi chạy song song, bucket là *mục lục* của JD gốc chứ không thay nó; **lương 4 dạng** (`Salary.kind`); **tỉnh/thành** hết rớt vì hậu tố quốc gia (160→119 job thiếu city); **onsite/hybrid/remote** phủ 105/216 | `intake/schema.py`, `crawler/vietnam.py`, `crawler/salary.py`, `web/src/components/JdSectionsView.tsx` |
 
-878 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+947 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
 build PDF bằng **tectonic và Docker** (Master + tailored, cả 2 template), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
@@ -257,3 +262,6 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   dùng **tectonic**; chỉ `cv.engine: docker` mới bắt buộc **x86-64** (ảnh chỉ có amd64).
 - Stack = Python (FastAPI + Playwright stealth + tectonic LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
 - LLM = **Claude mặc định**, openai/gemini chọn được **theo từng việc** (`llm.*`, Phase 20b). Không chạy model local.
+- Việc LLM = **4 task**: `intake` (đọc JD dán vào + chấm độ khớp), `tailor`, `letter`, `classify`.
+  Danh sách chuẩn ở `llm.TASKS` — thêm task thì sửa **một** tuple đó, đừng viết lại literal
+  (`cli llm providers`, `cli llm stats`, `GET /stats/llm` và trang `/models` đều đọc nó).

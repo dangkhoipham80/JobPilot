@@ -5,11 +5,15 @@ real jobs, then writing the result into a document. The numbers were good; the
 method was a person doing it once. This is the same method as a command, so the
 next backend can be judged the same way rather than on how it feels.
 
-Two benchmarks, because the two calls fail differently:
+Three benchmarks, because the calls fail differently:
 
 * **classify** has a right answer, so it is scored against one. The fixtures
   below are fictional employer mail — no real correspondence, for the same
   reason ``cv/sample.py`` is a made-up CV.
+* **intake** also has a right answer, and the interesting half of it is the
+  *blanks*. A model that fills every field looks better and is worse, so the
+  fixtures below assert on fields the posting deliberately never states, and on
+  the "similar jobs" panel whose salaries belong to other postings entirely.
 * **tailor** has no single right answer; a plan can be good or bad without being
   wrong. What it has is a *floor*: the guardrails. So it is scored on how often
   the model clears the floor, and on whether it needs the corrective round to do
@@ -108,6 +112,78 @@ CLASSIFY_FIXTURES: list[tuple[MailMessage, str]] = [
 ]
 
 
+# --------------------------------------------------------------------------- #
+# intake: postings with known fields, and known blanks
+# --------------------------------------------------------------------------- #
+#: (label, pasted text, expected fields). Only the listed fields are checked, so
+#: a case can assert on the two things it was written for without pinning the
+#: seven it has no opinion about. ``""`` is an assertion like any other, and the
+#: most important one here: the whole failure mode of this call is a model that
+#: fills a blank in plausibly.
+#:
+#: Fictional employers throughout, same rule as ``cv/sample.py``.
+INTAKE_FIXTURES: list[tuple[str, str, dict]] = [
+    (
+        # The trap that motivated the fixture: a "similar jobs" panel carrying
+        # two other postings' salaries. Picking one of those up is the failure
+        # that reads as success — a job row with a wrong, confident salary.
+        "vi-with-similar-jobs-panel",
+        """Senior Backend Engineer (Java/Spring Boot)
+Fintech Sao Việt · Ho Chi Minh City, Vietnam · Hybrid
+
+Mức lương: 40 - 60 triệu
+
+Yêu cầu công việc
+- Tối thiểu 5 năm kinh nghiệm phát triển backend với Java
+- Thành thạo Spring Boot, Spring Cloud
+- Kinh nghiệm với PostgreSQL, tối ưu truy vấn
+- Tốt nghiệp Đại học chuyên ngành CNTT
+
+Ứng tuyển: gửi CV về tuyendung@saoviet.example
+
+Việc làm tương tự
+- Frontend Developer (ReactJS) - Công ty A - 25 - 35 triệu
+- DevOps Engineer - Công ty B - 35 - 50 triệu""",
+        {
+            "salary": "40 - 60 triệu",
+            "level": "senior",
+            "apply_email": "tuyendung@saoviet.example",
+            "language": "vi",
+        },
+    ),
+    (
+        # Nothing is stated: no pay, no seniority, no address to apply to. Every
+        # expected value here is a blank, and a model that "helpfully" derives
+        # `senior` from "5+ years" fails on purpose.
+        "en-states-almost-nothing",
+        """Backend Engineer — Northwind Data
+
+We're looking for a backend engineer to join our platform team. You'll work on
+our ingestion pipeline in Go, backed by ClickHouse.
+
+What we're after: 5+ years building production services, comfort with
+distributed systems, and an appetite for on-call.
+
+Apply through the form on this page.""",
+        {"salary": "", "level": "", "apply_email": "", "language": "en"},
+    ),
+    (
+        # An internship, which the level vocabulary does hold — so here the
+        # right answer is *not* a blank. A fixture set made only of blanks would
+        # be passed by a model that returns nothing at all.
+        "en-internship-with-stipend",
+        """Software Engineering Intern (Summer)
+Bluefin Labs · Da Nang · Internship
+
+Stipend: 8,000,000 VND / month
+
+You'll work alongside our backend team on internal tooling in Python.
+Requirements: currently enrolled in a CS degree, familiar with Git.""",
+        {"salary": "8,000,000 VND / month", "level": "intern", "language": "en"},
+    ),
+]
+
+
 @dataclass
 class BenchResult:
     task: str
@@ -168,6 +244,54 @@ def bench_classify(limit: int = 0, provider: str = "", model: str = "") -> Bench
         if problems:
             result.notes.append(f"{mail.uid}: verdict would be dropped - {'; '.join(problems)}")
     return result
+
+
+def bench_intake(limit: int = 0, provider: str = "", model: str = "") -> BenchResult:
+    """Score an extractor on the fixtures above, field by field.
+
+    ``total`` counts *fields checked*, not postings, so three cases asserting
+    four fields each is a score out of eleven rather than out of three. A model
+    that gets the salary right and invents a seniority should not read as 2/3.
+
+    Comparison is case-insensitive and whitespace-collapsed but otherwise exact:
+    the contract is that the model copies what the posting says, so "40-60
+    triệu" for "40 - 60 triệu" counts, and "up to 60 million VND" does not.
+    """
+    from jobpilot.intake.engine import IntakeError, ModelIntakeEngine
+    from jobpilot.intake.service import clean_paste
+
+    client, name = resolve("intake", provider, model)
+    result = BenchResult(task="intake", provider=name, model=client.model)
+    engine = ModelIntakeEngine(client)
+
+    cases = INTAKE_FIXTURES[: limit or len(INTAKE_FIXTURES)]
+    for label, text, expected in cases:
+        try:
+            got = engine.extract(clean_paste(text))
+        except IntakeError as exc:
+            result.failed += 1
+            result.total += len(expected)
+            result.notes.append(f"{label}: call failed - {exc}")
+            continue
+        for field_name, want in expected.items():
+            result.total += 1
+            have = getattr(got, field_name, "")
+            if _same(have, want):
+                result.correct += 1
+            else:
+                # Blanks get their own wording. "expected '', got 'senior'" is
+                # the finding this benchmark exists for, and it deserves to read
+                # as invention rather than as a near miss.
+                result.notes.append(
+                    f"{label}.{field_name}: invented {have!r} - the posting never says"
+                    if want == ""
+                    else f"{label}.{field_name}: expected {want!r}, got {have!r}"
+                )
+    return result
+
+
+def _same(have: str, want: str) -> bool:
+    return " ".join(str(have).split()).casefold() == " ".join(want.split()).casefold()
 
 
 def bench_tailor(db, limit: int = 4, provider: str = "", model: str = "") -> BenchResult:

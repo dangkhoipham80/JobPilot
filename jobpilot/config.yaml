@@ -131,6 +131,7 @@ llm:
   tailor: ""                  # "" = use `provider`
   letter: ""
   classify: ""
+  intake: ""                  # reading a pasted JD + scoring it against the CV
 
   models:                     # per-provider model; blank falls back to its default
     claude: claude-opus-4-8
@@ -140,5 +141,16 @@ llm:
   task_models:                # per-task override — cheaper models for easier calls
     classify: ""              # e.g. claude-haiku-4-5: ~5x cheaper, and Phase 20
                               # showed a local 7B got this one 5/5
+    intake: claude-haiku-4-5  # Stays on `provider` (no second API key needed for
+                              # the headline feature of this phase) but drops off
+                              # the expensive model: `llm bench --task intake`
+                              # scored haiku 44/44 fields over 4 runs, and on the
+                              # *fit* half — which the bench does NOT measure — it
+                              # answered "does `Java, Spring Boot` meet `working
+                              # JVM knowledge`" correctly every time. gpt-4o-mini
+                              # is 3x cheaper and 55/55 on extraction, but swung
+                              # HAVE/MISSING/PARTIAL/MISSING on that same fit
+                              # question, so cheapest-passing-the-bench is the
+                              # wrong rule here. ~$0.002 a call.
 
   gemini_paid_tier: true

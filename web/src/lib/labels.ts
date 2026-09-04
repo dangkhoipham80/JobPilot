@@ -125,6 +125,11 @@ export function useLabels() {
       skillLabel,
       qualityLabel: prefixed("quality"),
       levelLabel: prefixed("level"),
+      // onsite / hybrid / remote, and the four pay shapes. Same `prefixed`
+      // fallback: a value the backend starts emitting before anyone writes copy
+      // for it title-cases rather than disappearing.
+      workModeLabel: prefixed("mode"),
+      payKindLabel: prefixed("pay"),
     };
   }, [lang]);
 }

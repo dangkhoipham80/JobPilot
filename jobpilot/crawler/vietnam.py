@@ -144,7 +144,21 @@ _NOISE_RE = re.compile(
 
 # TopCV appends this after cities that were renamed by the 2025 administrative
 # merge ("Hồ Chí Minh (mới)"). It annotates the *label*, not the place.
-_CITY_SUFFIX_RE = re.compile(r"\s*\((mới|new|cũ|old)\)\s*$", re.I)
+#
+# LinkedIn appends the work arrangement the same way — "Ho Chi Minh City,
+# Vietnam (Hybrid)", "Hanoi Capital Region (On-site)". Also an annotation on the
+# label rather than part of the place, and stripping it here is what lets those
+# labels reach the city table at all.
+#
+# Read `parse_work_mode` off the **raw** label, before this runs. LinkedIn and
+# the intake path both do; ITviec, TopCV and VietnamWorks pass their location
+# through `find_city`/`clean_city` *first*, so what they store has already lost
+# any such suffix. Harmless today — Vietnamese boards do not write one — but it
+# means "the arrangement is never thrown away" is only true of the callers that
+# keep the raw string, not of this function.
+_CITY_SUFFIX_RE = re.compile(
+    r"\s*\((mới|new|cũ|old|on-?site|hybrid|remote|tại nhà)\)\s*$", re.I
+)
 
 
 def is_noise(text: str) -> bool:
@@ -170,6 +184,11 @@ def _is_one_city(part: str) -> bool:
     low = clean_text(part).lower()
     if not low:
         return False
+    # Decoration stripped, so "TP.HCM" and "Ho Chi Minh City" reach the same
+    # alias entry the canonicaliser reaches. Checked before the substring loop
+    # because it is exact and the loop is not.
+    if _fold_place(low) in _CITY_ALIASES:
+        return True
     # Abbreviations and unaccented spellings first, because they are exact.
     # Without this the gate and the canonicaliser knew different vocabularies:
     # ``canonical_city("TPHCM")`` answered "Hồ Chí Minh" while this returned
@@ -192,12 +211,33 @@ def looks_like_city(text: str) -> bool:
 
     Requiring *all* parts to be cities is what keeps "Hà Nội, Hồ Chí Minh"
     (a genuine multi-city posting) while rejecting "Java, Remote debugging".
+
+    Parts that are **pure decoration** are dropped before that test rather than
+    failing it. "Ho Chi Minh City, Vietnam" is one place and a country, not two
+    places, and treating the country as a failed city rejected the whole label —
+    silently, and on the shape LinkedIn uses for every posting it announces.
+    At least one real city must remain, so "Vietnam" alone is still not a
+    location.
     """
     cleaned = clean_city(text)
     if not cleaned:
         return False
     parts = [p for p in (p.strip() for p in _CITY_SPLIT_RE.split(cleaned)) if p]
-    return bool(parts) and all(_is_one_city(p) for p in parts)
+    named = [p for p in parts if not _is_only_filler(p)]
+    return bool(named) and all(_is_one_city(p) for p in named)
+
+
+def _is_only_filler(part: str) -> bool:
+    """True for a part made **entirely of filler words** — "Vietnam", "TP.".
+
+    Deliberately not "a part that folds to nothing". ``_fold_city`` also strips
+    digits and punctuation, so that looser test made ``"Ha Noi, 2025"`` read as
+    a location: the "2025" folded away, left no part to fail, and the label
+    passed. Requiring the part to have had *letters* first keeps a stray number
+    or a lone "..." as a part that must justify itself — which is the whole job
+    of this gate, and the reason "remote debugging" is not a place.
+    """
+    return bool(_fold_city(part)) and not _fold_place(part)
 
 
 def find_city(texts: list[str] | tuple[str, ...]) -> str | None:
@@ -294,6 +334,27 @@ _CITY_ALIASES = {
 }
 
 
+#: Words that decorate a place name without naming a place. The folded twin of
+#: ``_CITY_FILLER_RE`` — that one runs on the raw label, this one after accents
+#: and punctuation are gone, so "Việt Nam" and "viet nam" are the same token here.
+#:
+#: Longest first, because "viet nam" has to be consumed before "nam" would be if
+#: anyone ever adds it.
+_FILLER_WORDS: tuple[str, ...] = (
+    "thanh pho",
+    "viet nam",
+    "vietnam",
+    "province",
+    "region",
+    "capital",
+    "city",
+    "tinh",
+    "tp",
+    "vn",
+)
+_FOLDED_FILLER_RE = re.compile(r"\b(?:%s)\b" % "|".join(_FILLER_WORDS))
+
+
 def _fold_city(text: str) -> str:
     """``"Hà Nội"`` → ``"ha noi"`` — accents stripped, punctuation dropped.
 
@@ -309,17 +370,41 @@ def _fold_city(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z ]+", " ", folded)).strip()
 
 
+def _fold_place(text: str) -> str:
+    """``_fold_city`` with the decoration removed too: ``"TP.HCM"`` → ``"hcm"``.
+
+    Separate from ``_fold_city`` because the two answer different questions.
+    ``_fold_city`` normalises *spelling* and is what compares one label against
+    another; this one normalises *phrasing* and is what looks a label up.
+
+    Both gaps this closes were live data, not hypotheticals. "TP.HCM" folded to
+    "tp hcm", which is in no alias table, so it read as an unknown place. And
+    boards that append the country — "Ho Chi Minh City, Vietnam", the shape
+    every LinkedIn alert uses, and LinkedIn is over half this corpus — produced
+    a "Vietnam" part that is not a city, which failed the all-parts-are-cities
+    gate and dropped the whole label. Neither was visible as an error: both just
+    left ``city`` null and the job absent from the Market page's city chart.
+    """
+    return _FOLDED_FILLER_RE.sub(" ", _fold_city(text)).strip()
+
+
 def canonical_city(text: str | None) -> str | None:
     """One agreed label for a city, whatever spelling the board used."""
     cleaned = clean_city(text)
     if not cleaned:
         return None
-    folded = _fold_city(cleaned)
-    if folded in _CITY_ALIASES:
-        return _CITY_ALIASES[folded]
-    # A known city written in full, accents and all: return the canonical
-    # spelling from CITIES rather than whatever casing the board used.
-    for city in CITIES:
-        if _fold_city(city) == folded:
-            return city
+    # Tried with decoration intact first, then stripped. Order matters: a city
+    # whose real name contains a filler word would otherwise be dissolved by the
+    # second pass, and the exact spelling is always the safer answer when it
+    # matches.
+    for folded in (_fold_city(cleaned), _fold_place(cleaned)):
+        if not folded:
+            continue
+        if folded in _CITY_ALIASES:
+            return _CITY_ALIASES[folded]
+        # A known city written in full, accents and all: return the canonical
+        # spelling from CITIES rather than whatever casing the board used.
+        for city in CITIES:
+            if _fold_city(city) == folded or _fold_place(city) == folded:
+                return city
     return cleaned

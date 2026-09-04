@@ -115,12 +115,13 @@ class LlmCfg(BaseModel):
 
     provider: str = "claude"
 
-    # "" means "use `provider`". Set one to mix — the three calls differ enough
+    # "" means "use `provider`". Set one to mix — the four calls differ enough
     # in difficulty that one backend for all of them is a coincidence, not a
     # design.
     tailor: str = ""
     letter: str = ""
     classify: str = ""
+    intake: str = ""
 
     #: provider key -> model id. Anything absent falls back to that provider's
     #: own default, so a user switching backend does not have to know model ids.
@@ -151,7 +152,7 @@ class LlmCfg(BaseModel):
             raise ValueError(f"unknown provider {value!r} — known: {', '.join(sorted(PROVIDERS))}")
         return value
 
-    @field_validator("tailor", "letter", "classify")
+    @field_validator("tailor", "letter", "classify", "intake")
     @classmethod
     def _known_override(cls, value: str) -> str:
         from jobpilot.llm.registry import PROVIDERS
@@ -160,11 +161,11 @@ class LlmCfg(BaseModel):
             raise ValueError(f"unknown provider {value!r} — known: {', '.join(sorted(PROVIDERS))}")
         return value
 
-    def for_task(self, task: Literal["tailor", "letter", "classify"]) -> str:
+    def for_task(self, task: Literal["tailor", "letter", "classify", "intake"]) -> str:
         """The provider that should run ``task``."""
         return getattr(self, task) or self.provider
 
-    def model_for(self, task: Literal["tailor", "letter", "classify"]) -> str:
+    def model_for(self, task: Literal["tailor", "letter", "classify", "intake"]) -> str:
         """The model id for ``task``: task override, then provider default."""
         from jobpilot.llm.registry import PROVIDERS
 

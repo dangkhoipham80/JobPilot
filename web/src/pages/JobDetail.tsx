@@ -1,18 +1,28 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Check, ExternalLink, MapPin, Sparkles, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  Check,
+  ExternalLink,
+  Laptop,
+  MapPin,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import type { JobStatus } from "@/types";
 import { useT } from "@/i18n";
 import { useFormat } from "@/lib/format";
-import { skillLabel } from "@/lib/labels";
+import { skillLabel, useLabels } from "@/lib/labels";
 import { StatusPill } from "@/components/StatusPill";
 import { MatchMeter, QualityFlags } from "@/components/MatchMeter";
 import { FreshBeacon } from "@/components/FreshBeacon";
 import { sourceColor } from "@/components/charts/palette";
 import { Badge, Button, Card, CardBody, Skeleton } from "@/components/ui";
 import { JobDescription } from "@/components/JobDescription";
+import { FitCard } from "@/components/FitCard";
 
 const EARLY = new Set<JobStatus>(["DISCOVERED", "SHORTLISTED", "SKIPPED"]);
 // Statuses from which the CV Review page is worth opening (matches
@@ -22,6 +32,7 @@ const TAILORABLE = new Set<JobStatus>(["SHORTLISTED", "TAILORING", "REVIEW", "AP
 export function JobDetail({ version }: { version: number }) {
   const t = useT("jobs");
   const fmt = useFormat();
+  const labels = useLabels();
   const { id = "" } = useParams();
   const [pending, setPending] = useState(false);
   const { data: job, loading, error, refetch } = useApi(() => api.job(id), [id, version]);
@@ -76,6 +87,25 @@ export function JobDetail({ version }: { version: number }) {
                     {job.salary && (
                       <span className="inline-flex items-center gap-1.5">
                         <Wallet size={14} /> {job.salary}
+                        {/* "up to" and "from" read very differently from a range
+                            and from a fixed figure, and the posting's own label
+                            does not always make that obvious at a glance. Shown
+                            only when the salary parsed — a shape we could not
+                            work out is not a shape worth naming. */}
+                        {job.salary_kind && (
+                          <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px]">
+                            {labels.payKindLabel(job.salary_kind)}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                    {/* onsite / hybrid / remote. Shown only when the posting
+                        said so — an office address is not a statement that the
+                        job is on-site, and guessing one here would be a fact
+                        the reader has no way to check. */}
+                    {job.work_mode && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Laptop size={14} /> {labels.workModeLabel(job.work_mode)}
                       </span>
                     )}
                   </div>
@@ -110,14 +140,20 @@ export function JobDetail({ version }: { version: number }) {
                         </Button>
                       </Link>
                     )}
-                    <a
-                      href={job.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
-                    >
-                      <ExternalLink size={14} /> {t("original")}
-                    </a>
+                    {/* Hidden rather than dead when there is no URL. A pasted
+                        posting often has none — you had the text, not the link —
+                        and an anchor with href="" reloads the current page,
+                        which reads as the app losing your place. */}
+                    {job.url && (
+                      <a
+                        href={job.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium text-ink-muted hover:bg-surface-2 hover:text-ink"
+                      >
+                        <ExternalLink size={14} /> {t("original")}
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
@@ -135,6 +171,10 @@ export function JobDetail({ version }: { version: number }) {
               )}
             </CardBody>
           </Card>
+
+          {/* Above the JD, because the point of it is to be read *before* you
+              read the whole posting and decide how to spend an hour. */}
+          <FitCard job={job} onAssessed={refetch} />
 
           <JobDescription job={job} onSaved={refetch} />
         </>

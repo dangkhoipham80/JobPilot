@@ -48,6 +48,98 @@ export interface JobDetail extends Job {
   is_fresh: boolean;
   /** Source announced the job but couldn't carry its text (LinkedIn alerts). */
   needs_jd: boolean;
+  /** The last fit assessment, or null if nobody has asked for one. */
+  fit: FitReport | null;
+  /** The bucketed body. Null for crawled jobs — see JdSections. */
+  sections: JdSections | null;
+  work_mode: string | null;
+  /** Which shape of pay `salary` quotes. Null when nothing parsable was
+   *  disclosed, which is most postings. */
+  salary_kind: SalaryKind | null;
+}
+
+/** One requirement the posting states, judged against the Master CV. */
+export interface Requirement {
+  text: string;
+  kind: "must_have" | "nice_to_have" | "soft";
+  status: "HAVE" | "PARTIAL" | "MISSING";
+  evidence: string;
+}
+
+/**
+ * How well the Master CV answers a posting — advisory, and only advisory.
+ *
+ * Nothing here is ever written to a CV or fed to the tailor, so it is safe to
+ * render as an opinion rather than a fact. `assessed_at` matters: the CV it
+ * judged may have changed since, and the timestamp is the only thing on screen
+ * that reveals it.
+ */
+export interface FitReport {
+  match_score: number;
+  verdict: "strong" | "fair" | "weak";
+  summary: string;
+  requirements: Requirement[];
+  dealbreakers: string[];
+  concerns: string[];
+  assessed_at: string | null;
+}
+
+/**
+ * A posting's body sorted into the parts you read separately.
+ *
+ * Every entry is the posting's own line, not a paraphrase. This is a table of
+ * contents over `description_md`, never a replacement for it — both are stored,
+ * and the raw text stays the thing the tailor and the fit check read.
+ *
+ * Null on every crawled job: the crawlers store the JD whole, and only a paste
+ * that went through `readJd` has been bucketed. Absence is normal, not missing.
+ */
+export interface JdSections {
+  role: string;
+  responsibilities: string[];
+  must_have: string[];
+  nice_to_have: string[];
+  soft_skills: string[];
+  outputs: string[];
+  benefits: string[];
+  how_to_apply: string;
+}
+
+/** onsite / hybrid / remote. Null when the posting never said — which is most. */
+export type WorkMode = "onsite" | "hybrid" | "remote";
+
+/**
+ * Which shape of pay a posting quoted. Four, not three: Vietnamese ads write a
+ * floor with no ceiling ("Từ 15 triệu") as often as they write "up to".
+ */
+export type SalaryKind = "fixed" | "up_to" | "from" | "range" | "unknown";
+
+/**
+ * What a model read out of a pasted posting — a filled-in form, not a job.
+ *
+ * `description_md` is the user's own paste (converted from HTML if they pasted
+ * HTML), never the model's retelling of it. `flags`/`notes` share the vocabulary
+ * of `JobQuality`, because they are computed by the same code.
+ */
+export interface JdIntake {
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+  level: string;
+  employment_type: string;
+  /** onsite / hybrid / remote, or "" when the posting doesn't say. */
+  work_mode: string;
+  /** Province/city through the crawler's own table, so a pasted job lands in
+   *  the same Market bar as a crawled one. Null when it names none we know. */
+  city: string | null;
+  skills: string[];
+  sections: JdSections;
+  description_md: string;
+  apply_email: string;
+  language: string;
+  flags: string[];
+  notes: string[];
 }
 
 export interface Stats {
@@ -695,6 +787,8 @@ export interface LlmSettings {
   tailor: string;
   letter: string;
   classify: string;
+  /** Reading a pasted JD, and scoring it against the Master CV. */
+  intake: string;
   /** provider -> model id. Absent = that provider's own default. */
   models: Record<string, string>;
   /** task -> model id, overriding `models` for one call. */
@@ -706,7 +800,7 @@ export interface LlmSettings {
   gemini_paid_tier: boolean;
 }
 
-export type LlmTask = "tailor" | "letter" | "classify";
+export type LlmTask = "intake" | "tailor" | "letter" | "classify";
 
 export interface BackendStats {
   task: string;
@@ -768,8 +862,11 @@ export interface JobInput {
   company: string;
   location?: string | null;
   salary?: string | null;
+  level?: string | null;
   description_md?: string;
   skills?: string[];
+  work_mode?: string;
+  sections?: JdSections | null;
   apply_channel?: string;
   apply_target?: string | null;
 }
