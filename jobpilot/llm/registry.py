@@ -43,6 +43,14 @@ class Provider:
     build: Callable[[str, str, str], StructuredClient]
 
 
+#: Tasks that do not get Claude's extended thinking. Both are reading tasks
+#: rather than writing ones — pull six fields off a posting, sort an email into
+#: one of six labels — and neither has ever failed in a way more deliberation
+#: would fix. A named set rather than ``task != "classify"`` so the third such
+#: task doesn't have to rediscover the reasoning.
+NO_THINKING: frozenset[str] = frozenset({"classify", "intake"})
+
+
 PROVIDERS: dict[str, Provider] = {
     "claude": Provider(
         key="claude",
@@ -52,7 +60,7 @@ PROVIDERS: dict[str, Provider] = {
         env_var="ANTHROPIC_API_KEY",
         extra="tailor",
         build=lambda model, key, task: ClaudeClient(
-            model=model, api_key=key, thinking=task != "classify"
+            model=model, api_key=key, thinking=task not in NO_THINKING
         ),
     ),
     "openai": Provider(

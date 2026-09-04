@@ -129,7 +129,7 @@ def llm_stats(
     from jobpilot.llm.redact import shadowed_secrets
     from jobpilot.llm.registry import PROVIDERS, api_key, list_models
 
-    tasks: tuple[str, ...] = ("tailor", "letter", "classify")
+    tasks: tuple[str, ...] = llm.TASKS
     cfg = get_config().llm
     rows = backend_stats(db, task=task)
 

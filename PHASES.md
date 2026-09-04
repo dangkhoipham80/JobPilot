@@ -1805,3 +1805,235 @@ sửa vẫn **đang tiềm ẩn**; chỉ ca `Up to $3500` là đã quan sát đ�
 ⚠️ **`salary_range` là dữ liệu đã ghi trong `payload`, không tính lại lúc đọc.** Sửa parser xong
 **bắt buộc `backfill --force`** (đã chạy: 181 job), nếu không `/market` vẫn vẽ bằng số cũ và mọi
 verify đều "xanh" một cách vô nghĩa.
+
+---
+
+## Phase intake — dán JD vào, AI đọc + chấm, rồi mới tailor
+
+**Xuất phát**: form "Add job" đã có từ Phase 9, nhưng nó bắt gõ tay 5 ô. User muốn: nhặt JD ở đâu
+đó, dán một phát, AI đọc giúp, chấm giúp, rồi tự quyết có tailor không.
+
+### Ba bước, cố ý tách rời
+
+`POST /jobs/intake` (đọc → điền form, **không lưu**) → `POST /jobs` (như cũ) →
+`POST /jobs/{id}/fit` (chấm CV vs tin). Nút tailor vẫn là nút riêng, user bấm — human-in-the-loop.
+
+### Bug đã có sẵn trên `main`, lộ ra khi làm cái này
+
+**Job thêm tay không hề được enrich.** `create_job` bỏ qua toàn bộ `normalize()`: không `quality`,
+không `salary_range`/`skills_canonical`/`city`/`is_remote`, không suy ra `level`, và
+`match_score = 0.0`. Hệ quả: job dán tay **vô hình với `/market`** và **luôn xếp bét** trong list
+sort theo độ khớp — mà trên màn hình **không có gì giải thích tại sao**. Không phải "sai số", mà là
+một job cả app không nhìn thấy đúng. Đã tách `crawler/normalize.enrich()` (nhận giá trị thuần,
+trả `Enrichment`) và gọi từ cả `POST /jobs` lẫn `PATCH /jobs`. Verify thật: job dán tay giờ ra
+`match_score 1.0`, `matched: [Java, Spring Boot, Backend, Microservices]`.
+
+`PATCH` cũng cần nó: dán JD vào một tin LinkedIn alert là **đúng mục đích tồn tại** của endpoint đó,
+mà cờ `no_jd` vẫn nằm nguyên sau khi user đã sửa đúng cái mà cờ đó phàn nàn.
+
+### Ba luật của vùng này (chi tiết ở `jobpilot/intake/CLAUDE.md`)
+
+1. **JD lưu xuống là bản dán của user, không bao giờ là bản model kể lại.** `JdExtract` **không có**
+   field `description_md`. Mọi guardrail phía sau đọc field đó như *bằng chứng*; để model viết lại
+   là để nó bịa ra bằng chứng cho chính nó, và không guard nào bắt được.
+2. **Fit report chỉ advisory** — không ghi vào CV, không vào cover letter, không vào prompt tailor.
+   Chính ranh giới đó cho phép `intake/engine.py` **không có** vòng retry: không có luật máy móc
+   nào phân biệt ý kiến đúng với ý kiến sai.
+3. **`assess_fit` không đụng cột `jobs.match_score`.** Ba con số khác nhau cùng tên — bảng ở
+   `intake/CLAUDE.md`. `PATCH` cũng giữ cột lại khi job đã qua tailor.
+
+### Đo được, không đoán
+
+- **`match_score` của fit bị TÍNH LẠI từ list, không lấy của model.** Cùng prompt, cùng job, ba
+  backend: **0.50 / 0.32 / 0.31** — chênh gần như hoàn toàn vì *bao nhiêu requirement bị xếp
+  `must_have`*, không phải vì bất đồng về CV có gì. `soft` trọng số **0** (CV không chứng minh được
+  "high growth drive"); tin toàn `soft` → **0.5 chứ không phải 0.0**; `verdict` derive từ điểm và
+  dealbreaker ép về `weak`. Sau khi tính lại, ba backend cùng ra verdict `weak`.
+- **`llm bench --task intake`** (mới): 3 tin có đáp án, chấm theo **field** (11 field), và nửa số
+  đáp án là **ô trống** — vì hỏng kiểu của call này là điền vào chỗ tin không hề nói.
+- **Default model KHÔNG phải cái rẻ nhất qua bench**, và đó là chủ ý. gpt-4o-mini 55/55 field, rẻ
+  hơn 3 lần; nhưng hỏi 4 lần "CV có `Java, Spring Boot` thì có đáp ứng `working JVM knowledge`
+  không" thì trả HAVE / MISSING / PARTIAL / MISSING. gpt-4.1-mini: HAVE cả 4 lần, 54/55 field.
+  ⇒ bench chỉ đo **nửa** việc này. Lý do ghi thẳng trong `config.yaml`.
+
+### Verify trên môi trường thật
+
+Postgres thật + trình duyệt thật, 0 console error. Dán một tin tiếng Việt có **panel "Việc làm
+tương tự"** (2 mức lương của tin khác): cả 3 model đều lấy đúng `45 - 65 triệu`, **không** dính bẫy.
+Lấy đúng `careers@…`, level `senior`, `language vi`. Extract ~3s, fit ~7s. Fit ra `Khớp yếu · Phủ
+39%` với dealbreaker `Không đủ 4 năm kinh nghiệm backend với Java`, evidence trỏ đúng entry có thật
+trong Master CV.
+
+### Bẫy đã trả giá
+
+- **`clean_text` phá JD.** Nó gộp mọi khoảng trắng **kể cả `\n`** — đúng cho title/location, hỏng
+  cho body: JD phần lớn là gạch đầu dòng, gộp hết thành một đoạn là ném đi cấu trúc. `clean_paste`
+  làm sạch **theo từng dòng**. Chỉ thấy được khi mở trình duyệt và nhìn bullet list render.
+- **`job.status` là `None` cho tới khi flush** (default của cột do DB áp, không phải constructor),
+  nên guard `job.status in _EARLY` trên row vừa `db.add()` cho `False` ⇒ **mọi job thêm tay vẫn
+  score 0.0** — đúng cái bug đang đi sửa. Test bắt được.
+- **`from jobpilot.crawler import normalize` bind vào *hàm*, không phải module** (package re-export
+  cả hai tên) ⇒ `AttributeError` lúc **chạy**, không phải lúc import.
+- **`posted_at` từ DB naive, `vn_now()` aware** — SQLite naive / Postgres aware, nên `flags_for`
+  raise trên một backend chứ không phải cả hai. `enrich()` gọi `as_aware` một lần cho mọi caller.
+- **`model_copy(update=...)` bỏ qua validator** ⇒ test "level lạ bị drop" viết bằng nó là test
+  không kiểm gì cả.
+- **Prompt nói ngôn ngữ ở đâu thì model nghe ở đó.** Luật "viết bằng ngôn ngữ của tin đăng" nằm
+  lẫn trong danh sách field thì bị bỏ qua — tin tiếng Việt ra summary tiếng Anh, giữa dashboard
+  tiếng Việt. Đưa lên **mục riêng đầu system prompt** thì đúng ngay lần đầu.
+- **`llm.TASKS`**: tuple task vốn được chép tay ở 3 chỗ. Thêm task thứ 4 mà chỉ sửa 2 chỗ thì
+  trang `/models` lặng lẽ không cấu hình được thứ CLI cấu hình được. Giờ một tuple, mọi nơi đọc nó.
+
+### Review gate — findings đã sửa
+
+`phase-reviewer` trả **CHANGES REQUESTED**, một blocker + 6 mục. Đã sửa hết:
+
+- **Blocker: 500 trên Postgres.** Prompt bảo model *chép nguyên văn* nhãn lương, nên tin ghi lương
+  thành cả câu cho ra `salary` 148 ký tự → `VARCHAR(128)` → `StringDataRightTruncation` giữa flush,
+  **500 không nói field nào sai**, sau khi user đã trả tiền cho lượt gọi model. Lỗ này **có sẵn trên
+  `main`**, nhưng trước đây phải tự gõ 148 ký tự vào ô lương mới chạm tới; giờ có model điền hộ.
+  `_fit()` thành `fit_column(field, value)` public + `COLUMN_WIDTHS`, áp cho cả `POST` lẫn `PATCH`.
+  Đã tái hiện **và** verify lại trên Postgres thật: 500 → 201, cắt đúng 128/256.
+- **Card fit tự mâu thuẫn**: `counts` đếm cả `soft` trong khi điểm cho `soft` trọng số 0 ⇒
+  "Khớp tốt · Phủ 100%" nằm cạnh "2 có · 4 thiếu". Giờ chỉ đếm requirement **được chấm**, `soft`
+  tách riêng ("4 kỹ năng mềm (không tính điểm)").
+- **`skills` bị form vứt đi**: `IntakeOut` trả skills, UI không map → job dán tay vào DB với
+  `skills_canonical: []` ⇒ **không đóng góp gì cho facet skill của `/market`**, đúng cái lý do
+  `enrich()` được viết ra. Test cũ xanh chỉ vì `_save()` tự gửi skills — **đường mà UI thật không
+  bao giờ đi**, bẫy #1 của repo ở dạng nhẹ. Giờ skills hiện thành chip xoá được.
+- **`SENDS_MASTER_CV` thành hằng chết** sau khi `warnings()` chuyển sang dict có default ⇒ task thứ
+  5 *không* gửi CV mà quên khai sẽ bị cảnh báo **sai**. Giờ `PROMPT_CONTENTS` là bảng gốc,
+  `SENDS_MASTER_CV` phái sinh từ nó, và thiếu entry thì **raise**, không đoán.
+- **Câu "cùng công thức với tailor nên so được với nhau" là sai**: `TailorPlan.match_score` lấy
+  nguyên số của model, `FitReport` thì tính lại. Đã bỏ mệnh đề đó ở cả tooltip lẫn docstring.
+- **`clean_paste` làm phẳng bullet lồng nhau** trong khi module tự nhận "byte-for-byte". Giữ indent
+  (cap 8 cột), sửa luôn docstring cho đúng sự thật.
+- **`intake: openai` hard-code**: checkout mới chỉ có `ANTHROPIC_API_KEY` sẽ ăn 409 ở đúng tính năng
+  chính của phase. Đổi về `""` (theo `llm.provider`) + `task_models.intake: claude-haiku-4-5` —
+  haiku 44/44 field **và** trả lời đúng nửa fit cả 4 lần.
+- **Nit**: `undated` bật ở preview rồi bị chính bước lưu xoá (save stamp `posted_at = now`) ⇒ chip
+  mà lần dán nào cũng bật và lần lưu nào cũng tắt chỉ dạy user bỏ qua chip; `notes` từ dead payload
+  thành tooltip của chip; `read()` đổi sang `useRef` guard theo `web/src/CLAUDE.md`; `TASKS` ở
+  `Models.tsx` giờ **fail biên dịch** nếu thiếu một `LlmTask` (đã thử: bỏ `intake` ra → `error
+  TS2322 ... ["missing from TASKS:", "intake"]`).
+
+Reviewer cũng nêu **CV rỗng** là nợ có sẵn (tailor cũng không guard). Đã guard cho `assess_fit`:
+gửi skeleton đi sẽ nhận "weak, 0%" — phán quyết tự tin về sự nghiệp user trong khi sự thật là
+"bạn chưa điền CV". Ngưỡng **đo từ chính skeleton**, vì skeleton ra **đúng 200** ký tự và một hằng
+200 gõ tay sẽ nằm ngay trên ranh giới rồi cho lọt.
+
+**Cố ý không sửa**: `assess_fit` không `manager.broadcast`. `broadcast` là `async`, đổi route thành
+`async def` là đem lượt gọi model ~7s lên **event loop** — chặn cả app để đổi lấy việc tab thứ hai
+thấy fit mới. Lý do đầy đủ ở `jobpilot/intake/CLAUDE.md`.
+
+---
+
+## Phase intake-2 — JD có cấu trúc, lương 4 dạng, tỉnh/thành, hình thức làm việc
+
+Đợt 1 của yêu cầu mở rộng (đợt 2: company + HR + migration, chưa làm).
+
+### JD có cấu trúc — hai lượt gọi song song
+
+`extract` (fact đầu tin) + `sections` (thân tin chia 8 bucket: vai trò, nhiệm vụ, yêu cầu chuyên
+môn, ưu tiên, kỹ năng mềm, kết quả mong đợi, quyền lợi, cách ứng tuyển). Hai schema nhỏ thay vì một
+schema 18 field / 7 array — đúng hình dạng mà `llm/CLAUDE.md` ghi là bị provider từ chối. Chạy
+**đồng thời**: đo thật, cả cặp ≈ lượt chậm hơn (~3s khi cache, ~8s lần đầu), không phải tổng.
+
+**Đã đo schema trước khi chọn**, không đoán: `JdSections` raw 2703 / strict 2703 / flat 2703 — dưới
+`TailorPlan` (4682/4994) vốn đã PASS cả 3 provider. Rồi **gọi thật cả 3**: claude-haiku, gpt-4.1-mini,
+gemini-3.5-flash đều nhận, đều xếp `"Docker, Kubernetes là một lợi thế"` vào `nice_to_have` và đều
+bỏ qua panel "Việc làm tương tự".
+
+**Bucket là mục lục CỦA `description_md`, không thay nó.** Cả hai cùng lưu; UI là toggle
+"Có cấu trúc / Nguyên văn" **trong** card JD, không phải card thứ hai — bản gốc cách một click là
+điều duy nhất khiến hiển thị bản sắp xếp của model là an toàn.
+
+### Bug đã dính (và đây là lần thứ HAI của cùng một bài học)
+
+**Model dịch tin tiếng Việt sang tiếng Anh.** Mọi dòng đúng nội dung, nhưng không còn là dòng của
+tin đăng — phá đúng luật cốt lõi của tính năng. Luật "giữ nguyên ngôn ngữ" nằm **lẫn trong một
+đoạn văn** thì bị bỏ qua. Nâng thành **mục riêng, viết hoa, ở đầu system prompt** → 4/4 lượt trên
+2 backend trả tiếng Việt nguyên văn. Y hệt ca `summary` của fit report ở đợt trước, trong cùng file
+prompt. ⇒ **Luật về ngôn ngữ đặt trong danh sách field thì model không nghe.**
+
+### Lương: 4 dạng chứ không phải 3
+
+Yêu cầu nói 3 (fix / up to / range). Parser **vốn đã** sinh ra dạng thứ 4: **sàn không trần**
+(`Từ 15 triệu`, `trên 20 triệu`). Gộp nó vào `range` là bịa ra một cái trần; gộp vào `fixed` là bịa
+ra một mức lương. `Salary.kind` **suy ra** từ `min`/`max` (không lưu) nên không thể lệch khỏi con số
+nó mô tả.
+
+### Tỉnh/thành: hai lỗ đo được trên corpus thật
+
+- **`"Ho Chi Minh City, Vietnam"`** — dạng **mọi** LinkedIn alert dùng, mà LinkedIn >½ corpus —
+  tách thành `["Ho Chi Minh City", "Vietnam"]`; `"Vietnam"` không phải city ⇒ trượt cửa "mọi phần
+  đều là city" ⇒ **rớt cả nhãn**. `city=None`, job biến mất khỏi chart city của `/market`, **không
+  một lỗi nào hiện ra**.
+- **`"TP.HCM"`** fold thành `"tp hcm"`, không có trong alias ⇒ cũng `None`.
+- **`(On-site)` / `(Hybrid)` là chú thích của NHÃN** (`"Hanoi Capital Region (On-site)"`), cùng họ
+  với `(mới)` của TopCV. Strip rồi đọc lại thành `work_mode` — một chuỗi, hai thông tin.
+
+**Đo sau `backfill --force`**: có location mà không ra tỉnh **160 → 119**. Phần còn lại là thành phố
+**nước ngoài** (Berlin ×10, London ×7, Bangalore ×6…) — `None` ở đó *đúng*, `CITIES` chỉ có 34 tỉnh
+VN. `work_mode` phủ **105/216** job (36 remote / 22 hybrid / 47 onsite), trước đó là 0.
+
+⚠️ **`is_remote` và `work_mode` từng mâu thuẫn.** 8 job ghi `"Anywhere in the World"`: `_REMOTE_RE`
+biết, pattern viết tay song song thì không ⇒ `is_remote=true` mà `work_mode=null`, **cùng một dòng,
+cùng một câu hỏi**. Nhánh remote giờ dùng lại `_REMOTE_RE.pattern`; có test ghim; sau backfill
+**0 mâu thuẫn**. Hai field suy ra từ một nhãn thì không được có hai bộ luật — bài học cũ, chỗ mới.
+
+⚠️ Đây là lý do `backfill --force` **bắt buộc** sau khi sửa parser: `city`/`salary_range`/`work_mode`
+là dữ liệu **đã ghi**, không tính lại lúc đọc.
+
+### Review gate (intake-2) — findings đã sửa
+
+`phase-reviewer` trả **CHANGES REQUESTED**, 2 blocker + 4 mục + 3 nit. Đã sửa hết.
+
+**Blocker 1 — `backfill --force` XOÁ SẠCH facet của mọi job dán tay.** `backfill_facets` đọc input
+từ `payload["location"]` / `payload["salary"]`, mà hai key đó **chỉ `normalize()` ghi** — job vào
+qua `POST /jobs` chưa bao giờ có. Nên nó gọi `derived_facets(None, ..., None)` và null hoá
+`city`/`salary_range`/`is_remote`/`work_mode`. Không crash, không log: **một cú xoá im lặng, do
+chính lệnh mà tài liệu bảo BẮT BUỘC chạy sau khi sửa parser**. Đã có thật trong Postgres: row
+`manual:selftest-backend` (`location='Ha Noi, Vietnam'`) đang mang `city=NULL`, tức đang vắng mặt
+khỏi chart city của `/market`. Sửa: đọc từ **cột** (`job.location`/`job.salary`) — nguồn duy nhất cả
+hai đường ghi đều có — payload chỉ còn là fallback. Chạy lại backfill: row đó về `city='Hà Nội'`,
+`no-city` **119 → 114**, `city` **94 → 99**.
+
+**Blocker 2 — `PATCH /jobs` vứt `work_mode`.** `{**payload, **signals.payload}` mà `signals.payload`
+**luôn** có key `work_mode` (derive từ nhãn location) ⇒ đè lên cả giá trị user vừa PATCH lẫn giá trị
+đã lưu. `create_job` đặt ngược lại nên **giữ** — hai endpoint hai luật, và đó đúng là lý do test
+không bắt được (mỗi endpoint chỉ test theo thứ tự của chính nó). Hệ quả thật: job remote lưu từ
+intake, user **sửa JD trong card Job description** → chip work_mode biến mất vĩnh viễn. Sửa bằng
+**một helper `_merged_payload` dùng chung**: ai *nói ra* thì thắng, nhãn location chỉ là fallback.
+
+**Còn lại:**
+- `sections` hỏng thì **không** làm hỏng cả lượt intake nữa — `JdSections` là schema lớn hơn, dễ bị
+  provider từ chối hơn; fail cả form là ném đi một `extract` user đã trả tiền. Giờ degrade về bucket
+  rỗng (UI hiện tab "Nguyên văn"), có log.
+- **`level` không được clamp** — `String(32)`, tới thẳng từ request body ⇒ đúng cái bẫy
+  `StringDataRightTruncation` mà batch trước viết `fit_column` để đóng, chỉ đóng cho 4 cột. Thêm
+  `level` vào `COLUMN_WIDTHS` và clamp **trong `enrich()`** (một chỗ quyết định cho cả hai writer).
+- **`work_mode` chưa đóng vocabulary ở biên API** — `JobIn.work_mode: str` nhận mọi chuỗi, ra màn
+  hình thành chip title-case vô nghĩa. Giờ là `Literal`, **derive từ `WORK_MODES`** kèm assert để
+  hai bên không thể biết hai bộ từ khác nhau.
+- **`Salary.kind` tính ra rồi chôn vào JSONB** — user hỏi "lương 3 dạng" mà không dạng nào lên màn
+  hình. Giờ có `JobDetailOut.salary_kind` và chip cạnh mức lương ("40 - 60 triệu · khoảng").
+- **Claim "một chuỗi, hai thông tin, không mất cái nào" chỉ đúng với LinkedIn**: ITviec/TopCV/
+  VietnamWorks cho location qua `clean_city` **trước khi lưu**, nên hậu tố `(Hybrid)` đã mất trước
+  khi `parse_work_mode` kịp đọc. Chưa gây sai dữ liệu (board VN không viết hậu tố đó) nhưng comment
+  đang nói sai — đã sửa lại cho đúng.
+
+**Nit:** `looks_like_city("Ha Noi, 2025")` **thành True** sau thay đổi (trước là False) — vì
+`_fold_city` xoá cả chữ số nên phần "2025" fold ra rỗng rồi bị bỏ qua, **nới đúng cái cửa mà scar
+"remote debugging" sinh ra để giữ**. Sửa: chỉ bỏ qua phần **toàn từ trang trí** (`_is_only_filler`
+= có chữ cái, nhưng hết sạch sau khi bỏ filler), nên "2025" và "..." vẫn phải tự chứng minh là city.
+Bỏ một dòng no-op trong validator `work_mode`.
+
+**Reviewer nói đúng một chỗ khó chịu**: lúc review, `select count(*) where payload ? 'sections'` = 0
+— tức đường ghi `sections` qua `POST /jobs` **chưa từng chạy thật**, dù summary ghi "verified live".
+Thật ra nó *đã* chạy trong trình duyệt, nhưng tôi **xoá row test sau mỗi lần verify**, nên trạng thái
+còn lại không chứng minh được gì. Đã chạy lại end-to-end sau khi sửa: intake 6.1s → save
+(`salary_kind='from'`, `work_mode='hybrid'`, sections tiếng Việt nguyên văn) → PATCH lương
+(`salary_kind` đổi thành `range`, `work_mode` **giữ nguyên**, sections **không** bị drop vì JD không
+đổi). Bài học: **xoá dữ liệu verify xong thì lời khai "đã verify" không còn kiểm chứng được** —
+lần sau giữ lại row cho tới khi review xong.

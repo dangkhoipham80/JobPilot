@@ -17,13 +17,18 @@ from jobpilot.config import Config
 from jobpilot.crawler.quality import Quality, flags_for, stack_coverage
 from jobpilot.crawler.text import clean_text, dedup_key, html_to_markdown, title_level
 from jobpilot.crawler.types import RawJob
-from jobpilot.timeutil import VN_TZ, vn_now  # re-exported for callers/tests
+from jobpilot.timeutil import VN_TZ, as_aware, vn_now  # re-exported for callers/tests
 
 __all__ = [
     "VN_TZ",
     "vn_now",
     "parse_posted_at",
     "infer_level",
+    "LEVELS",
+    "COLUMN_WIDTHS",
+    "fit_column",
+    "Enrichment",
+    "enrich",
     "stack_match_score",
     "title_excluded",
     "NormalizedJob",
@@ -127,6 +132,14 @@ _LEVEL_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 _LEVEL_RES = tuple((level, re.compile(pat, re.I)) for level, pat in _LEVEL_PATTERNS)
 
+#: Every value ``infer_level`` can return. Exported because a second component
+#: now writes this column — ``intake`` lets a model name the level it read off a
+#: posting — and a model answering "mid-senior" would create a bucket of one
+#: that the Jobs filter and the Market level chart never select. Derived from the
+#: patterns rather than typed out again: the two drifting apart is precisely the
+#: failure this constant exists to prevent.
+LEVELS: frozenset[str] = frozenset(level for level, _pattern in _LEVEL_PATTERNS)
+
 
 def infer_level(title: str, description: str = "") -> str | None:
     """Best-effort seniority from title/JD (intern/fresher checked before senior)."""
@@ -162,16 +175,38 @@ def title_excluded(title: str, exclude_keywords: list[str]) -> bool:
 # --------------------------------------------------------------------------- #
 # normalization
 # --------------------------------------------------------------------------- #
-def _fit(value: str | None, limit: int) -> str | None:
-    """Clean ``value`` and clamp it to a column width, preserving ``None``.
+#: Width of each ``jobs`` column that holds a free-text field, so callers clamp
+#: to the same numbers the model declares rather than to a copy of them.
+COLUMN_WIDTHS: dict[str, int] = {
+    "title": 256,
+    "company": 256,
+    "location": 256,
+    "salary": 128,
+    # Narrow, and reachable: `POST /jobs` takes `level` straight from a request
+    # body. Small enough to look harmless and therefore the one most likely to
+    # be left out of a clamp — which it was, until a review pointed out that
+    # `{"level": "s"*200}` passes on SQLite and raises StringDataRightTruncation
+    # mid-flush on Postgres.
+    "level": 32,
+}
+
+
+def fit_column(field: str, value: str | None) -> str | None:
+    """Clean ``value`` and clamp it to ``field``'s column width, preserving ``None``.
 
     ``None`` must stay ``None`` — for ``salary`` it is the meaningful "not
     disclosed", and returning ``""`` would read as a published empty salary.
+
+    Public, and taking the field *name*, because the crawler is no longer the
+    only writer of these columns: ``POST /jobs`` accepts values a model read off
+    a pasted posting, and a model told to copy a salary label verbatim will
+    happily copy a whole sentence. On Postgres an overlong value raises
+    ``StringDataRightTruncation`` — a 500 with no indication of which field was
+    at fault, after the user has already paid for one model call.
     """
     if value is None:
         return None
-    cleaned = clean_text(value)
-    return cleaned[:limit]
+    return clean_text(value)[: COLUMN_WIDTHS[field]]
 
 
 @dataclass
@@ -262,10 +297,10 @@ def normalize(raw: RawJob, cfg: Config, now: datetime | None = None) -> Normaliz
         # damage local and visible (payload still holds the full text), which is
         # the graceful-per-site-failure rule applied per field. SQLite ignores
         # these widths, so only a real Postgres run ever surfaces it.
-        title=_fit(raw.title, 256),
-        company=_fit(raw.company, 256),
-        location=_fit(raw.location, 256),
-        salary=_fit(raw.salary, 128),
+        title=fit_column("title", raw.title),
+        company=fit_column("company", raw.company),
+        location=fit_column("location", raw.location),
+        salary=fit_column("salary", raw.salary),
         level=level,
         posted_at=posted_at,
         apply_channel=raw.apply_channel,
@@ -282,6 +317,45 @@ def normalize(raw: RawJob, cfg: Config, now: datetime | None = None) -> Normaliz
 #: boundaries: `"remote" in text` matched "remote debugging" in a JD, which is
 #: the substring trap CLAUDE.md already records paying for once.
 _REMOTE_RE = re.compile(r"\b(remote|work from home|wfh|anywhere)\b", re.I)
+
+#: How a job is worked, in the three words postings actually use. ``None`` is a
+#: fourth state and the most common one — most ads never say — so this is
+#: deliberately not an enum with an "unknown" member: not stated is absence of
+#: an answer, not a kind of answer (the ``undated`` vs ``stale`` rule again).
+WORK_MODES: tuple[str, ...] = ("onsite", "hybrid", "remote")
+
+#: Hybrid first: "hybrid (2 days onsite)" is hybrid, and a first-match scan that
+#: tried onsite first would call it onsite. Vietnamese ads say "tại văn phòng"
+#: for onsite and "từ xa" for remote.
+#
+# The remote branch reuses `_REMOTE_RE` rather than restating it. Measured on the
+# live corpus: eight jobs listed "Anywhere in the World", which `_REMOTE_RE`
+# knows and a hand-written twin did not — so `is_remote` said true while
+# `work_mode` said nothing, on the same row, about the same question. Two fields
+# derived from one label must not be able to disagree about it.
+_WORK_MODE_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("hybrid", re.compile(r"\bhybrid\b|\bkết hợp\b", re.I)),
+    ("remote", re.compile(rf"{_REMOTE_RE.pattern}|\btừ xa\b|\btại nhà\b", re.I)),
+    ("onsite", re.compile(r"\bon-?site\b|\btại văn phòng\b|\btại công ty\b", re.I)),
+)
+
+
+def parse_work_mode(*texts: str | None) -> str | None:
+    """onsite / hybrid / remote, from the first text that says so.
+
+    Scanned over the *location label* and the posting's own words about where
+    the work happens — never over a whole JD. A description that mentions
+    "remote-first culture" in a perks list is not stating this job's
+    arrangement, and the substring trap this repo already paid for once
+    ("remote" inside "remote debugging") is the same trap one level up.
+    """
+    for text in texts:
+        if not text:
+            continue
+        for mode, pattern in _WORK_MODE_RES:
+            if pattern.search(text):
+                return mode
+    return None
 
 
 def derived_facets(
@@ -312,7 +386,93 @@ def derived_facets(
         "skills_canonical": canonicalise(skills_raw),
         "city": canonical_city(location) if location and looks_like_city(location) else None,
         "is_remote": remote,
+        # Read off the location label, which is where boards put it: LinkedIn
+        # writes "Ho Chi Minh City, Vietnam (Hybrid)" on every posting it
+        # announces. Derived here rather than only at intake so crawled jobs
+        # carry it too — and so `backfill --force` can fill it in for the ones
+        # already stored. Finer than `is_remote`, which cannot tell hybrid from
+        # on-site; both are kept because `is_remote` is what /market filters on.
+        "work_mode": parse_work_mode(location),
     }
+
+
+@dataclass(frozen=True)
+class Enrichment:
+    """Everything ``normalize`` derives, for a job that never went through it."""
+
+    level: str | None
+    match_score: float
+    payload: dict
+
+
+def enrich(
+    *,
+    cfg: Config,
+    title: str,
+    location: str | None = None,
+    salary: str | None = None,
+    level: str | None = None,
+    skills: list[str] | None = None,
+    description_md: str = "",
+    posted_at: datetime | None = None,
+    needs_jd: bool = False,
+    now: datetime | None = None,
+) -> Enrichment:
+    """The derivations ``normalize`` runs, for a job assembled by hand.
+
+    A job added through ``POST /jobs`` never meets a scraper, so until this
+    existed it arrived with ``match_score`` 0.0, no quality flags and none of the
+    analytics facets — it was on the Jobs page and invisible to the Market page,
+    scored below every crawled job in a list sorted by relevance, and carried no
+    explanation of why. Not a wrong answer so much as a job the rest of the app
+    could not see properly, which is the harder kind of bug to notice.
+
+    Takes plain values rather than a ``RawJob`` because the caller has an API
+    body, and returns them rather than mutating a row because the same
+    derivations have to be available to a caller who has not decided to save
+    anything yet. ``normalize`` keeps its own copy of these calls: it holds the
+    scraper's extra context (``posted_raw``, HTML, ``raw_ref``) and folding both
+    into one function would mean inventing a shared input type that neither
+    caller naturally has.
+    """
+    now = now or vn_now()
+    # `normalize` gets `posted_at` fresh out of its own parser and always aware.
+    # This one gets it off a row the caller just loaded, and SQLite hands
+    # timestamps back naive where Postgres hands them back aware — so the
+    # comparison inside `flags_for` raises on one backend and not the other.
+    # Normalising here rather than at the call sites keeps that from being a
+    # thing each new caller has to rediscover.
+    posted_at = as_aware(posted_at)
+    # Clamped here rather than at each caller: this is the one place `Job.level`
+    # is decided for both the crawler and the API, and a caller-side clamp is a
+    # clamp the next caller forgets. `infer_level` only ever returns short known
+    # words, so this is really about the value a request body supplied.
+    level = fit_column("level", level) or infer_level(title, description_md)
+    haystack = " ".join([title, " ".join(skills or []), description_md])
+    score = stack_match_score(haystack, cfg.crawl.stacks)
+    matched, missing = stack_coverage(haystack, cfg.crawl.stacks)
+    quality = Quality(
+        matched=matched,
+        missing=missing,
+        flags=flags_for(
+            description_md=description_md,
+            posted_at=posted_at,
+            needs_jd=needs_jd,
+            now=now,
+            stale_days=cfg.crawl.stale_days,
+        ),
+    )
+    fresh = bool(posted_at and (now - posted_at) <= timedelta(hours=cfg.crawl.fresh_hours))
+    return Enrichment(
+        level=level,
+        match_score=score,
+        payload={
+            **derived_facets(salary, skills, location, description_md),
+            "match_score": score,
+            "quality": quality.as_dict(),
+            "is_fresh": fresh,
+        },
+    )
 
 
 def backfill_facets(session, *, force: bool = False) -> int:
@@ -334,9 +494,18 @@ def backfill_facets(session, *, force: bool = False) -> int:
             continue
         payload.update(
             derived_facets(
-                payload.get("salary"),
+                # From the **columns**, with payload only as a fallback. Those
+                # two payload keys are written by `normalize()` and by nothing
+                # else — a job added through `POST /jobs` never had them — so
+                # reading payload first meant this function handed
+                # `derived_facets(None, ..., None)` every hand-added job and
+                # nulled its city, salary_range, is_remote and work_mode. Not a
+                # crash: a silent wipe, performed by the very command the docs
+                # say you *must* run after a parser fix. The columns are the one
+                # source both paths write.
+                job.salary or payload.get("salary"),
                 payload.get("skills"),
-                payload.get("location"),
+                job.location or payload.get("location"),
                 payload.get("description_md", ""),
             )
         )

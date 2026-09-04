@@ -16,6 +16,8 @@ import type {
   CvVersion,
   CvVersionDetail,
   CvVersionDiff,
+  FitReport,
+  JdIntake,
   Job,
   JobDetail,
   JobInput,
@@ -102,6 +104,18 @@ export const api = {
     req<JobDetail>(jobPath(id), { method: "PATCH", body: JSON.stringify(patch) }),
   shortlist: (id: string) => req<JobDetail>(`${jobPath(id)}/shortlist`, { method: "POST" }),
   skip: (id: string) => req<JobDetail>(`${jobPath(id)}/skip`, { method: "POST" }),
+
+  /* Read a pasted posting into form fields. Saves nothing — the answer goes
+     into the Add-job form for the user to correct, and `createJob` is still
+     what creates the row. Not queued (unlike tailor/apply): one model call with
+     someone waiting at a form, and the queue has a single worker that a running
+     crawl would park this behind for minutes. */
+  readJd: (text: string, url = "") =>
+    req<JdIntake>("/jobs/intake", { method: "POST", body: JSON.stringify({ text, url }) }),
+  /* Score a saved job against the Master CV. Advisory: it never edits the CV
+     and never feeds the tailor, so it is safe to run on anything, at any stage.
+     The result is stored on the job and comes back on `job()` afterwards. */
+  assessFit: (id: string) => req<FitReport>(`${jobPath(id)}/fit`, { method: "POST" }),
 
   /* CV Studio (Phase 4.5) */
   cv: (scope: string) => req<CvDocumentResponse>(cvPath(scope)),

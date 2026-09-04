@@ -14,6 +14,11 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from jobpilot import __version__
+# The task list, not the module: `build_parser` needs it to spell `--task`, and
+# it has to be a real value at parser-construction time. `jobpilot.llm` itself
+# imports nothing but `typing`, so this stays as cheap as the lazy imports the
+# rest of this file uses for anything that touches a database or an SDK.
+from jobpilot.llm import TASKS as LLM_TASKS
 from jobpilot.config import CONFIG_PATH, get_config, get_secrets
 
 
@@ -383,7 +388,7 @@ def cmd_llm(args: argparse.Namespace) -> int:
                 f'   Fix on Windows: setx {name} "" then open a NEW terminal.'
             )
         print(f"\nData-use notes checked {CHECKED_ON}. Currently configured:")
-        for task in ("tailor", "letter", "classify"):
+        for task in llm.TASKS:
             blocked = llm.blocker(task)
             suffix = f"  [BLOCKED: {blocked}]" if blocked else ""
             print(f"  {task:9} {cfg.for_task(task):8} {cfg.model_for(task)}{suffix}")
@@ -402,11 +407,13 @@ def cmd_llm(args: argparse.Namespace) -> int:
         for line in llm.warnings(args.task):
             print(f"! {line}", file=sys.stderr)
 
-    from jobpilot.llm.bench import bench_classify, bench_tailor
+    from jobpilot.llm.bench import bench_classify, bench_intake, bench_tailor
     from jobpilot.store.db import session_scope
 
     if args.task == "classify":
         result = bench_classify(limit=args.limit, provider=args.provider, model=args.model)
+    elif args.task == "intake":
+        result = bench_intake(limit=args.limit, provider=args.provider, model=args.model)
     else:
         with session_scope() as db:
             result = bench_tailor(
@@ -416,6 +423,10 @@ def cmd_llm(args: argparse.Namespace) -> int:
     print(f"{result.task} on {result.provider} / {result.model}")
     if result.task == "classify":
         print(f"  {result.correct}/{result.total} labels correct")
+    elif result.task == "intake":
+        # Fields, not postings — a model that reads the salary right and invents
+        # a seniority has got one of two things right, not one of one.
+        print(f"  {result.correct}/{result.total} fields correct")
     else:
         print(f"  {result.correct}/{result.total} plans cleared the guardrails")
         print(f"  {result.first_try}/{result.total} on the first round (no corrective retry)")
@@ -631,9 +642,9 @@ def build_parser() -> argparse.ArgumentParser:
     llm_sub = p_llm.add_subparsers(dest="llm_command", required=True)
     llm_sub.add_parser("providers", help="what is configured, what it costs you in privacy")
     p_llm_stats = llm_sub.add_parser("stats", help="cost, first-try rate and latency per backend")
-    p_llm_stats.add_argument("--task", choices=("tailor", "letter", "classify"), default=None)
+    p_llm_stats.add_argument("--task", choices=LLM_TASKS, default=None)
     p_llm_bench = llm_sub.add_parser("bench", help="score the configured backend on known answers")
-    p_llm_bench.add_argument("--task", choices=("tailor", "classify"), default="classify")
+    p_llm_bench.add_argument("--task", choices=("intake", "tailor", "classify"), default="classify")
     p_llm_bench.add_argument(
         "--limit", type=int, default=0, help="how many cases (tailor: real jobs from the DB)"
     )

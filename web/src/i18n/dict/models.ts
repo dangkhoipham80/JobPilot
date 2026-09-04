@@ -68,6 +68,9 @@ export const models = ns({
     cheapest: "cheapest",
     notOffered: "(not offered to your key)",
 
+    taskIntake: "Read a pasted JD",
+    taskIntakeBlurb:
+      "Pulls the fields out of a posting you pasted, and scores it against your CV. The reading is cheap; only the fit check sends your Master CV.",
     taskTailor: "Tailor",
     taskTailorBlurb:
       "Reorders numbered CV items and writes one summary. Sends your whole Master CV.",
@@ -140,6 +143,9 @@ export const models = ns({
     cheapest: "rẻ nhất",
     notOffered: "(key của bạn không dùng được)",
 
+    taskIntake: "Đọc JD dán vào",
+    taskIntakeBlurb:
+      "Rút các field ra từ tin bạn dán vào, và chấm độ khớp với CV. Phần đọc thì rẻ; chỉ bước chấm độ khớp mới gửi Master CV đi.",
     taskTailor: "Tailor",
     taskTailorBlurb:
       "Sắp xếp lại các mục CV đã đánh số và viết một đoạn summary. Gửi đi toàn bộ Master CV của bạn.",

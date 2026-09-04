@@ -106,6 +106,39 @@ export const jobs = ns({
     addJobChannel: "Applies as external — you submit it yourself.",
     addJobFailed: "Could not add the job",
 
+    /* Have a model read the paste --------------------------------------- */
+    readJd: "Let AI fill this in",
+    readJdBusy: "Reading the posting…",
+    readJdHint:
+      "Paste the posting first, then let AI pull out the title, company, pay and skills. Check what it filled in — a blank means the posting didn't say.",
+    readJdFilled: "Filled in from the posting. Correct anything that's wrong before saving.",
+    readJdFailed: "Could not read the posting",
+    readJdEmpty: "Paste the job description first.",
+    readJdApplyEmail: "The posting says to apply to {email}. Use it as the apply target?",
+    readJdUseEmail: "Use it",
+    readJdFound: "Read from the posting: {summary}",
+
+    /* The posting's body, bucketed ------------------------------------- */
+    viewStructured: "Structured",
+    viewRaw: "Original",
+    secRole: "The role",
+    secResponsibilities: "Responsibilities",
+    secMustHave: "Required",
+    secNiceToHave: "A plus",
+    secSoftSkills: "Soft skills",
+    secOutputs: "Expected output",
+    secBenefits: "Benefits",
+    secHowToApply: "How to apply",
+
+    /* Pay shape + work arrangement -------------------------------------- */
+    payFixed: "fixed",
+    payUpTo: "up to",
+    payFrom: "from",
+    payRange: "range",
+    modeOnsite: "On-site",
+    modeHybrid: "Hybrid",
+    modeRemote: "Remote",
+
     /* Match meter + quality flags ---------------------------------------- */
     match: "Match {pct}%",
     mentions: "Mentions: {list}",
@@ -199,6 +232,36 @@ export const jobs = ns({
     addJobJdPlaceholder: "Dán toàn bộ mô tả công việc vào đây…",
     addJobChannel: "Nộp theo kênh external — bạn tự nộp.",
     addJobFailed: "Không thêm được job",
+
+    readJd: "Để AI điền giúp",
+    readJdBusy: "Đang đọc tin…",
+    readJdHint:
+      "Dán tin tuyển dụng trước, rồi để AI rút ra tiêu đề, công ty, lương và skill. Xem lại phần nó điền — ô trống nghĩa là tin không nói.",
+    readJdFilled: "Đã điền từ tin tuyển dụng. Sửa lại chỗ nào sai trước khi lưu.",
+    readJdFailed: "Không đọc được tin",
+    readJdEmpty: "Dán mô tả công việc trước đã.",
+    readJdApplyEmail: "Tin ghi nộp về {email}. Dùng làm địa chỉ nộp?",
+    readJdUseEmail: "Dùng",
+    readJdFound: "Đọc được từ tin: {summary}",
+
+    viewStructured: "Có cấu trúc",
+    viewRaw: "Nguyên văn",
+    secRole: "Vai trò",
+    secResponsibilities: "Nhiệm vụ",
+    secMustHave: "Yêu cầu bắt buộc",
+    secNiceToHave: "Ưu tiên",
+    secSoftSkills: "Kỹ năng mềm",
+    secOutputs: "Kết quả mong đợi",
+    secBenefits: "Quyền lợi",
+    secHowToApply: "Cách ứng tuyển",
+
+    payFixed: "cố định",
+    payUpTo: "tối đa",
+    payFrom: "từ",
+    payRange: "khoảng",
+    modeOnsite: "Tại văn phòng",
+    modeHybrid: "Hybrid",
+    modeRemote: "Từ xa",
 
     match: "Khớp {pct}%",
     mentions: "Có nhắc: {list}",

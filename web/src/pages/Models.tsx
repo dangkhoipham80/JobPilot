@@ -24,10 +24,23 @@ import type { LlmSettings, LlmTask, Settings as SettingsData } from "@/types";
  * long before any hook could read the current language.
  */
 const TASKS = [
+  { key: "intake", label: "taskIntake", blurb: "taskIntakeBlurb" },
   { key: "tailor", label: "taskTailor", blurb: "taskTailorBlurb" },
   { key: "letter", label: "taskLetter", blurb: "taskLetterBlurb" },
   { key: "classify", label: "taskClassify", blurb: "taskClassifyBlurb" },
 ] as const satisfies readonly { key: LlmTask; label: string; blurb: string }[];
+
+// The backend's `llm.TASKS` is the source of truth and this is a second list, so
+// something has to notice when they diverge. `satisfies` only checks that every
+// entry *is* an LlmTask, not that every LlmTask has an entry — which is exactly
+// backwards for the failure that matters: a fifth task ships, the CLI can
+// configure it, and this page silently cannot. Assigning `never` to the leftover
+// members makes that a compile error instead.
+type _EveryTaskIsListed = Exclude<LlmTask, (typeof TASKS)[number]["key"]> extends never
+  ? true
+  : ["missing from TASKS:", Exclude<LlmTask, (typeof TASKS)[number]["key"]>];
+const _taskCoverage: _EveryTaskIsListed = true;
+void _taskCoverage;
 
 /** "—" for a number nobody can know, never a zero standing in for one. */
 function money(v: number | null): string {
