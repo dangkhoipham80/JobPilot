@@ -56,6 +56,62 @@ export interface JobDetail extends Job {
   /** Which shape of pay `salary` quotes. Null when nothing parsable was
    *  disclosed, which is most postings. */
   salary_kind: SalaryKind | null;
+  /** Which `companies` row the employer string resolved to. Null when the name
+   *  folds to nothing, or the row predates the link and hasn't been backfilled. */
+  company_id: number | null;
+  /** The people on file at that employer. Their emails are *offered* as an
+   *  apply target and never written to one — same rule as the JD's own
+   *  `apply_email`, and for the same reason. */
+  hr_contacts: HrContact[];
+}
+
+/** One person at an employer. Every field but `name` is optional, because that
+ *  is how contacts actually arrive. */
+export interface HrContact {
+  id: number;
+  company_id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  note: string | null;
+  created_at: string | null;
+}
+
+/** A row on /companies. */
+export interface Company {
+  id: number;
+  name: string;
+  /** The fold that decides "GitLab" and "gitlab" are one employer. Shown,
+   *  because a merge you cannot see is a merge you cannot argue with. */
+  normalized_name: string;
+  job_count: number;
+  /** Distinct jobs here with an application that actually went out — not the
+   *  number of attempts, and never a dry run. */
+  applied_count: number;
+  contact_count: number;
+}
+
+export interface CompanyDetail extends Company {
+  contacts: HrContact[];
+  jobs: Job[];
+  jobs_truncated: boolean;
+}
+
+export interface HrContactInput {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  note?: string | null;
+}
+
+export interface CompaniesQuery {
+  q?: string;
+  with_contacts?: boolean;
+  /** Default `applied` — who you have actually written to, which is the
+   *  question the page exists to answer. */
+  order?: "applied" | "jobs" | "name";
+  limit?: number;
+  offset?: number;
 }
 
 /** One requirement the posting states, judged against the Master CV. */

@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { useWebSocket, type WsMessage } from "@/hooks/useWebSocket";
 import { I18nProvider } from "@/i18n";
 import { Applications } from "@/pages/Applications";
+import { Companies } from "@/pages/Companies";
 import { CvReview } from "@/pages/CvReview";
 import { CvStudio } from "@/pages/CvStudio";
 import { Runs } from "@/pages/Runs";
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/cv" element={<CvStudio version={version} />} />
             <Route path="/cv/:scope" element={<CvStudio version={version} />} />
             <Route path="/applications" element={<Applications version={version} />} />
+            <Route path="/companies" element={<Companies version={version} />} />
             <Route path="/runs" element={<Runs version={version} />} />
             <Route path="/guide" element={<Guide version={version} />} />
             <Route path="/market" element={<Market version={version} />} />

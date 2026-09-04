@@ -16,7 +16,12 @@ import type {
   CvVersion,
   CvVersionDetail,
   CvVersionDiff,
+  Company,
+  CompanyDetail,
+  CompaniesQuery,
   FitReport,
+  HrContact,
+  HrContactInput,
   JdIntake,
   Job,
   JobDetail,
@@ -229,6 +234,34 @@ export const api = {
      task like crawling does — a dump plus an upload outlives a request. */
   backups: () => req<BackupStatus>("/backups"),
   startBackup: () => req<Task>("/backups", { method: "POST" }),
+
+  /* Companies + HR contacts. Company rows are provisioned by the write paths,
+     so this is a read of something the app already maintains — `createCompany`
+     exists for the employer you want to track before a posting from them has
+     ever landed. */
+  companies: (query: CompaniesQuery = {}) =>
+    req<Page<Company>>(`/companies${qs(query as Record<string, unknown>)}`),
+  company: (id: number) => req<CompanyDetail>(`/companies/${id}`),
+  createCompany: (name: string) =>
+    req<CompanyDetail>("/companies", { method: "POST", body: JSON.stringify({ name }) }),
+  /* Cosmetic: identity lives in `normalized_name`, which is derived from the
+     jobs and is not touched by a rename. */
+  renameCompany: (id: number, name: string) =>
+    req<CompanyDetail>(`/companies/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  addContact: (companyId: number, body: HrContactInput) =>
+    req<HrContact>(`/companies/${companyId}/contacts`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateContact: (companyId: number, contactId: number, body: HrContactInput) =>
+    req<HrContact>(`/companies/${companyId}/contacts/${contactId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  /* Answers with the company as it now stands, so the card that just changed
+     can be redrawn without a second request. */
+  deleteContact: (companyId: number, contactId: number) =>
+    req<CompanyDetail>(`/companies/${companyId}/contacts/${contactId}`, { method: "DELETE" }),
 
   settings: () => req<Settings>("/settings"),
   saveSettings: (patch: Partial<Settings>) =>

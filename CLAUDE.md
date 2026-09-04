@@ -24,6 +24,7 @@ Hai lớp:
 | `jobpilot/crawler/CLAUDE.md` | thêm site mới, robots, nguồn tier-2 đã loại, LinkedIn alerts, bẫy selector/fetch |
 | `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX |
 | `jobpilot/intake/CLAUDE.md` | dán JD → AI đọc + chấm độ khớp; JD lưu là bản của user, 3 loại `match_score` |
+| `jobpilot/companies/CLAUDE.md` | fold tên nhà tuyển dụng (hướng gộp nhầm là hướng nguy hiểm), HR contact, `apply_target` ai nói ra thì thắng |
 | `jobpilot/llm/CLAUDE.md` | chọn provider/model theo việc, schema từng provider, đo chi phí, scrub key |
 | `jobpilot/api/CLAUDE.md` | hợp đồng phân trang `Page{items,total,…}`, `ORDER BY` unique, cap 200 |
 | `jobpilot/apply/CLAUDE.md` | outcome (`current` vs `reached`), inbox sync, cover letter PDF |
@@ -103,7 +104,7 @@ python -m jobpilot.cli crawl --query "java spring" --limit 50   # scope 1 lần 
                                     # "java spring boot backend" → TopCV 0 job.
                                     # `crawl.max_pages` (mặc định 5) quyết định đi thêm
                                     # bao nhiêu trang. Hoặc dùng card "Crawl setup" ở trang Runs.
-python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích cho job cũ (idempotent)
+python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích + link công ty cho job cũ (idempotent)
 python -m jobpilot.cli backfill --force   # tính lại cả row đã có — dùng sau khi SỬA parser
 python -m jobpilot.cli cv seed      # tạo Master CV rỗng nếu chưa có (idempotent)
 python -m jobpilot.cli cv import my-cv.local.json   # nạp CV có sẵn vào DB
@@ -194,9 +195,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** mặc định, Docker thành đường lui (`cv.engine`); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
 | i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 18 namespace / 796 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 | intake | **Dán JD vào → AI đọc + chấm độ khớp.** Task LLM thứ 4 (`intake`); `POST /jobs/intake` điền form (không lưu), `POST /jobs/{id}/fit` chấm CV vs tin (advisory, không đụng CV). Job thêm tay giờ có quality + facet + `match_score` như job crawl | `jobpilot/intake/`, `api/routes/intake.py`, `web/src/components/FitCard.tsx` |
+| companies | **Nhà tuyển dụng thành bảng** + `hr_contacts` (migration 0011), `jobs.company_id`, trang `/companies`; email HR **được mời** làm `apply_target` **và đổi luôn `apply_channel` sang email** — cả hai cột **sống qua lượt crawl sau** (`apply_target_source`) | `jobpilot/companies/`, `api/routes/companies.py`, `web/src/pages/Companies.tsx` |
 | intake-2 | **JD có cấu trúc** (8 bucket: vai trò/nhiệm vụ/yêu cầu/ưu tiên/soft skill/output/quyền lợi/cách ứng tuyển) — 2 lượt gọi chạy song song, bucket là *mục lục* của JD gốc chứ không thay nó; **lương 4 dạng** (`Salary.kind`); **tỉnh/thành** hết rớt vì hậu tố quốc gia (160→119 job thiếu city); **onsite/hybrid/remote** phủ 105/216 | `intake/schema.py`, `crawler/vietnam.py`, `crawler/salary.py`, `web/src/components/JdSectionsView.tsx` |
 
-947 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 8 trang web,
+997 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
 build PDF bằng **tectonic và Docker** (Master + tailored, cả 2 template), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên

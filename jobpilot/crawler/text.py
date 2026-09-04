@@ -141,9 +141,84 @@ def fold(word: str | None) -> str:
     return stripped.replace("đ", "d")
 
 
-def normalize_company(company: str | None) -> str:
-    """An employer name reduced to what two spellings of it have in common."""
-    return clean_text(fold(company))
+#: Legal-form words that trail an employer name in English and most European
+#: registries ("Tinhvan Software **JSC.**", "Acme **Ltd**"). Stripped only from
+#: the *end*: "SA Group" and "Co-op Bank" are real names whose first token
+#: happens to be one of these, and folding those away would merge two employers
+#: into one HR contact list — the failure mode that ends with a CV in a
+#: stranger's inbox.
+_LEGAL_TAIL_WORDS = frozenset(
+    {
+        "inc", "incorporated", "llc", "ltd", "limited", "co", "corp",
+        "corporation", "company", "plc", "gmbh", "ag", "bv", "nv", "sa",
+        "srl", "pte", "pty", "sdn", "bhd", "kk", "jsc",
+    }
+)
+
+#: The Vietnamese equivalents, which are written in *front* of the name:
+#: "**Công ty TNHH** Foo", "**Công ty Cổ phần** Bar". Same reasoning mirrored —
+#: head only, because "Cong Ty" never trails a name here.
+_LEGAL_HEAD_WORDS = frozenset({"cong", "ty", "cty", "tnhh"})
+
+#: Head words that only count as a legal form once another one has been peeled
+#: off in front of them. "MTV" is "một thành viên" and is always written after
+#: "Công ty TNHH"; standing first it is an ordinary name, and stripping it
+#: turned "MTV Networks" into "networks" — a token generic enough to collide
+#: with a different employer, which is the one direction that must not happen.
+_LEGAL_HEAD_WORDS_AFTER = frozenset({"mtv"})
+
+#: Multi-word forms, matched as units so no single token has to be listed on its
+#: own. "phan" alone is a common Vietnamese surname and "stock" is an ordinary
+#: word; each is only a legal form beside its partner.
+_LEGAL_HEAD_PHRASES = (("co", "phan"),)
+_LEGAL_TAIL_PHRASES = (("joint", "stock"),)
+
+_NON_WORD = re.compile(r"[^a-z0-9]+")
+
+
+def _strip_legal_forms(tokens: list[str]) -> list[str]:
+    """Peel legal-form words off both ends, never down to nothing.
+
+    The ``len > 1`` guard is what makes a company literally called "Company Ltd"
+    normalize to the same key as one called "Company", instead of one of them
+    falling back to its unstripped spelling and quietly becoming a second row.
+    """
+    changed = True
+    stripped_head = False
+    while changed and len(tokens) > 1:
+        changed = False
+        for phrase in _LEGAL_HEAD_PHRASES:
+            n = len(phrase)
+            if len(tokens) > n and tuple(tokens[:n]) == phrase:
+                tokens, changed, stripped_head = tokens[n:], True, True
+        head_words = _LEGAL_HEAD_WORDS | (_LEGAL_HEAD_WORDS_AFTER if stripped_head else frozenset())
+        if len(tokens) > 1 and tokens[0] in head_words:
+            tokens, changed, stripped_head = tokens[1:], True, True
+        for phrase in _LEGAL_TAIL_PHRASES:
+            n = len(phrase)
+            if len(tokens) > n and tuple(tokens[-n:]) == phrase:
+                tokens, changed = tokens[:-n], True
+        if len(tokens) > 1 and tokens[-1] in _LEGAL_TAIL_WORDS:
+            tokens, changed = tokens[:-1], True
+    return tokens
+
+
+def normalize_company(company: str | None, *, strip_legal: bool = False) -> str:
+    """An employer name reduced to what two spellings of it have in common.
+
+    ``strip_legal`` is the *only* thing that separates the two callers, and it
+    is a parameter for the same reason ``normalize_title(strip_level=)`` is one:
+    two hand-written normalizers for the same string is how ``analytics`` and
+    ``dedup_key`` drifted apart before. Cross-source dedup leaves it off — it
+    compares two boards' copies of one posting, which spell the employer the
+    same way — while ``companies`` turns it on, because that key has to hold
+    "Tinhvan Software JSC." and "Tinhvan Software" together for years.
+    """
+    name = clean_text(fold(company))
+    if not strip_legal:
+        return name
+    tokens = _strip_legal_forms([t for t in _NON_WORD.split(name) if t])
+    return " ".join(tokens)
 
 
 def normalize_title(title: str | None, *, strip_level: bool = True) -> str:

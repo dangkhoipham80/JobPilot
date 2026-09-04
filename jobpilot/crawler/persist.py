@@ -129,27 +129,57 @@ def _refresh(job: Job, nj: NormalizedJob, now: datetime) -> None:
     job.level = nj.level
     job.posted_at = nj.posted_at
     job.match_score = nj.match_score
-    job.apply_channel = nj.apply_channel
-    job.apply_target = nj.apply_target
-    job.payload = _carry_dedup_trace(job.payload, nj.payload)
+    # Whoever *stated* where to apply wins; the scraped values are the fallback.
+    # The same rule ``api/routes/jobs._merged_payload`` applies to `work_mode`,
+    # and here for a sharper reason: choosing an HR contact's address as where
+    # to apply is a decision, and the next scheduled crawl of that source used
+    # to overwrite it with the board's own URL — silently, days later, with the
+    # decision nowhere on screen to notice was gone. A crawled job is nearly
+    # every job, so without this the offer does not survive the night.
+    #
+    # Both columns, not just the target. `apply_channel` is what
+    # ``dispatcher.resolve_channel`` reads first, so reverting it alone would be
+    # the same bug wearing a different hat: the address would still say
+    # hr@example.com while the channel said `external`, and applying would hand
+    # you a "link" to open.
+    if not target_is_stated(job.payload):
+        job.apply_channel = nj.apply_channel
+        job.apply_target = nj.apply_target
+    job.payload = _carry_row_keys(job.payload, nj.payload)
     # The board still lists it, which is the whole meaning of this column.
     # `crawled_at` stays put — see the class docstring in store/models.
     job.last_seen_at = now
 
 
-def _carry_dedup_trace(old: dict | None, new: dict) -> dict:
-    """Keep the dedup trace across a refresh.
+#: Payload keys that belong to the *row*, not to the scrape, and therefore have
+#: to survive a refresh that replaces ``payload`` wholesale.
+#:
+#: ``dedup``  — which sibling postings this row stands in for.
+#: ``apply_target_source`` — whether a person chose the apply target.
+#:
+#: A list rather than two special cases, because the failure mode is identical
+#: for both and was found the same way: the value exists until the next crawl,
+#: which is the same as not existing.
+_ROW_OWNED_KEYS = ("dedup", "apply_target_source")
+
+#: Written into ``payload["apply_target_source"]`` when a person set the target.
+STATED_TARGET = "user"
+
+
+def target_is_stated(payload: dict | None) -> bool:
+    """Whether a person chose where this application goes (and how)."""
+    return (payload or {}).get("apply_target_source") == STATED_TARGET
+
+
+def _carry_row_keys(old: dict | None, new: dict) -> dict:
+    """Keep the row's own payload keys across a refresh.
 
     ``_refresh`` overwrites ``payload`` wholesale with what the scraper just
     produced, and the scraper knows nothing about which sibling postings this
-    row is standing in for. Without this, every re-crawl erased the record of
-    what had been suppressed — the trace would exist only until the next run,
-    which is the same as not existing.
+    row is standing in for or about a target somebody chose by hand.
     """
-    trace = (old or {}).get("dedup")
-    if not trace:
-        return new
-    return {**new, "dedup": trace}
+    carried = {k: (old or {})[k] for k in _ROW_OWNED_KEYS if (old or {}).get(k)}
+    return {**new, **carried} if carried else new
 
 
 def _jd_chars(payload: dict | None) -> int:
@@ -281,6 +311,14 @@ def persist_jobs(
 
     Flushes (does not commit) — the caller owns the transaction boundary.
     """
+    # Imported here, not at module scope, and this is not a style choice.
+    # ``companies.service`` needs ``crawler.text``, and importing any submodule
+    # of ``jobpilot.crawler`` runs its ``__init__``, which eagerly imports *this*
+    # module — so a top-level import works only when the crawler happens to be
+    # imported first, and raises ImportError when anything reaches
+    # ``companies.service`` directly. Alembic's 0011 does exactly that.
+    from jobpilot.companies.service import link_job
+
     now = now or vn_now()
     stats = CrawlStats()
     cutoff = now - timedelta(days=dedup_days)
@@ -306,6 +344,12 @@ def persist_jobs(
         existing = session.get(Job, nj.id)
         if existing is not None:
             _refresh(existing, nj, now)
+            # Re-resolved on every refresh, not only on insert. A board that
+            # corrects its own spelling of an employer should move the job onto
+            # the right company row, and a job stored before this column existed
+            # has to pick one up somewhere. One SELECT on a unique index, and
+            # after the first crawl the employer nearly always has a row already.
+            link_job(session, existing)
             # Now inside the window by definition, so it covers its own key for
             # the rest of this batch — a job that has just been re-seen must not
             # let another board's copy in behind it.
@@ -357,6 +401,7 @@ def persist_jobs(
 
         job = _new_job(nj, now, run_id=run_id)
         session.add(job)
+        link_job(session, job)
         index.add(job, nj.dedup_level)
         stats.inserted += 1
         if nj.fresh:
