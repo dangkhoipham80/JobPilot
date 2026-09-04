@@ -2037,3 +2037,147 @@ còn lại không chứng minh được gì. Đã chạy lại end-to-end sau kh
 (`salary_kind` đổi thành `range`, `work_mode` **giữ nguyên**, sections **không** bị drop vì JD không
 đổi). Bài học: **xoá dữ liệu verify xong thì lời khai "đã verify" không còn kiểm chứng được** —
 lần sau giữ lại row cho tới khi review xong.
+
+---
+
+## Phase companies — nhà tuyển dụng thành bảng, HR thành người, và một quyết định không sống qua đêm
+
+Đợt 2 của yêu cầu mở rộng intake (đợt 1 = `intake-2`). `companies` + `hr_contacts` là bảng thật
+(migration `0011`), `jobs.company_id` là FK, `/companies` liệt kê công ty · HR · số job đã nộp,
+và email HR **được mời** làm `apply_target` — mời, không bao giờ tự áp.
+
+### Ba quyết định sản phẩm (user chốt trước khi viết code)
+
+1. **Row công ty tự sinh + backfill cả 160 tên đang có**, không phải "chỉ tạo khi thêm HR".
+   `/companies` vì thế có nội dung ngay, và mọi job đều có `company_id`. Đổi lại ~150 row chưa
+   có HR nào — nên **thứ tự mặc định là "nộp nhiều nhất"**, để số ít công ty đang thực sự làm
+   việc nổi lên trên.
+2. **Gộp theo key đã fold**, không phải so chuỗi thô. `jobs.company` giữ nguyên chính tả gốc.
+3. **Chỗ mời email HR: trang job**, không phải form Add-job hay bước xác nhận apply.
+
+### Fold: đo trên 160 tên thật TRƯỚC khi chốt
+
+`normalize_company(strip_legal=)` — **tham số của hàm sẵn có**, không phải normalize thứ ba
+(cùng luật với `normalize_title(strip_level=)`). Dedup vẫn `False`, `companies` bật `True`.
+
+Kết quả trên corpus thật: **160 chuỗi → 158 key**, gộp đúng **2 cặp** (`GitLab`/`gitlab`,
+`JetBrains`/`jetbrains`), **0 gộp sai**, **0 key rỗng**. Hướng nguy hiểm là hướng **gộp nhầm** —
+hai công ty chung một row nghĩa là một bên được mời email HR của bên kia — nên: từ pháp nhân
+tiếng Anh **chỉ cắt ở đuôi** (`"SA Group"`, `"Co-op Bank"` là tên thật), tiếng Việt **chỉ cắt ở
+đầu** (`Công ty TNHH`), cụm 2 từ khớp **nguyên cụm** (`cổ phần` — `"phan"` đứng một mình là họ
+người Việt), hậu tố **quốc gia không phải pháp nhân** (`DXC Technology Vietnam` ≠ `DXC
+Technology`), và **không bao giờ cắt tới rỗng**.
+
+Tên hiển thị = chính tả **phổ biến nhất** trong job của công ty đó (11 `GitLab` thắng 3
+`gitlab`), hoà thì alphabet. Chỉ áp cho row backfill **tạo mới** — row đã có không bao giờ bị
+đổi tên, vì tới lúc đó nó có thể đã được sửa tay.
+
+### Bug chỉ lộ ra khi chạy thật — và nó là bug của chính tính năng này
+
+**Chọn email HR làm `apply_target` giữ được đúng tới lượt crawl tiếp theo.** `persist._refresh`
+ghi đè cột bằng URL của board. Âm thầm, vài ngày sau, không gì trên màn hình cho thấy một quyết
+định đã bị xoá. Mà job crawl là gần như **mọi** job ⇒ nếu không sửa thì "mời làm nơi nộp"
+**không sống qua một đêm**.
+
+Phát hiện bằng cách nhìn DB thật sau khi crawl lại `arbeitnow`, **không phải** bằng test: 988
+test xanh suốt trong lúc lỗi này đang tồn tại, vì không test nào ghép "user sửa" với "crawl lại".
+
+Sửa bằng đúng luật `_merged_payload` đã dùng cho `work_mode` — **ai nói ra thì thắng, bản
+scrape là fallback**: `PATCH` ghi `payload["apply_target_source"] = "user"`, `_refresh` đọc rồi
+không đụng cột nữa. Và key đó **phải** vào `_ROW_OWNED_KEYS` (`_carry_dedup_trace` đổi tên
+thành `_carry_row_keys`), vì `_refresh` thay **cả** payload — không carry thì nó lại chỉ sống
+tới lượt crawl kế, y hệt lý do `dedup` phải được carry. Verify lại trên Postgres thật: đặt
+`hr@camunda.example` → crawl lại `arbeitnow` → `last_seen_at` bump, `apply_target` **giữ nguyên**.
+
+### Verify trên môi trường thật (không chỉ test)
+
+- `alembic upgrade head` trên **PostgreSQL 17 thật**: tạo 2 bảng + 1 cột, backfill in ra
+  `created 158, linked 216`. **0 job unlinked.** Chạy `cli backfill` lần nữa: `created 0,
+  linked 0` — idempotent.
+- **Trình duyệt thật**, VI và EN, **0 console error**: thêm HR (`Nguyễn Thị Hằng`, có dấu, kèm
+  ghi chú tiếng Việt) → số `1 liên hệ` trên dòng cập nhật ngay → mở job GitLab → bấm "Dùng làm
+  nơi nộp" → `apply_target` đổi trong DB, nút thành dấu tick.
+- **Crawl thật cả hai nhánh**: `arbeitnow` insert 3 job mới (link + tạo 2 công ty mới), và một
+  job `company='jetbrains'` **refresh** vào đúng row `JetBrains` đã có — fold chạy đúng trên dữ
+  liệu thật, không phải trên fixture.
+- **Kiểm mất dữ liệu có chủ đích**: `PATCH {apply_target}` lên một job đang mang `fit`, `city`,
+  `work_mode`, `skills_canonical`, `quality`, `is_remote` — so payload trước/sau, **không mất
+  key nào**, `match_score`/`level`/`company_id` không đổi. Đây là đúng loại lỗi hai đợt trước
+  đã dính.
+- **Nulls 62 link của `arbeitnow` rồi chạy `backfill`**: `linked 59` (3 job đã được crawl relink
+  trước đó), về **0 unlinked**.
+
+### Bẫy đã trả giá
+
+- **Import vòng.** `companies.service` cần `crawler.text`; import bất kỳ submodule nào của
+  `jobpilot.crawler` cũng chạy `__init__`, mà `__init__` import thẳng `persist`. Import ở module
+  scope của `persist.py` **chỉ chạy khi crawler tình cờ được import trước** — migration 0011
+  chạm `companies.service` trực tiếp và nổ `ImportError`. Đã chuyển vào trong `persist_jobs`,
+  có comment; đừng "dọn" lên đầu file.
+- **`status_code=204` + `-> None` làm FastAPI assert lúc dựng app** ⇒ **11 file test fail ở
+  bước collect**, không phải một test đỏ. Đổi `DELETE contact` sang trả `CompanyDetailOut` —
+  hợp với `DELETE /cv/{scope}/tex` sẵn có, và tiết kiệm một round-trip vì client luôn vẽ lại
+  đúng cái card vừa đổi.
+- **`_require_contact` phải kiểm cả `company_id`**, nếu không id liên hệ của công ty A sửa được
+  qua URL công ty B.
+- **`ORDER BY` kết thúc bằng `Company.id`**: gần như mọi công ty hoà ở 0 đơn đã nộp, nên tie là
+  **mặc định** chứ không phải ngoại lệ.
+- **`applied_count` đếm JOB, không đếm row `applications`**: gửi lại sau một lần bounce là một
+  job đã nộp, không phải hai; `dry_run` chưa rời khỏi máy.
+- **`{count} contacts` ra "1 contacts" trong tiếng Anh.** Repo đã có sẵn quy ước `…One`
+  (`inboxFoundOne`, `followupsTitleOne`) — dùng nó, đừng dựng máy plural.
+- **Clamp field text của contact**: dán nguyên chữ ký mail vào ô "Tên" là đầu vào 400 ký tự,
+  và Postgres trả `StringDataRightTruncation` giữa flush. Scar cũ, chỗ mới.
+
+### Review gate (companies) — findings đã sửa
+
+`phase-reviewer` trả **CHANGES REQUESTED**, 2 blocker + 5 mục + 3 nit. Đã sửa hết.
+
+**Blocker 1 — tính năng chính không thật sự chạy với job crawl.** Ghi `apply_target` là **chưa
+đủ**: mọi scraper hard-code `apply_channel` là `portal`/`external`, **không nguồn nào** sinh
+`email`, và `resolve_channel` **ưu tiên cột đã khai**. Nên chọn email HR xong bấm nộp rơi vào
+`_apply_handoff` — *"mở link và tự nộp"*, với `hr@example.com` ở vai trò cái link, và
+`--open-portal` lái browser `goto()` vào đó. **Không email nào được dựng**, mà app báo handoff
+thành công. Chứng minh trên chính row verify trong Postgres: `resolve_channel(...) -> 'external'`.
+Job thêm tay **cũng dính** (`JobIn.apply_channel` mặc định `"external"`, form Add-job không gửi
+field đó) ⇒ lời mời `apply_email` của JD ở đợt `intake` **vốn đã hỏng** theo đúng cách này, chưa ai
+phát hiện. Sửa: `_note_stated_target` đổi luôn `apply_channel` sang `email` khi địa chỉ user nói ra
+parse được thành email (một chiều; caller tự khai kênh thì thắng), `_refresh` giữ **cả hai** cột,
+và `offerHint` **nói ra** rằng nút này đổi kênh — im lặng đổi nghĩa của nút Nộp là thứ nguyên tắc 2
+cấm.
+
+**Blocker 2 — `applied_count` khai lại `SENT_RESULTS` thay vì import nó.** `apply/outcome.py` ghi
+thẳng luật *"`SENT_RESULTS` is imported rather than restated"*, và đây đúng là ca nó đề phòng. Đơn
+portal/external nằm ở `awaiting_user`, mà board / follow-up / inbox sync / `/analytics` **đều** coi
+đó là đã gửi. Đếm mỗi `success` cho ra **`0 đã nộp`** ở đúng những công ty đang theo đuổi — và vì
+`order=applied` là mặc định, nó **dìm họ xuống đáy 160 dòng**, đúng thứ trang này sinh ra để đẩy
+lên. DB thật lúc review có 0 row `awaiting_user` nên không lộ; test cũng chỉ dùng `success`.
+
+**Còn lại:**
+- **`POST /companies` không clamp `name`** → `StringDataRightTruncation` trên Postgres (reviewer
+  tái hiện thật). Nhưng chỗ đúng để clamp là **`company_key`**, không phải lúc insert: key là thứ
+  mọi lookup select trên đó, clamp muộn nghĩa là SELECT bằng fold đầy đủ (không khớp) → INSERT bản
+  cắt → đụng unique → re-read lại bằng fold đầy đủ → **trả `None` cho một công ty đang tồn tại**.
+- **Migration 0011 dùng `select(Job)`** ⇒ phát ra **mọi cột model có hôm nay** (đo: **17 cột**).
+  Ngay khi có 0012 thêm cột vào `jobs`, một máy mới chạy `alembic upgrade head` sẽ chết **tại
+  0011** với `UndefinedColumn`. `link_all_jobs` giờ core-select **3 cột tường minh** + Core UPDATE
+  (nên phải `expire_all()`). ⚠️ Lần mô phỏng đầu của tôi (`append_column` lúc runtime) **không
+  chứng minh được gì** — nó không tới được mapper nên bản cũ cũng "pass"; bằng chứng thật là so
+  **SQL compile ra**: 17 cột vs 3 cột.
+- **`POST /jobs` là writer duy nhất phớt lờ cờ nó vừa đẻ ra**: dán lại đúng tin đó chạy nhánh
+  fallback `body.url` và **xoá** lựa chọn của user, trong khi payload vẫn khai `"user"`.
+- **Assertion luôn đúng** trong chính test bảo vệ bug vừa sửa: `A and B or title == "Backend"` —
+  vế phải luôn đúng nên mệnh đề không bao giờ fail. Ghim lại bằng `title` **đổi thật** giữa hai
+  lượt persist.
+- **Tên hiển thị hoà phiếu chọn nhầm bản có pháp nhân**: alphabet thôi làm `"Cong ty TNHH Foo"`
+  thắng `"Foo"` khi mỗi bên 1 job. Giờ ưu tiên bản **ngắn hơn**.
+
+**Nit đã sửa:** `q` escape `%`/`_` trước `ilike` (không thì `100%` khớp `1000 …`); debounce 250ms
+cho ô tìm kiếm; **`mtv` chỉ là pháp nhân khi đã cắt được gì đó trước nó** — đứng đầu thì
+`MTV Networks` → `networks`, chung chung đủ để đụng nhà tuyển dụng khác, tức **hướng nguy hiểm**.
+
+**Reviewer nói đúng một chỗ về chính lời khai của tôi**: nhánh race `IntegrityError` trong
+`resolve_company` (`begin_nested` + re-read) **chưa có test nào** và không dựng được điều kiện đua
+thật — nó vẫn là nợ, không phải thứ đã verify.
+
+997 test pass sau khi sửa.

@@ -179,6 +179,16 @@ class JobDetailOut(JobOut):
     # from the parsed bounds, so it cannot disagree with them; null when the
     # posting disclosed nothing parsable, which is most of this corpus.
     salary_kind: str | None = None
+    #: Which ``companies`` row this posting's employer resolved to. Null for a
+    #: job whose employer string folds to nothing, and for any row written
+    #: before the link existed and not yet backfilled.
+    company_id: int | None = None
+    #: The people on file at that employer, carried on the detail response for
+    #: the same reason ``fit`` is: the page that shows them is this page, and a
+    #: second round-trip whose most common answer is an empty list is a request
+    #: not worth making. Offered as an apply target, never applied — see
+    #: ``HrContact``.
+    hr_contacts: list[HrContactOut] = []
 
     @classmethod
     def from_job(cls, job: Job, passes: list | None = None) -> "JobDetailOut":
@@ -198,6 +208,17 @@ class JobDetailOut(JobOut):
             sections=_parse_sections(payload.get("sections")),
             work_mode=payload.get("work_mode"),
             salary_kind=(payload.get("salary_range") or {}).get("kind"),
+            company_id=job.company_id,
+            # `company_row` is a lazy relationship, so this is one extra SELECT
+            # on a detail view and none at all on the list — `JobOut` does not
+            # carry contacts. Reading it through the relationship rather than
+            # querying `hr_contacts` by `company_id` keeps "no company linked"
+            # and "company linked, nobody on file" from collapsing into the same
+            # code path.
+            hr_contacts=[
+                HrContactOut.model_validate(c)
+                for c in (job.company_row.contacts if job.company_row else [])
+            ],
         )
         # `not_seen` is attached here rather than stored beside the crawl-time
         # flags: those are a snapshot of one moment and never change, while this
@@ -366,6 +387,87 @@ class JobIn(BaseModel):
     # for a job we couldn't crawl.
     apply_channel: str = "external"
     apply_target: str | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Companies + HR contacts
+# --------------------------------------------------------------------------- #
+class HrContactOut(BaseModel):
+    """One person at an employer, as the UI sees them."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_id: int
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    note: str | None = None
+    created_at: datetime | None = None
+
+
+class HrContactIn(BaseModel):
+    """Add or correct a contact. ``name`` is the only thing required.
+
+    Everything else is optional because that is how contacts arrive — a name and
+    a phone number from a call, an address off a signature. Demanding an email
+    would mean either inventing one or not recording the person.
+    """
+
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    note: str | None = None
+
+
+class CompanyOut(BaseModel):
+    """A row on /companies: the employer, and how much of your search it holds."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    #: The fold two spellings share. Exposed because it is what decides that
+    #: "GitLab" and "gitlab" are one row, and a merge you cannot see is a merge
+    #: you cannot argue with.
+    normalized_name: str
+    #: Postings from this employer currently in the corpus.
+    job_count: int = 0
+    #: Distinct jobs here with an application that actually went out
+    #: (``result == "success"``). Not the number of ``applications`` rows: a
+    #: retry after a bounced send is one job you applied to, not two, and dry
+    #: runs are not applications at all.
+    applied_count: int = 0
+    contact_count: int = 0
+
+
+class CompanyDetailOut(CompanyOut):
+    """One employer with its people and its postings attached."""
+
+    contacts: list[HrContactOut] = []
+    #: The employer's postings, newest first. Capped rather than paged: this is
+    #: the "what have I seen from them" glance, and the Jobs page — which is
+    #: paged, filtered and sortable — is one click away for the rest.
+    jobs: list[JobOut] = []
+    jobs_truncated: bool = False
+
+
+class CompanyIn(BaseModel):
+    """Track an employer by name. Folds onto an existing row when one matches."""
+
+    name: str
+
+
+class CompanyPatch(BaseModel):
+    """Rename an employer.
+
+    Cosmetic by design: identity lives in ``normalized_name``, which is derived
+    from the *original* strings on the jobs and is not touched here. So a rename
+    cannot orphan a company's jobs or move its contacts somewhere else — the
+    worst it can do is display the wrong words.
+    """
+
+    name: str
 
 
 class IntakeIn(BaseModel):

@@ -23,6 +23,7 @@ import { sourceColor } from "@/components/charts/palette";
 import { Badge, Button, Card, CardBody, Skeleton } from "@/components/ui";
 import { JobDescription } from "@/components/JobDescription";
 import { FitCard } from "@/components/FitCard";
+import { HrOfferCard } from "@/components/HrOfferCard";
 
 const EARLY = new Set<JobStatus>(["DISCOVERED", "SHORTLISTED", "SKIPPED"]);
 // Statuses from which the CV Review page is worth opening (matches
@@ -175,6 +176,10 @@ export function JobDetail({ version }: { version: number }) {
           {/* Above the JD, because the point of it is to be read *before* you
               read the whole posting and decide how to spend an hour. */}
           <FitCard job={job} onAssessed={refetch} />
+
+          {/* Below the fit read and above the JD: it is about *how* to apply,
+              which only matters once you have decided the job is worth it. */}
+          <HrOfferCard job={job} onChanged={refetch} />
 
           <JobDescription job={job} onSaved={refetch} />
         </>

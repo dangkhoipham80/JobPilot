@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session
 from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.paging import LimitParam, OffsetParam, page_list, page_query
 from jobpilot.api.schemas import JobDetailOut, JobIn, JobOut, JobPatch, Page
+# Imported from where the dispatcher defines them, so "email" cannot come to
+# mean one thing at the endpoint that sets the channel and another at the code
+# that reads it.
+from jobpilot.apply.dispatcher import EMAIL
+from jobpilot.apply.email import recipient_of
+from jobpilot.companies.service import link_job
 # Imported by name, not as a module: `jobpilot.crawler` re-exports a *function*
 # called `normalize`, so `from jobpilot.crawler import normalize` binds that and
 # any attribute access on it fails at runtime rather than at import.
@@ -21,6 +27,7 @@ from jobpilot.crawler.normalize import (
     enrich,
     fit_column,
 )
+from jobpilot.crawler.persist import STATED_TARGET, target_is_stated
 from jobpilot.crawler.quality import crawl_passes
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
@@ -71,6 +78,45 @@ def _forget_readings(payload: dict, *, keep_sections: bool = False) -> None:
     if not keep_sections:
         payload.pop("sections", None)
     payload.pop("fit", None)
+
+
+def _note_stated_target(job: Job, payload: dict, body_fields: dict) -> None:
+    """Record that a person, not a scraper, chose where this application goes —
+    and make the channel follow the address they chose.
+
+    Two halves, because the first alone does nothing useful.
+
+    **The flag.** ``persist._refresh`` reads it and stops overwriting the
+    columns on the next crawl of that source; without it, picking an HR
+    contact's address held until the nightly crawl and then silently reverted to
+    the board's own URL — days later, with nothing on screen to show a decision
+    had been undone.
+
+    **The channel.** Every scraper in the repo hard-codes ``apply_channel`` to
+    ``portal`` or ``external``; none of them ever emits ``email``, and
+    ``dispatcher.resolve_channel`` trusts the declared column first. So on a
+    crawled job — which is nearly every job — setting an HR address left the
+    channel at ``external``, and applying produced a *handoff*: "open the link
+    and submit it yourself", with ``hr@example.com`` as the link, and
+    ``--open-portal`` steering a browser at it. No email was ever built. The
+    hand-added case worked only by accident, because a job typed in by hand has
+    no declared channel for ``resolve_channel`` to prefer.
+
+    Promotion is deliberately one-directional: an address that parses as email
+    switches the channel to ``email``, and anything else leaves the column
+    alone. A board that said "portal" knows more about its own URLs than a guess
+    made here does, and this only needs to fix the case it just created.
+
+    Both stored/derived rather than inferred at read time so the database itself
+    is true: the Applications board, Slack and the CLI all read ``channel``, and
+    a rule that lived only inside ``resolve_channel`` would leave them showing
+    the wrong one.
+    """
+    if "apply_target" not in body_fields:
+        return
+    payload["apply_target_source"] = STATED_TARGET
+    if "apply_channel" not in body_fields and recipient_of(body_fields["apply_target"]):
+        job.apply_channel = EMAIL
 
 
 def _merged_payload(payload: dict, signals: Enrichment, stated: str | None) -> dict:
@@ -207,8 +253,18 @@ async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut
     job.company = fit_column("company", body.company.strip())
     job.location = fit_column("location", body.location)
     job.salary = fit_column("salary", body.salary)
-    job.apply_channel = body.apply_channel
-    job.apply_target = body.apply_target or body.url or None
+    # This endpoint upserts, so it can land on a row where somebody has already
+    # chosen where to apply — paste the same posting again and the URL fallback
+    # below would quietly undo that choice while the payload still claimed a
+    # person had made it. The flag and the column have to agree, and the person
+    # wins. Only an explicit `apply_target` in *this* body overrules them.
+    if body.apply_target:
+        job.apply_channel = body.apply_channel
+        job.apply_target = body.apply_target
+        _note_stated_target(job, payload, {"apply_target": body.apply_target})
+    elif not target_is_stated(payload):
+        job.apply_channel = body.apply_channel
+        job.apply_target = body.url or None
     job.posted_at = job.posted_at or now
 
     # The same derivations a crawled job gets. Without them a hand-added job
@@ -230,6 +286,10 @@ async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut
         now=now,
     )
     _apply_signals(job, signals)
+    # Resolve the employer to a `companies` row, exactly as the crawler does.
+    # Before the flush, so a job pasted for an employer nobody has seen yet gets
+    # its company created in the same transaction rather than on some later pass.
+    link_job(db, job)
     job.payload = _merged_payload(
         {
             **payload,
@@ -265,6 +325,10 @@ async def patch_job(job_id: str, body: JobPatch, db: Session = Depends(get_db)) 
         raise HTTPException(status_code=422, detail="nothing to change")
 
     payload = dict(job.payload or {})
+    # Before the pops below, which mutate `patch` — it has to see the body as
+    # the caller sent it. It only touches `apply_channel` when the caller did
+    # not, so the setattr loop further down cannot undo it either way.
+    _note_stated_target(job, payload, patch)
     rewrote_jd = "description_md" in patch and patch["description_md"] != payload.get(
         "description_md"
     )
@@ -303,6 +367,11 @@ async def patch_job(job_id: str, body: JobPatch, db: Session = Depends(get_db)) 
         needs_jd=bool(payload.get("needs_jd")),
     )
     _apply_signals(job, signals)
+    # Re-linked after the edit for the same reason the signals are re-derived:
+    # correcting a misspelled employer is one of the things this endpoint is
+    # for, and leaving the old link would make the fix invisible on the only
+    # page that groups by employer.
+    link_job(db, job)
     job.payload = _merged_payload(payload, signals, body.work_mode)
 
     db.commit()

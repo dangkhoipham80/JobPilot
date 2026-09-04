@@ -51,6 +51,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     costs one query and changes nothing. ``--force`` recomputes anyway, which is
     what a *parser* fix needs — otherwise the old wrong answer stays on file.
     """
+    from jobpilot.companies.service import link_all_jobs
     from jobpilot.crawler.normalize import backfill_facets
     from jobpilot.crawler.quality import backfill
     from jobpilot.store.db import session_scope
@@ -58,8 +59,17 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     with session_scope() as db:
         touched = backfill(db, get_config())
         facets = backfill_facets(db, force=args.force)
+        # Unconditional, not gated on --force: it is idempotent by construction
+        # (a job already pointing at the right company is skipped) and it is the
+        # repair path for a job whose employer row went missing or whose fold
+        # changed. Nothing here is ever cleared, so a re-run cannot subtract.
+        links = link_all_jobs(db)
     print(f"annotated {touched} job(s) with quality signals")
     print(f"derived salary/skills/city on {facets} job(s)")
+    print(
+        f"companies: created {links.created}, linked {links.linked} job(s)"
+        + (f", {links.unlinkable} without a company name" if links.unlinkable else "")
+    )
     return 0
 
 

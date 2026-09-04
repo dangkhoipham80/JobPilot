@@ -34,6 +34,70 @@ JSONType = JSONB().with_variant(JSON(), "sqlite")
 # schema_translate_map, so these stay correct in tests too.
 _JOBS_ID = f"{SCHEMA}.jobs.id"
 _APPLICATIONS_ID = f"{SCHEMA}.applications.id"
+_COMPANIES_ID = f"{SCHEMA}.companies.id"
+
+
+class Company(Base):
+    """An employer, and the thing HR contacts hang off.
+
+    Provisioned automatically: every job write resolves its ``company`` string
+    to a row here, so the page is populated by using the app rather than by
+    remembering to curate it. ``jobs.company`` keeps the string the board
+    actually printed — this row is *which employer that string names*, not a
+    replacement for it, and nothing is lost if the fold ever gets it wrong.
+
+    ``normalized_name`` is the unique key, and it is the only thing that decides
+    two spellings are one employer. It comes from ``text.normalize_company``
+    with legal forms stripped, which is why "GitLab" and "gitlab" share one HR
+    list. Getting that wrong in the merging direction is the dangerous
+    direction: two employers on one row means one of them is offered the
+    other's HR email as an apply target.
+    """
+
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: The spelling shown on screen. Free to be edited by hand; the fold below
+    #: is what identity is actually based on, so a rename is cosmetic and can
+    #: never split a company's jobs or contacts off from it.
+    name: Mapped[str] = mapped_column(String(256))
+    normalized_name: Mapped[str] = mapped_column(String(256), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    contacts: Mapped[list[HrContact]] = relationship(
+        back_populates="company",
+        cascade="all, delete-orphan",
+        order_by="HrContact.id",
+    )
+    jobs: Mapped[list[Job]] = relationship(back_populates="company_row")
+
+
+class HrContact(Base):
+    """A person at a company, and how to reach them.
+
+    Every field but ``name`` is optional because that is how contacts actually
+    arrive: a name and a phone number from a call, an address off a signature,
+    a note about who forwarded you. Requiring an email would mean either
+    inventing one or not recording the person at all.
+
+    ``email`` is *offered* as a job's ``apply_target`` and never applied
+    silently — same rule as the address a JD prints, and for the same reason: a
+    wrong value there sends your CV to a stranger.
+    """
+
+    __tablename__ = "hr_contacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey(_COMPANIES_ID, ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(128))
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    company: Mapped[Company] = relationship(back_populates="contacts")
 
 
 class JobStatus(str, enum.Enum):
@@ -59,6 +123,15 @@ class Job(Base):
     url: Mapped[str] = mapped_column(Text, default="")
     title: Mapped[str] = mapped_column(String(256), default="")
     company: Mapped[str] = mapped_column(String(256), default="")
+    # Which employer that string names. Kept *beside* the string, never instead
+    # of it: `company` is what the board printed and stays the evidence, while
+    # this is a fold's opinion about identity. ON DELETE SET NULL because
+    # deleting a company must unlink jobs, never delete them — and a NULL here
+    # reads correctly as "not linked yet", which is also the state of every row
+    # written before this column existed.
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey(_COMPANIES_ID, ondelete="SET NULL"), nullable=True, index=True
+    )
     location: Mapped[str | None] = mapped_column(String(256), nullable=True)
     salary: Mapped[str | None] = mapped_column(String(128), nullable=True)
     level: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
@@ -97,6 +170,7 @@ class Job(Base):
         back_populates="job", cascade="all, delete-orphan"
     )
     edits: Mapped[list[Edit]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    company_row: Mapped[Company | None] = relationship(back_populates="jobs")
 
     @property
     def quality(self) -> dict | None:
