@@ -69,6 +69,16 @@ sai thì báo lỗi, không im lặng chạy file khác trùng tên.
   (recruiter search "office" không khớp "oﬃce"), nhưng nó có nghĩa: **báo cáo ATS của cùng một
   CV phụ thuộc engine đã build nó**. Thấy finding đổi mà JSON không đổi thì nghi engine trước,
   đừng đi sửa template.
+- **`awesome-cv.cls` sửa lần hai (2026-10-04): CV không có trường liên hệ nào không build được.**
+  `\makecvheader` kết thúc dòng social bằng `\\` dù dòng đó rỗng ⇒ ở vertical mode ⇒ *"There's no
+  line here to end"* — đúng CV rỗng mà DB mới seed, tức **lần build đầu tiên** của user mới. Giờ là
+  `\ifhmode\\[…]\fi`. Verify bằng tectonic: CV rỗng/chỉ có tên build được, CV có liên hệ ra PDF
+  **giống từng byte** trước khi sửa. **Docker chưa verify** (máy Mac không có docker).
+  Cùng lỗi đó ở dòng **position** (review bắt được): `\position{}` rỗng vẫn *định nghĩa*
+  `\@position` ⇒ class in nó và `\\` trần. `Header.position` mặc định `""` — xoá placeholder
+  "Software Engineer" hay `cv import` thiếu field là gặp. Sửa ở **template** (`<% if h.position %>`)
+  chứ không đụng vendor thêm lần nữa: nhánh `\isundefined{\@position}` của class tự lo. Luật:
+  **macro header nào kết thúc bằng `\\` (`position`, `address`) chỉ emit khi còn nội dung sau `(x or "")|trim`** (thiếu `or ""` thì `None|trim` = chuỗi `"None"`, truthy) — `"   "` là truthy, nhưng khoảng trắng ở vertical mode bị bỏ qua nên `\\` vẫn trần.
 - **`fontawesome.sty` + `awesome-cv.cls` đã phải sửa để chạy được tectonic** — cả hai là file
   vendor, sửa tối thiểu, có comment tại chỗ:
   - `.sty` nạp FontAwesome **theo tên**, chỉ tìm thấy khi font được cài ở mức hệ thống. Ảnh

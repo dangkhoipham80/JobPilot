@@ -658,3 +658,59 @@ def test_a_sibling_model_does_not_vouch_for_a_withdrawn_one():
     assert not _offered("gemini-3.5-flash", ["gemini-3.5-flash-lite"])  # a different model
     assert not _offered("gpt-4o-mini", ["gpt-4o"])
     assert _offered("anything", [])  # we didn't ask; absence of evidence
+
+
+def test_warnings_reach_the_dashboard_as_keys_not_english(monkeypatch):
+    """The dashboard words warnings in the UI language, so it needs *which*
+    policy and *which* task — not a finished English sentence it would have to
+    pattern-match. The CLI's English is rendered from the same items, so the two
+    cannot disagree about whether to warn."""
+    from jobpilot import llm
+    from jobpilot.config import Config, LlmCfg
+
+    cfg = Config()
+    monkeypatch.setattr("jobpilot.config.get_config", lambda *a, **k: cfg)
+
+    cfg.llm = LlmCfg(provider="gemini", gemini_paid_tier=False)
+    [item] = llm.warning_items("tailor")
+    assert item["policy"] == "gemini:free"
+    assert (item["provider"], item["task"]) == ("gemini", "tailor")
+    assert item["url"].startswith("https://ai.google.dev")
+    assert len(llm.warnings("tailor")) == 1
+
+    cfg.llm = LlmCfg(provider="claude")
+    assert llm.warning_items("tailor") == [] == llm.warnings("tailor")
+
+    cfg.llm = LlmCfg(provider="claude_cli")
+    [item] = llm.warning_items("classify")
+    assert item["policy"] == "claude_cli"
+    assert item["checked_on"] == "2026-10-04"  # the note's own date, not the table's
+
+
+def test_the_dashboard_words_every_policy_it_can_be_sent_in_the_backends_words():
+    """The policy sentences now live twice: `DATA_POLICY[...].summary` (CLI) and
+    `i18n/dict/models.ts` (dashboard). If they drift, the dashboard shows the
+    backend's *new* `checked_on` date beside the frontend's *old* terms — a
+    legal sentence that is wrong and looks right. Every warning-producing policy
+    must have dashboard wording, and its English must match the summary."""
+    import re
+    from pathlib import Path
+
+    from jobpilot.llm.pricing import DATA_POLICY
+
+    web = Path(__file__).resolve().parents[2] / "web" / "src"
+    page = (web / "pages" / "Models.tsx").read_text(encoding="utf-8")
+    dictionary = (web / "i18n" / "dict" / "models.ts").read_text(encoding="utf-8")
+    english = dictionary.split("\n  vi: {")[0]
+
+    def norm(text: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[“”\"]", '"', text)).strip()
+
+    for key, note in DATA_POLICY.items():
+        if not note.trains_on_input:
+            continue
+        match = re.search(rf'"?{re.escape(key)}"?:\s*"(warnPolicy\w+)"', page)
+        assert match, f"POLICY_TEXT in Models.tsx has no wording for {key!r}"
+        entry = re.search(rf'{match.group(1)}:\s*"((?:[^"\\]|\\.)*)"', english, re.S)
+        assert entry, f"models.ts (en) has no {match.group(1)}"
+        assert norm(entry.group(1)) == norm(note.summary), key

@@ -16,7 +16,33 @@ import {
 import { providerColor } from "@/components/charts/palette";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
-import type { LlmSettings, LlmTask, Settings as SettingsData } from "@/types";
+import type { LlmSettings, LlmTask, Settings as SettingsData, WarningItem } from "@/types";
+
+/** Backend DATA_POLICY key -> the wording for it in `i18n/dict/models.ts`. */
+const POLICY_TEXT = {
+  claude_cli: "warnPolicyClaudeCli",
+  "gemini:free": "warnPolicyGeminiFree",
+} as const;
+
+/** Task -> "this task sends …". Mirrors `llm.PROMPT_CONTENTS` on the backend. */
+const SENDS_TEXT = {
+  tailor: "warnSendsTailor",
+  letter: "warnSendsLetter",
+  intake: "warnSendsIntake",
+  classify: "warnSendsClassify",
+} as const;
+
+type Warning = { text: string; url?: string; checked?: string };
+
+/** The link's host for display; the raw URL if it does not parse — there is
+ * no error boundary, and a throw in render would blank the whole page. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
 
 /**
  * The three call sites, in dictionary keys rather than prose: the copy has to
@@ -101,6 +127,29 @@ export function Models({ version }: { version: number }) {
   }, [draft, settings, stats, t]);
 
   const d = stats.data;
+
+  // One warning per item, worded here. An item this page cannot word (a policy
+  // added on the backend first) shows the backend's English sentence at the
+  // same position; a backend too old to send items shows all of them.
+  const warningsFor = (task: string): Warning[] => {
+    const english = d?.warnings?.[task] ?? [];
+    const items = d?.warning_items?.[task];
+    if (!items) return english.map((text) => ({ text }));
+    return items.map((w: WarningItem, i: number) => {
+      const sendsKey = SENDS_TEXT[w.task as keyof typeof SENDS_TEXT];
+      // Same fallback on both branches: a task this page has no "sends …"
+      // wording for must not silently lose that half of the warning.
+      if (!sendsKey) return { text: english[i] ?? w.policy };
+      if (!w.policy) return { text: `${w.provider}: ${t("warnNoNote")} ${t(sendsKey)}` };
+      const policyKey = POLICY_TEXT[w.policy as keyof typeof POLICY_TEXT];
+      if (!policyKey) return { text: english[i] ?? w.policy };
+      return {
+        text: `${w.provider}: ${t(policyKey)} ${t(sendsKey)}`,
+        url: w.url || undefined,
+        checked: w.checked_on || undefined,
+      };
+    });
+  };
 
   // Provider for a task, resolving the "" = inherit rule the same way the
   // backend does, so the dropdown shows what will actually run.
@@ -347,7 +396,7 @@ export function Models({ version }: { version: number }) {
             const provider = providerOf(key);
             const reachable = d?.providers?.[provider] ?? true;
             const blocker = d?.blockers?.[key];
-            const warns = d?.warnings?.[key] ?? [];
+            const warns = warningsFor(key);
             return (
               <div key={key} className="rounded-lg border p-4">
                 <div className="flex flex-wrap items-center gap-2">
@@ -403,12 +452,11 @@ export function Models({ version }: { version: number }) {
                   </label>
                 </div>
 
-                {/* `blockers` and `warnings` are composed by the backend
-                    (`llm.blocker()` / `llm.warnings()`) and render in whatever
-                    language it emitted — including the Gemini free-tier terms
-                    warning, which quotes Google's own wording. Paraphrasing a
-                    terms-of-service quote in the UI would be worse than leaving
-                    it in English. */}
+                {/* `blockers` are still composed by the backend and render in
+                    English. Warnings arrive as `warning_items` (which policy,
+                    which task) and are worded in the UI language; a policy key
+                    this page has no wording for falls back to the backend's
+                    English sentence rather than to nothing. */}
                 {blocker && (
                   <p className="mt-2 flex items-start gap-1.5 text-sm text-amber-700 dark:text-amber-500">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -417,11 +465,22 @@ export function Models({ version }: { version: number }) {
                 )}
                 {warns.map((w) => (
                   <p
-                    key={w}
+                    key={w.text}
                     className="mt-2 flex items-start gap-1.5 text-sm text-red-600 dark:text-red-400"
                   >
                     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                    {w}
+                    <span>
+                      {w.text}
+                      {w.url && (
+                        <>
+                          {" "}
+                          <a href={w.url} target="_blank" rel="noreferrer" className="underline">
+                            {hostOf(w.url)}
+                          </a>
+                          {w.checked && ` (${t("warnChecked", { date: w.checked })})`}
+                        </>
+                      )}
+                    </span>
                   </p>
                 ))}
               </div>

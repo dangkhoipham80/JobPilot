@@ -89,16 +89,22 @@ def blocker(task: Task) -> str:
     return ""
 
 
-def warnings(task: Task) -> list[str]:
-    """Notes about what the configured provider may do with this task's input.
+def warning_items(task: Task) -> list[dict]:
+    """The data-use warnings for ``task`` as keys and values, not sentences.
+
+    What the dashboard renders, in either language: ``policy`` names the
+    ``DATA_POLICY`` entry (``""`` = no note on record for this provider), and
+    the frontend owns the wording. :func:`warnings` is the English rendering of
+    exactly these items, for the CLI — one source, so the two cannot disagree
+    about *whether* to warn.
 
     Separate from :func:`blocker` on purpose: a blocker stops the work, a
     warning does not. Tailoring puts the entire Master CV in the prompt, so the
     user is entitled to know a provider's terms before it goes — and entitled to
-    send it anyway. This returns the sentences; it never decides.
+    send it anyway. This reports; it never decides.
     """
     from jobpilot.config import get_config
-    from jobpilot.llm.pricing import CHECKED_ON, policy_for
+    from jobpilot.llm.pricing import CHECKED_ON, DATA_POLICY, policy_key
 
     cfg = get_config().llm
     name = cfg.for_task(task)
@@ -107,15 +113,39 @@ def warnings(task: Task) -> list[str]:
             f"task {task!r} has no entry in llm.PROMPT_CONTENTS — add one saying what "
             "its prompt contains, so the data-use warning describes the real payload"
         )
-    payload = PROMPT_CONTENTS[task]
-
-    note = policy_for(name, paid_tier=cfg.paid_tier(name))
-    if note is None:
-        return [
-            f"No data-use note on record for provider {name!r}. This task sends {payload} - "
-            "read its terms before enabling it."
-        ]
+    key = policy_key(name, paid_tier=cfg.paid_tier(name))
+    if key is None:
+        return [{"policy": "", "provider": name, "task": task, "url": "", "checked_on": ""}]
+    note = DATA_POLICY[key]
     if not note.trains_on_input:
         return []
-    checked = note.checked_on or CHECKED_ON
-    return [f"{name}: {note.summary} This task sends {payload}. {note.url} (checked {checked})."]
+    return [
+        {
+            "policy": key,
+            "provider": name,
+            "task": task,
+            "url": note.url,
+            "checked_on": note.checked_on or CHECKED_ON,
+        }
+    ]
+
+
+def warnings(task: Task) -> list[str]:
+    """:func:`warning_items` as English sentences — the CLI's rendering."""
+    from jobpilot.llm.pricing import DATA_POLICY
+
+    payload = PROMPT_CONTENTS.get(task, "")
+    out = []
+    for item in warning_items(task):
+        if not item["policy"]:
+            out.append(
+                f"No data-use note on record for provider {item['provider']!r}. This task "
+                f"sends {payload} - read its terms before enabling it."
+            )
+            continue
+        summary = DATA_POLICY[item["policy"]].summary
+        out.append(
+            f"{item['provider']}: {summary} This task sends {payload}. "
+            f"{item['url']} (checked {item['checked_on']})."
+        )
+    return out
