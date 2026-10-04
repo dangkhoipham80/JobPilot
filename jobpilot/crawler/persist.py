@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, defer
 
 from jobpilot.crawler.normalize import NormalizedJob, vn_now
@@ -73,7 +74,12 @@ class CrawlStats:
     superseded: int = 0
     filtered: int = 0  # dropped by stack/exclude rules
     fresh: int = 0  # posted within crawl.fresh_hours
-    errors: int = 0
+    errors: int = 0  # whole sites that failed
+    #: Rows the database refused (see the savepoint in ``persist_jobs``). Kept
+    #: apart from ``errors``, which counts failed *sites*: a site that loses
+    #: some rows still reports ok, and folding the two together would let one
+    #: losing every row read as "ran fine, nothing new".
+    rejected: int = 0
 
     _FIELDS = (
         "fetched",
@@ -84,6 +90,7 @@ class CrawlStats:
         "filtered",
         "fresh",
         "errors",
+        "rejected",
     )
 
     def merge(self, other: CrawlStats) -> None:
@@ -299,6 +306,89 @@ def _record_superseded_by(loser: Job, nj: NormalizedJob, now: datetime) -> None:
     loser.payload = payload
 
 
+def _persist_one(
+    session: Session,
+    nj: NormalizedJob,
+    index: _Index,
+    now: datetime,
+    run_id: int | None,
+    cross_source: bool,
+) -> tuple[str, Job | None]:
+    """Write one job; say what happened and which row now covers its key.
+
+    Returns ``(kind, row)`` with ``kind`` one of ``updated`` / ``inserted`` /
+    ``superseded`` / ``duplicate``. Touches no counters and no index: the caller
+    runs this inside a savepoint and must only account for it once the
+    savepoint has committed.
+    """
+    # Imported here, not at module scope, and this is not a style choice.
+    # ``companies.service`` needs ``crawler.text``, and importing any submodule
+    # of ``jobpilot.crawler`` runs its ``__init__``, which eagerly imports *this*
+    # module — so a top-level import works only when the crawler happens to be
+    # imported first, and raises ImportError when anything reaches
+    # ``companies.service`` directly. Alembic's 0011 does exactly that.
+    from jobpilot.companies.service import link_job
+
+    existing = session.get(Job, nj.id)
+    if existing is not None:
+        _refresh(existing, nj, now)
+        # Re-resolved on every refresh, not only on insert. A board that
+        # corrects its own spelling of an employer should move the job onto
+        # the right company row, and a job stored before this column existed
+        # has to pick one up somewhere. One SELECT on a unique index, and
+        # after the first crawl the employer nearly always has a row already.
+        link_job(session, existing)
+        # Now inside the window by definition, so it covers its own key for
+        # the rest of this batch — a job that has just been re-seen must not
+        # let another board's copy in behind it.
+        return "updated", existing
+
+    kind = "inserted"
+    incumbent = index.covering(nj.dedup_key, nj.dedup_level) if cross_source else None
+    if incumbent is not None:
+        if _has_usable_jd(nj.payload) and not _has_usable_jd(incumbent.job.payload):
+            # Keep both and say which is which. The incumbent may already be
+            # shortlisted or applied to, so it is annotated, never deleted
+            # or demoted — this module does not own anybody's decisions.
+            _record_superseded_by(incumbent.job, nj, now)
+            nj.payload = _record_supersedes(nj.payload, incumbent.job, now)
+            log.info(
+                "dedup: keeping %s despite matching %s — %s",
+                nj.id,
+                incumbent.job.id,
+                SUPERSEDE_REASON,
+                extra={
+                    "event": "dedup_superseded",
+                    "job_id": nj.id,
+                    "covered_by": incumbent.job.id,
+                    "dedup_key": nj.dedup_key,
+                },
+            )
+            kind = "superseded"
+        else:
+            _record_suppressed(incumbent.job, nj, now)
+            log.info(
+                "dedup: skipped %s (%s) — already covered by %s (%s)",
+                nj.id,
+                nj.source,
+                incumbent.job.id,
+                incumbent.job.source,
+                extra={
+                    "event": "dedup_skipped",
+                    "job_id": nj.id,
+                    "covered_by": incumbent.job.id,
+                    "dedup_key": nj.dedup_key,
+                    "level": nj.dedup_level,
+                },
+            )
+            return "duplicate", None
+
+    job = _new_job(nj, now, run_id=run_id)
+    session.add(job)
+    link_job(session, job)
+    return kind, job
+
+
 def persist_jobs(
     session: Session,
     jobs: list[NormalizedJob],
@@ -311,14 +401,6 @@ def persist_jobs(
 
     Flushes (does not commit) — the caller owns the transaction boundary.
     """
-    # Imported here, not at module scope, and this is not a style choice.
-    # ``companies.service`` needs ``crawler.text``, and importing any submodule
-    # of ``jobpilot.crawler`` runs its ``__init__``, which eagerly imports *this*
-    # module — so a top-level import works only when the crawler happens to be
-    # imported first, and raises ImportError when anything reaches
-    # ``companies.service`` directly. Alembic's 0011 does exactly that.
-    from jobpilot.companies.service import link_job
-
     now = now or vn_now()
     stats = CrawlStats()
     cutoff = now - timedelta(days=dedup_days)
@@ -341,69 +423,36 @@ def persist_jobs(
             index.add(job)
 
     for nj in jobs:
-        existing = session.get(Job, nj.id)
-        if existing is not None:
-            _refresh(existing, nj, now)
-            # Re-resolved on every refresh, not only on insert. A board that
-            # corrects its own spelling of an employer should move the job onto
-            # the right company row, and a job stored before this column existed
-            # has to pick one up somewhere. One SELECT on a unique index, and
-            # after the first crawl the employer nearly always has a row already.
-            link_job(session, existing)
-            # Now inside the window by definition, so it covers its own key for
-            # the rest of this batch — a job that has just been re-seen must not
-            # let another board's copy in behind it.
-            index.add(existing, nj.dedup_level)
-            stats.updated += 1
-            if nj.fresh:
-                stats.fresh += 1
+        # One savepoint per job. Postgres enforces column widths and constraints
+        # that SQLite never checks, and a violation surfaces mid-flush — which
+        # without a savepoint leaves the session unusable, so one bad posting
+        # used to fail its own site *and every site crawled after it*. Now it
+        # costs exactly that one row, counted in `rejected`.
+        try:
+            with session.begin_nested():
+                kind, row = _persist_one(session, nj, index, now, run_id, cross_source)
+        except SQLAlchemyError as exc:
+            log.warning(
+                "persist: skipped %s — %s",
+                nj.id,
+                (str(getattr(exc, "orig", None) or exc).splitlines() or [""])[0],
+                extra={"event": "persist_failed", "job_id": nj.id},
+            )
+            stats.rejected += 1
             continue
-
-        incumbent = index.covering(nj.dedup_key, nj.dedup_level) if cross_source else None
-        if incumbent is not None:
-            if _has_usable_jd(nj.payload) and not _has_usable_jd(incumbent.job.payload):
-                # Keep both and say which is which. The incumbent may already be
-                # shortlisted or applied to, so it is annotated, never deleted
-                # or demoted — this module does not own anybody's decisions.
-                _record_superseded_by(incumbent.job, nj, now)
-                nj.payload = _record_supersedes(nj.payload, incumbent.job, now)
-                log.info(
-                    "dedup: keeping %s despite matching %s — %s",
-                    nj.id,
-                    incumbent.job.id,
-                    SUPERSEDE_REASON,
-                    extra={
-                        "event": "dedup_superseded",
-                        "job_id": nj.id,
-                        "covered_by": incumbent.job.id,
-                        "dedup_key": nj.dedup_key,
-                    },
-                )
+        # Indexed only once the savepoint has committed: a row the database
+        # refused must not go on shadowing other boards' copies of the role.
+        if row is not None:
+            index.add(row, nj.dedup_level)
+        if kind == "duplicate":
+            stats.duplicates += 1
+            continue
+        if kind == "updated":
+            stats.updated += 1
+        else:
+            stats.inserted += 1
+            if kind == "superseded":
                 stats.superseded += 1
-            else:
-                _record_suppressed(incumbent.job, nj, now)
-                log.info(
-                    "dedup: skipped %s (%s) — already covered by %s (%s)",
-                    nj.id,
-                    nj.source,
-                    incumbent.job.id,
-                    incumbent.job.source,
-                    extra={
-                        "event": "dedup_skipped",
-                        "job_id": nj.id,
-                        "covered_by": incumbent.job.id,
-                        "dedup_key": nj.dedup_key,
-                        "level": nj.dedup_level,
-                    },
-                )
-                stats.duplicates += 1
-                continue
-
-        job = _new_job(nj, now, run_id=run_id)
-        session.add(job)
-        link_job(session, job)
-        index.add(job, nj.dedup_level)
-        stats.inserted += 1
         if nj.fresh:
             stats.fresh += 1
 

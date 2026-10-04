@@ -127,7 +127,7 @@ def llm_stats(
     """
     from jobpilot.llm.pricing import PRICES
     from jobpilot.llm.redact import shadowed_secrets
-    from jobpilot.llm.registry import PROVIDERS, api_key, list_models
+    from jobpilot.llm.registry import PROVIDERS, list_models, ready
 
     tasks: tuple[str, ...] = llm.TASKS
     cfg = get_config().llm
@@ -166,7 +166,9 @@ def llm_stats(
         spend.append(
             ProviderSpendOut(
                 provider=name,
-                has_key=bool(api_key(name)),
+                # "Usable", really: the CLI provider needs no key, and greying
+                # it out for lacking one would hide the backend that works.
+                has_key=ready(name),
                 spent_usd=round(spent, 6),
                 unpriced_rounds=sum(r["unpriced_rounds"] for r in mine),
                 budget_usd=budget,
@@ -183,7 +185,7 @@ def llm_stats(
         catalogue=catalogue,
         spend=spend,
         total_spent_usd=round(sum(s.spent_usd for s in spend), 6),
-        providers={name: bool(api_key(name)) for name in PROVIDERS},
+        providers={name: ready(name) for name in PROVIDERS},
         shadowed_env=shadowed_secrets(),
         configured={t: cfg.for_task(t) for t in tasks},
         warnings={t: llm.warnings(t) for t in tasks},

@@ -55,6 +55,23 @@ def _seed_with_sample_cv(monkeypatch):
     monkeypatch.setattr("jobpilot.cv.store.empty_document", sample_document)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_claude_cli(monkeypatch):
+    """No test spawns the real ``claude`` binary.
+
+    The ``claude_cli`` provider's readiness check runs ``claude auth status``,
+    and ``/stats/llm`` asks every provider whether it is ready. On a developer's
+    machine with Claude Code installed that would make the suite shell out to
+    it (and pass or fail on how that machine is logged in); on CI the binary is
+    absent. Pinning "absent" makes every machine behave like CI. Tests of the
+    provider patch ``find_claude`` back in explicitly.
+    """
+    import jobpilot.llm.claude_cli as cli
+
+    monkeypatch.setattr(cli, "find_claude", lambda: None)
+    monkeypatch.setattr(cli, "_auth_cache", {})
+
+
 @pytest.fixture
 def engine(tmp_path_factory):
     path = tmp_path_factory.mktemp("db") / "jobpilot.sqlite"

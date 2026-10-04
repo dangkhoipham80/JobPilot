@@ -313,7 +313,11 @@ def test_an_unpriced_model_costs_None_not_zero():
 def test_every_priced_model_has_both_rates():
     for key, rate in PRICES.items():
         assert len(rate) == 2, key
-        assert all(r > 0 for r in rate), key
+        if key[0] == "claude_cli":
+            # Billed to a subscription: known to be free per call, not unknown.
+            assert rate == (0.0, 0.0), key
+        else:
+            assert all(r > 0 for r in rate), key
 
 
 def test_only_the_free_gemini_tier_warns_and_it_names_the_cv(monkeypatch):

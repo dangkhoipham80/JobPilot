@@ -32,6 +32,14 @@ PRICES: dict[tuple[str, str], tuple[float, float]] = {
     ("claude", "claude-haiku-4-5"): (1.0, 5.0),
     ("claude", "claude-haiku-4-5-20251001"): (1.0, 5.0),
     ("claude", "claude-fable-5"): (10.0, 50.0),
+    # The subscription provider: nothing per call, the plan is already paid
+    # for. Listed so the /models picker offers these models for it — the picker
+    # is built from this table — and at 0.0 rather than absent, because absent
+    # means "price unknown" and this price is known.
+    ("claude_cli", "claude-haiku-4-5"): (0.0, 0.0),
+    ("claude_cli", "claude-sonnet-5"): (0.0, 0.0),
+    ("claude_cli", "claude-opus-4-8"): (0.0, 0.0),
+    ("claude_cli", "claude-opus-5"): (0.0, 0.0),
     # https://openai.com/api/pricing/
     ("openai", "gpt-4.1"): (2.0, 8.0),
     ("openai", "gpt-4.1-mini"): (0.40, 1.60),
@@ -90,6 +98,12 @@ class PolicyNote:
     trains_on_input: bool
     summary: str
     url: str
+    #: The answer depends on a setting in the user's own account, which
+    #: JobPilot cannot read. Still warned about (``trains_on_input``), but not
+    #: printed as if it were certain.
+    depends_on_account: bool = False
+    #: When *this* note was read, if later than the table-wide ``CHECKED_ON``.
+    checked_on: str | None = None
 
 
 #: Keyed by provider, plus the tiers that differ from their provider default.
@@ -103,6 +117,20 @@ DATA_POLICY: dict[str, PolicyNote] = {
             "by default; zero-retention is available on request."
         ),
         url="https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+    ),
+    # A Claude subscription is under the *consumer* terms, not the API's: the
+    # same models, a different contract. Claude Code sessions on a Free/Pro/Max
+    # account follow the account's "Help improve Claude" setting.
+    "claude_cli": PolicyNote(
+        trains_on_input=True,
+        summary=(
+            "This runs on your Claude subscription, which is covered by Anthropic's consumer "
+            'terms, not the API terms: if "Help improve Claude" is on in your claude.ai privacy '
+            "settings, these conversations may be used to train models. Turn it off there to opt out."
+        ),
+        url="https://www.anthropic.com/news/updates-to-our-consumer-terms",
+        depends_on_account=True,
+        checked_on="2026-10-04",
     ),
     "openai": PolicyNote(
         trains_on_input=False,

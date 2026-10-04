@@ -689,6 +689,12 @@ export interface CrawlSiteResult {
    * none rather than that they never counted.
    */
   superseded?: number;
+  /**
+   * Rows the database refused (logged as `persist_failed`). A site that lost
+   * rows still has `ok: true`, so this is the only place the loss shows.
+   * Optional for the same reason as `superseded`.
+   */
+  rejected?: number;
   filtered: number;
   fresh: number;
 }

@@ -315,6 +315,9 @@ class Secrets(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     google_api_key: str = ""
+    #: From `claude setup-token`: the `claude_cli` provider runs on your Claude
+    #: subscription with it, instead of per-token API billing.
+    claude_code_oauth_token: str = ""
 
     slack_bot_token: str = ""
     slack_app_token: str = ""

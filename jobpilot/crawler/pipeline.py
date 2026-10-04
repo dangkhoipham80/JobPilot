@@ -136,9 +136,14 @@ def run_crawl(
         if on_progress:
             on_progress(f"[{index}/{total}] crawling {scraper.source}…")
         try:
-            site = _crawl_site(
-                scraper, cfg, session, query, now, dedup_days, report.run_id, limit
-            )
+            # A savepoint per site, on top of persist's savepoint per job. Those
+            # catch a bad row; this catches anything else that breaks the
+            # session mid-site (the dedup preload, a company lookup) and keeps
+            # it from taking the remaining sites — and the Run row — down too.
+            with session.begin_nested():
+                site = _crawl_site(
+                    scraper, cfg, session, query, now, dedup_days, report.run_id, limit
+                )
             report.sites.append(site)
             if on_progress:
                 s = site.stats

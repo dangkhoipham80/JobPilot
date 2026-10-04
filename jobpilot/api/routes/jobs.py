@@ -29,6 +29,7 @@ from jobpilot.crawler.normalize import (
 )
 from jobpilot.crawler.persist import STATED_TARGET, target_is_stated
 from jobpilot.crawler.quality import crawl_passes
+from jobpilot.crawler.types import make_job_id
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
 from jobpilot.store.models import Job, JobStatus
@@ -225,7 +226,7 @@ async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut
     # Stable id from the URL when there is one, so pasting the same posting
     # twice updates it instead of creating a duplicate.
     native = _native_id(body.url) or _slug(f"{body.company}-{body.title}")
-    job_id = f"manual:{native}"
+    job_id = make_job_id("manual", native)
 
     job = db.get(Job, job_id)
     if job is None:

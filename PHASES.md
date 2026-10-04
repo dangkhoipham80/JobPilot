@@ -2181,3 +2181,55 @@ cho ô tìm kiếm; **`mtv` chỉ là pháp nhân khi đã cắt được gì đ
 thật — nó vẫn là nợ, không phải thứ đã verify.
 
 997 test pass sau khi sửa.
+
+---
+
+## Phase deploy-mac — Mac mini thay laptop Windows, chạy khi máy bật (2026-10-04)
+
+**User chốt:** miễn phí + nhẹ máy ⇒ Mac mini ở nhà (IP dân dụng VN, idle ~5–7 W). **Không cần chạy
+khi tắt máy** — bật nguồn + đăng nhập là lên. **Bỏ DB Windows**, dựng mới (DB thử trên Mac giữ lại,
+bản dump cất ở `~/JobPilotBackups/mac-testdb-before-restore-20261004.dump`).
+
+- 3 **LaunchAgent** (`deploy/macos/install.sh`): api (KeepAlive), crawl 08:30/18:30, backup lúc
+  login + 03:00. LaunchAgent chứ không phải Daemon: FileVault bật ⇒ màn hình mở khoá lúc boot
+  **chính là** login; Postgres (brew services) + Tailscale cũng ở tầng này.
+- **Mọi agent qua `run.sh`** vì PATH của launchd là `/usr/bin:/bin:/usr/sbin:/sbin` — không có
+  tectonic, không có `pg_dump` (keg-only). Keg `postgresql@NN` đặt **trước** `/opt/homebrew/bin`.
+- **Bug chỉ lộ khi chạy thật:** (1) crawl.log trống 2 phút dù đang chạy → `PYTHONUNBUFFERED=1`;
+  (2) `bootout` trả về trước khi gỡ xong ⇒ `bootstrap` ngay sau đó lỗi `5: Input/output error` →
+  chờ `launchctl print` fail; (3) build CV **rỗng** lỗi LaTeX `There's no line here to end` ở
+  `\makecvheader` — **chưa sửa** (nợ: DB mới bấm build trước khi điền tên là gặp).
+- **Review gate:** APPROVE + 4 nên sửa, đã sửa: crawl watchdog 45 phút (launchd không chạy bản thứ
+  hai của job đang chạy ⇒ crawl treo nuốt mọi slot sau); `update.sh` đọc token qua
+  `get_secrets()` chứ không `grep|cut` (token có ngoặc kép → bundle 401 mà `/health` vẫn xanh);
+  `healthcheck.sh` so PID giữ port với PID agent (dev server `--reload` ở :8000 trả 200 thay agent).
+
+## Phase crawl-fix — id 134 ký tự làm đỏ cả 6 nguồn (2026-10-04)
+
+Crawl thật đầu tiên qua launchd: ITviec để nguyên tên pháp nhân trong slug → id 134 > `VARCHAR(128)`
+→ `StringDataRightTruncation` giữa flush → session `PendingRollbackError` → **mọi site sau đó** fail.
+
+- `types.make_job_id()`: giữ đầu id + `-<sha1[:12]>` của **cả** id khi dài quá ⇒ deterministic, không
+  cần migration, id cũ không đổi. Test ghim width = mọi cột FK `job_id`.
+- Savepoint **mỗi job** (`persist_jobs`) + **mỗi site** (`run_crawl`). Row hỏng → `rejected` (tách khỏi
+  `errors` = site fail), CLI in `PART`, Runs có cột riêng.
+- **Review gate:** APPROVE; 2 nên sửa đã sửa. Bài học: test "index chỉ add sau savepoint" **lần đầu
+  pass cả khi có mutation** — vì `_Index` dựng lại **mỗi site**, row ma chỉ hại job sau nó *trong
+  cùng site*. Viết lại test trong một site, mutation mới fail. **Test phải được thấy fail.**
+- Thật: crawl rc=0, 11 job mới, 5/6 nguồn (LinkedIn thiếu IMAP — cô lập đúng).
+
+## Phase claude_cli — chạy LLM trên gói Claude của user (2026-10-04)
+
+User: gói Max dùng không hết, app host ở máy mình ⇒ dùng nó thay API. Chi tiết + luật:
+`jobpilot/llm/CLAUDE.md` § Provider `claude_cli`.
+
+- Đo thật: system prompt mặc định của Claude Code = **32.198** token/lượt; thay bằng prompt riêng
+  → **~1.200**. classify 5/5, intake 11/11, tailor Opus qua guardrail ở lượt 2 (71 s). p50 6–8 s.
+- **Tôi đoán sai một lần**: bắt `CLAUDE_CODE_OAUTH_TOKEN` vì nghĩ launchd không đọc được keychain.
+  User hỏi "sao không chạy claude như terminal?" → thử từ một LaunchAgent thật: login dùng được.
+  Token thành tuỳ chọn. **Thử trước khi thêm bước cho user.**
+- **Review gate:** APPROVE + 3 nên sửa, đã sửa: system prompt (= Master CV) ra khỏi argv
+  (`--system-prompt-file`, đã thử thật); `encoding="utf-8"`; **$0 chỉ đúng với login gói** ⇒
+  `subscription_problem()` đọc `claude auth status`, chặn Console/Bedrock/chưa login.
+
+1018 test pass.
