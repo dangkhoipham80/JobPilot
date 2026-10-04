@@ -197,8 +197,11 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | intake | **Dán JD vào → AI đọc + chấm độ khớp.** Task LLM thứ 4 (`intake`); `POST /jobs/intake` điền form (không lưu), `POST /jobs/{id}/fit` chấm CV vs tin (advisory, không đụng CV). Job thêm tay giờ có quality + facet + `match_score` như job crawl | `jobpilot/intake/`, `api/routes/intake.py`, `web/src/components/FitCard.tsx` |
 | companies | **Nhà tuyển dụng thành bảng** + `hr_contacts` (migration 0011), `jobs.company_id`, trang `/companies`; email HR **được mời** làm `apply_target` **và đổi luôn `apply_channel` sang email** — cả hai cột **sống qua lượt crawl sau** (`apply_target_source`) | `jobpilot/companies/`, `api/routes/companies.py`, `web/src/pages/Companies.tsx` |
 | intake-2 | **JD có cấu trúc** (8 bucket: vai trò/nhiệm vụ/yêu cầu/ưu tiên/soft skill/output/quyền lợi/cách ứng tuyển) — 2 lượt gọi chạy song song, bucket là *mục lục* của JD gốc chứ không thay nó; **lương 4 dạng** (`Salary.kind`); **tỉnh/thành** hết rớt vì hậu tố quốc gia (160→119 job thiếu city); **onsite/hybrid/remote** phủ 105/216 | `intake/schema.py`, `crawler/vietnam.py`, `crawler/salary.py`, `web/src/components/JdSectionsView.tsx` |
+| deploy-mac | **Mac mini** thay laptop Windows: 3 LaunchAgent qua `run.sh` (PATH launchd), chạy khi máy bật, DB dựng mới | `deploy/macos/`, `DEPLOY.md §M` |
+| crawl-fix | id > 128 ký tự làm đỏ cả crawl → `make_job_id()` + savepoint mỗi job/site, row hỏng = `rejected` | `crawler/types.py`, `persist.py`, `pipeline.py` |
+| claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
 
-997 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
+1018 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
 build PDF bằng **tectonic và Docker** (Master + tailored, cả 2 template), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
@@ -254,7 +257,9 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
 - Apply = **hybrid theo kênh** (email full-auto, portal/LinkedIn human-in-the-loop).
 - Nguồn = **ITviec + TopCV + VietnamWorks** lõi (pluggable, mở rộng theo tier — PLAN.md §5.1.1); không LinkedIn/Facebook.
 - Giao diện = **Web Dashboard** là chính, **Slack** phụ. DB = **PostgreSQL**.
-- Chạy = **VPS Việt Nam (~100k/tháng) + Tailscale**, service 24/7 + systemd timer cho crawl.
+- Chạy = **Mac mini ở nhà + Tailscale** (2026-10-04, `DEPLOY.md §M`): LaunchAgent, **chỉ chạy khi
+  máy bật** (user chốt), IP dân dụng VN. Bên dưới là quyết định VPS cũ — vẫn là phương án B.
+- (cũ) Chạy = **VPS Việt Nam (~100k/tháng) + Tailscale**, service 24/7 + systemd timer cho crawl.
   Đổi từ "local trên laptop" (2026-08-17) vì laptop là thứ mang đi, mà mang đi thì
   JobPilot offline. **Vẫn không phải public**: uvicorn bind loopback, ra ngoài chỉ qua
   tailnet — xem `DEPLOY.md §0` trước khi đụng vào chuyện phơi ra ngoài.
@@ -264,6 +269,8 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   dùng **tectonic**; chỉ `cv.engine: docker` mới bắt buộc **x86-64** (ảnh chỉ có amd64).
 - Stack = Python (FastAPI + Playwright stealth + tectonic LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
 - LLM = **Claude mặc định**, openai/gemini chọn được **theo từng việc** (`llm.*`, Phase 20b). Không chạy model local.
+  Từ 2026-10-04 có thêm **`claude_cli`** = Claude qua gói Pro/Max của user (đang được chọn trên
+  Mac mini) — chỉ dùng cá nhân; gãy thì đổi về `claude` trên `/models`.
 - Việc LLM = **4 task**: `intake` (đọc JD dán vào + chấm độ khớp), `tailor`, `letter`, `classify`.
   Danh sách chuẩn ở `llm.TASKS` — thêm task thì sửa **một** tuple đó, đừng viết lại literal
   (`cli llm providers`, `cli llm stats`, `GET /stats/llm` và trang `/models` đều đọc nó).
