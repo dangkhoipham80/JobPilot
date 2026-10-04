@@ -31,6 +31,11 @@ crawl:
     - "Spring Boot"
     - "Backend"
     - "Microservices"
+  # What the scheduled crawl searches for: one search per entry, on every site.
+  # Keep each SHORT ("java", "spring boot") — TopCV turns the query into a URL
+  # slug and answers a long one with nothing. Empty = the first three stacks
+  # joined into one query (the old behaviour).
+  queries: []
   # Drop jobs whose title/JD scream out-of-scope.
   exclude_keywords:
     - "Senior"

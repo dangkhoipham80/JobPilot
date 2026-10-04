@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, Fragment } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
@@ -9,6 +9,7 @@ import { useFormat } from "@/lib/format";
 import { useT } from "@/i18n";
 import { Card, CardBody, CardHeader, CardTitle, Skeleton } from "@/components/ui";
 import { CrawlSetup } from "@/components/CrawlSetup";
+import { RecentCrawls } from "@/components/RecentCrawls";
 import { cn } from "@/lib/utils";
 import type { CrawlRequest, RunRecord, Task, TaskStatus } from "@/types";
 
@@ -90,6 +91,13 @@ export function Runs({ version }: { version: number }) {
       </div>
 
       <CrawlSetup
+        version={version}
+        busy={busy}
+        blocked={active.length > 0}
+        onCrawl={crawl}
+      />
+
+      <RecentCrawls
         version={version}
         busy={busy}
         blocked={active.length > 0}
@@ -242,7 +250,8 @@ function TaskRow({ task }: { task: Task }) {
           </thead>
           <tbody>
             {sites.map((site) => (
-              <tr key={site.source} className={cn(!site.ok && "text-critical")}>
+              <Fragment key={site.source}>
+              <tr className={cn(!site.ok && "text-critical")}>
                 <td className="py-0.5">{site.source}</td>
                 {site.ok ? (
                   <>
@@ -265,6 +274,16 @@ function TaskRow({ task }: { task: Task }) {
                   </td>
                 )}
               </tr>
+              {/* Partial failure: some keywords worked, some did not. Shown, not
+                  folded into the counts — a blocked search is not "0 found". */}
+              {site.ok && site.error && (
+                <tr className="text-critical">
+                  <td colSpan={7} className="truncate pb-1 text-[11px]" title={site.error}>
+                    ⚠ {site.error}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -292,21 +311,40 @@ function summarise(stats: Record<string, unknown> | undefined): string {
   const parts: string[] = [];
   if (typeof stats.query === "string" && stats.query) parts.push(`"${stats.query}"`);
 
+  // Per keyword when there were several: which search actually found something.
+  const byQuery = stats.by_query as
+    | Record<string, { inserted?: number; updated?: number; errors?: number }>
+    | undefined;
+  if (byQuery && typeof byQuery === "object" && Object.keys(byQuery).length > 1) {
+    parts.push(
+      ...Object.entries(byQuery).map(([q, s]) => {
+        // A failed search is counted, never shown as a bare "+0". The count is
+        // per site, so "(1 failed)" stays true when another site found nothing
+        // for the same keyword without failing.
+        const errors = s?.errors ?? 0;
+        return `${q}: +${s?.inserted ?? 0}${errors ? ` (${errors} failed)` : ""}`;
+      }),
+    );
+  }
+
   const sites = stats.sites as
-    | Record<string, { ok?: boolean; inserted?: number; rejected?: number }>
+    | Record<string, { ok?: boolean; inserted?: number; rejected?: number; error?: string | null }>
     | undefined;
   if (sites && typeof sites === "object") {
     parts.push(
       ...Object.entries(sites).map(([name, s]) =>
         s?.ok === false
           ? `${name}: failed`
-          : `${name}: +${s?.inserted ?? 0}${s?.rejected ? ` rejected=${s.rejected}` : ""}`,
+          : `${name}: +${s?.inserted ?? 0}${s?.rejected ? ` rejected=${s.rejected}` : ""}${
+              s?.error ? " partial" : ""
+            }`,
       ),
     );
   }
 
   for (const [k, v] of Object.entries(stats)) {
     if (k === "ok" || k === "query" || k === "sites" || v === null) continue;
+    if (k === "queries" || k === "request" || k === "by_query") continue; // shown above
     if (typeof v === "object") continue; // nested; already unpacked or not useful inline
     parts.push(`${k}=${String(v)}`);
   }

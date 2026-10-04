@@ -10,7 +10,7 @@ editing ``config.yaml``, whose comments document the email safety gates.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -25,7 +25,7 @@ from jobpilot.config import (
     locked_violations,
     save_local_config,
 )
-from jobpilot.crawler.pipeline import default_query
+from jobpilot.crawler.pipeline import MAX_QUERIES, default_query, split_queries
 from jobpilot.orchestrator import crawl_body, queue
 from jobpilot.store.models import Job, Run
 
@@ -49,6 +49,13 @@ def start_crawl(
     """
     req = body or CrawlRequest()
     resolved_query = req.query or query
+    # Refused up front, not truncated: dropping the ninth keyword silently would
+    # report a crawl that searched for less than you asked.
+    if len(split_queries(resolved_query)) > MAX_QUERIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"at most {MAX_QUERIES} keywords per crawl — each one is a full pass over every site",
+        )
     running = queue.active(kind="crawl")
     if running:
         raise HTTPException(
@@ -76,7 +83,78 @@ def start_crawl(
 def _crawl_label(query: str | None, sources: list[str] | None) -> str:
     """A label you can tell two runs apart by, in the queue and in history."""
     where = "+".join(sources) if sources else "all sources"
-    return f"crawl {where}" + (f" · {query}" if query else "")
+    queries = split_queries(query)
+    return f"crawl {where}" + (f" · {', '.join(queries)}" if queries else "")
+
+
+def _request_of(run: Run) -> dict | None:
+    """What a past crawl asked for: ``{queries, sources, limit}``, or None.
+
+    Runs record their request since multi-keyword crawls landed. Older rows are
+    read back from what they did keep — the query string and the sites that ran
+    — with ``limit`` unknown (None = the configured default). ``sources`` None
+    means "every enabled source", as in a crawl request.
+    """
+    stats = run.stats or {}
+    req = stats.get("request")
+    if isinstance(req, dict) and req.get("queries"):
+        queries = [q for q in req["queries"] if isinstance(q, str) and q.strip()]
+        sources, limit = req.get("sources"), req.get("limit")
+    else:
+        queries = split_queries(stats.get("query") if isinstance(stats.get("query"), str) else "")
+        sites = stats.get("sites")
+        sources = sorted(sites) if isinstance(sites, dict) and sites else None
+        limit = None
+    if not queries:
+        return None
+    return {
+        "queries": queries,
+        "sources": [s for s in sources if isinstance(s, str)]
+        if isinstance(sources, list) and sources
+        else None,
+        "limit": limit if isinstance(limit, int) and limit > 0 else None,
+    }
+
+
+@router.get("/crawl/recent")
+def recent_crawls(limit: int = Query(3, ge=1, le=10), db: Session = Depends(get_db)) -> list[dict]:
+    """The last ``limit`` *distinct* crawl setups, newest first, ready to rerun.
+
+    Distinct because the scheduled crawl repeats one setup twice a day: three
+    identical rows would crowd out the one-off search you actually want back.
+    Each item carries exactly what ``POST /crawl`` takes, so rerunning is
+    sending it back unchanged.
+    """
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    default_limit = get_config().crawl.jobs_per_site
+    stmt = select(Run).where(Run.kind == "crawl").order_by(Run.id.desc()).limit(100)
+    for run in db.scalars(stmt):
+        req = _request_of(run)
+        if req is None:
+            continue
+        key = (
+            tuple(q.casefold() for q in req["queries"]),
+            tuple(sorted(req["sources"])) if req["sources"] else None,
+            # Asking for the default by number is asking for the default.
+            None if req["limit"] == default_limit else req["limit"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        totals = (run.stats or {}).get("totals") or {}
+        out.append(
+            {
+                "run_id": run.id,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "query": ", ".join(req["queries"]),
+                **req,
+                "inserted": totals.get("inserted"),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
 
 
 @router.get("/crawl/setup")
@@ -107,8 +185,7 @@ def crawl_setup(db: Session = Depends(get_db)) -> dict:
         "default_query": default_query(cfg),
         "jobs_per_site": cfg.crawl.jobs_per_site,
         "sources": [
-            {"key": s.key, "enabled": s.enabled, "ready": s.key in SCRAPERS}
-            for s in cfg.sources
+            {"key": s.key, "enabled": s.enabled, "ready": s.key in SCRAPERS} for s in cfg.sources
         ],
     }
 

@@ -31,6 +31,11 @@ class RobotsDisallowed(RuntimeError):
     """A URL is disallowed by the site's robots.txt."""
 
 
+#: Ceiling on the per-run page memo (``BaseScraper._fetch``), in characters.
+#: ~32 MB covers the default sweep (10 jobs × a few keywords) many times over.
+MEMO_BUDGET_CHARS = 32 * 1024 * 1024
+
+
 class BaseScraper(ABC):
     source: str = "base"
 
@@ -52,6 +57,10 @@ class BaseScraper(ABC):
         self.robots = robots
         self.max_pages = max_pages if max_pages is not None else DEFAULT_MAX_PAGES
         self._owned_fetcher = None  # lazily created default, closed by close()
+        # Per-run request state, reset by close(). See _fetch.
+        self._requested = False
+        self._memo: dict[str, str] = {}
+        self._memo_chars = 0
 
     # -- pure, per-site (implement these) ---------------------------------- #
     @abstractmethod
@@ -99,6 +108,13 @@ class BaseScraper(ABC):
 
         return PlaywrightFetcher()
 
+    #: Whether ``crawl(query)`` depends on the query at all. A source that
+    #: ignores it (LinkedIn alerts: whatever LinkedIn emailed you) runs once per
+    #: run however many keywords were given, and is not credited to any one
+    #: keyword — every job would otherwise land on the first and show as
+    #: "updated" under the rest.
+    query_aware: bool = True
+
     # -- fetching ----------------------------------------------------------- #
     def _resolve_fetcher(self) -> Fetcher:
         if self.fetcher is not None:
@@ -108,9 +124,37 @@ class BaseScraper(ABC):
         return self._owned_fetcher
 
     def _fetch(self, url: str) -> str:
+        """The one door every request to the site goes through.
+
+        Rate limiting lives here rather than at the call sites: it waits before
+        *every* request except the first of the run. It used to wait only before
+        listing page 2+ and before detail pages, which was complete while a run
+        made one search per site — and left a gap as soon as a run made several:
+        page 1 of the next keyword went out straight after the last request of
+        the previous one. ``RateLimiter`` holds no state, so the gate has to.
+
+        A URL already fetched this run is answered from memory: no request, so
+        no wait. That is what keeps several keywords from multiplying traffic on
+        sources whose listing does not depend on the query (feeds, ATS boards —
+        they filter locally) and from re-fetching the detail page of a posting
+        two keywords both found. Failures are not remembered.
+        """
+        if url in self._memo:
+            return self._memo[url]
         if self.robots is not None and not self.robots.allowed(url):
             raise RobotsDisallowed(url)
-        return self._resolve_fetcher()(url)
+        if self._requested:
+            self.rate.wait()
+        self._requested = True
+        html = self._resolve_fetcher()(url)
+        # Bounded: a deep sweep (limit 200 × 8 keywords) of full Playwright
+        # pages would otherwise hold hundreds of MB until the site closes. Past
+        # the budget a repeat goes back to the network — still behind the wait
+        # above, so politeness holds; only the saving stops.
+        if self._memo_chars + len(html) <= MEMO_BUDGET_CHARS:
+            self._memo[url] = html
+            self._memo_chars += len(html)
+        return html
 
     def close(self) -> None:
         if self._owned_fetcher is not None:
@@ -118,6 +162,9 @@ class BaseScraper(ABC):
             if callable(close):
                 close()
             self._owned_fetcher = None
+        self._requested = False
+        self._memo.clear()
+        self._memo_chars = 0
 
     # -- search: walk listing pages until we have enough -------------------- #
     def search(self, query: str = "", limit: int | None = None) -> list[SearchHit]:
@@ -146,8 +193,6 @@ class BaseScraper(ABC):
                 break  # the source has no distinct URL for this page
             seen_urls.add(url)
 
-            if page > 1:
-                self.rate.wait()  # paging is still N requests at the site
             try:
                 page_hits = self.parse_search(self._fetch(url))
             except Exception as exc:
@@ -242,7 +287,6 @@ class BaseScraper(ABC):
             try:
                 detail = ""
                 if self.needs_detail:
-                    self.rate.wait()
                     detail = self._fetch(hit.url)
                 results.append(self.parse_detail(detail, hit))
             except Exception as exc:

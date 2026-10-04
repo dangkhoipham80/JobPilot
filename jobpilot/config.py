@@ -55,6 +55,27 @@ class CrawlCfg(BaseModel):
     match_score_min: float = 0.30
     stacks: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
+    #: What the scheduled crawl (and an empty search box) searches for — one
+    #: search per entry, each run on every site. Empty = the old single query
+    #: joined from the first three ``stacks``, which is long enough that some
+    #: boards (TopCV puts it in the URL path) answer it with nothing.
+    queries: list[str] = Field(default_factory=list)
+
+    @field_validator("queries")
+    @classmethod
+    def _bounded_queries(cls, value: list[str]) -> list[str]:
+        """Refused at save time, not at 08:30. Without this, nine keywords saved
+        from Settings made every scheduled `cli crawl` exit on the 8-keyword
+        limit, with the reason visible only in a log nobody reads."""
+        if not value:
+            return value
+        from jobpilot.crawler.pipeline import MAX_QUERIES, split_queries
+
+        if len(split_queries(", ".join(value))) > MAX_QUERIES:
+            raise ValueError(
+                f"at most {MAX_QUERIES} scheduled keywords — each is a full pass over every site"
+            )
+        return value
 
 
 class SourceCfg(BaseModel):

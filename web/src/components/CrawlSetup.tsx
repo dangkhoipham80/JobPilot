@@ -9,6 +9,27 @@ import { useT } from "@/i18n";
 import { sourceHome, sourceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
+/** Keywords per crawl; mirrors `MAX_QUERIES` in `crawler/pipeline.py`. */
+export const MAX_KEYWORDS = 8;
+
+/**
+ * `"java, spring boot; JAVA"` -> `["java", "spring boot"]` — the same split the
+ * backend applies (`pipeline.split_queries`): commas, semicolons and newlines
+ * separate searches, spaces stay inside one, duplicates go case-insensitively.
+ */
+export function splitKeywords(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of text.split(/[,;\n]/)) {
+    const q = part.split(/\s+/).filter(Boolean).join(" ");
+    if (q && !seen.has(q.toLowerCase())) {
+      seen.add(q.toLowerCase());
+      out.push(q);
+    }
+  }
+  return out;
+}
+
 /**
  * Crawl setup — decide the scope, then run it.
  *
@@ -58,7 +79,8 @@ export function CrawlSetup({
 
   const selected = picked ?? [];
   const suggestions = [...(setup?.roles ?? []), ...(setup?.tech ?? [])];
-  const words = query.trim().split(/\s+/).filter(Boolean);
+  const keywords = splitKeywords(query);
+  const tooMany = keywords.length > MAX_KEYWORDS;
 
   function toggleSource(key: string) {
     setPicked((prev) => {
@@ -67,20 +89,21 @@ export function CrawlSetup({
     });
   }
 
+  // A suggestion is a keyword of its own, not words glued onto the current
+  // one: "java spring boot" is one long search that some boards answer with
+  // nothing, while "java, spring boot" is two short ones.
   function toggleWord(term: string) {
-    const has = query.toLowerCase().includes(term.toLowerCase());
-    setQuery((q) =>
-      has
-        ? q.replace(new RegExp(`\\s*${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"), "").trim()
-        : `${q} ${term}`.trim(),
-    );
+    const cur = splitKeywords(query);
+    const has = cur.some((k) => k.toLowerCase() === term.toLowerCase());
+    const next = has ? cur.filter((k) => k.toLowerCase() !== term.toLowerCase()) : [...cur, term];
+    setQuery(next.join(", "));
   }
 
   async function start() {
     setError(null);
     try {
       await onCrawl({
-        query: query.trim() || undefined,
+        query: keywords.length ? keywords.join(", ") : undefined,
         // Sending every source is the same as sending none, and an empty body
         // reads better in the run label ("all sources").
         sources: selected.length && selected.length < runnable.length ? selected : undefined,
@@ -181,6 +204,14 @@ export function CrawlSetup({
                 : t("queryPlaceholder")
             }
           />
+          <p className="mt-1.5 text-[11px] text-ink-muted">
+            {keywords.length > 1 ? t("keywordCount", { count: keywords.length }) : t("queryHint")}
+          </p>
+          {tooMany && (
+            <p className="mt-1 text-[11px] text-critical">
+              {t("tooManyKeywords", { max: MAX_KEYWORDS })}
+            </p>
+          )}
           {suggestions.length > 0 && (
             <>
               <p className="mb-1.5 mt-2.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
@@ -189,9 +220,7 @@ export function CrawlSetup({
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {suggestions.map((term) => {
-                  const on = words.some((w) => term.toLowerCase().includes(w.toLowerCase()))
-                    ? query.toLowerCase().includes(term.toLowerCase())
-                    : false;
+                  const on = keywords.some((k) => k.toLowerCase() === term.toLowerCase());
                   return (
                     <button
                       key={term}
@@ -242,7 +271,7 @@ export function CrawlSetup({
 
           <Button
             onClick={start}
-            disabled={busy || blocked || !selected.length}
+            disabled={busy || blocked || !selected.length || tooMany}
             className="ml-auto"
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}

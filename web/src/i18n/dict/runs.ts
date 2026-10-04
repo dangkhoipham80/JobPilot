@@ -33,7 +33,21 @@ export const runs = ns({
      * while "java spring" works. Showing a short query is the shortest way to
      * say so.
      */
-    queryPlaceholder: "e.g. java spring — short beats specific",
+    queryPlaceholder: "e.g. java, spring boot — commas separate searches",
+    queryHint:
+      "Commas separate searches: each keyword is its own search on every site, so keep each one short.",
+    keywordCount: "{count} keywords → {count} searches per site",
+    tooManyKeywords: "At most {max} keywords per crawl.",
+
+    /* Recent setups ------------------------------------------------------- */
+    recentTitle: "Crawl again",
+    recentHint: "your last distinct setups — same sources, keywords and depth",
+    recentEmpty: "Nothing to repeat yet — the setups of your crawls will show up here.",
+    recrawl: "Crawl again",
+    allSources: "all sources",
+    limitDefaultShort: "default depth",
+    perSite: "{count}/keyword/site",
+    foundNew: "+{count} new",
     fromCv: "From your CV — click to add",
     noSuggestions: "No suggestions yet — fill in your skills and tech stack in",
     noSuggestionsEnd: "and they'll show up here.",
@@ -99,7 +113,20 @@ export const runs = ns({
 
     searchFor: "Tìm gì",
     queryFromSettings: "{query} (lấy từ Cài đặt)",
-    queryPlaceholder: "vd: java spring — ngắn ăn đứt chi tiết",
+    queryPlaceholder: "vd: java, spring boot — dấu phẩy tách các lượt tìm",
+    queryHint:
+      "Dấu phẩy tách các lượt tìm: mỗi từ khoá là một lượt tìm riêng trên mọi site, nên giữ từng từ thật ngắn.",
+    keywordCount: "{count} từ khoá → {count} lượt tìm mỗi site",
+    tooManyKeywords: "Tối đa {max} từ khoá mỗi lần crawl.",
+
+    recentTitle: "Crawl lại",
+    recentHint: "các cấu hình gần nhất — cùng nguồn, từ khoá và độ sâu",
+    recentEmpty: "Chưa có gì để chạy lại — cấu hình các lượt crawl của bạn sẽ hiện ở đây.",
+    recrawl: "Crawl lại",
+    allSources: "mọi nguồn",
+    limitDefaultShort: "độ sâu mặc định",
+    perSite: "{count}/từ khoá/site",
+    foundNew: "+{count} mới",
     fromCv: "Lấy từ CV của bạn — bấm để thêm",
     noSuggestions: "Chưa có gợi ý — điền skill và tech stack trong",
     noSuggestionsEnd: "rồi chúng sẽ hiện ở đây.",
