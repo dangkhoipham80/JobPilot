@@ -2233,3 +2233,14 @@ User: gói Max dùng không hết, app host ở máy mình ⇒ dùng nó thay AP
   `subscription_problem()` đọc `claude auth status`, chặn Console/Bedrock/chưa login.
 
 1018 test pass.
+
+## Phase multi-kw — nhiều từ khoá một lượt crawl + crawl lại y hệt (2026-10-04)
+
+User hỏi gõ nhiều keyword thì sao — trước đó cả ô là **một** cụm tìm, nhiều từ ⇒ ít kết quả hơn
+(board hiểu là AND) và TopCV ra 0 vì query thành slug. Thêm: dấu phẩy = nhiều lượt tìm trong một
+run; và "crawl lại y hệt" 3 cấu hình gần nhất. Luật + bẫy: `jobpilot/crawler/CLAUDE.md` § Nhiều từ khoá.
+
+- Thật: `java, react` × itviec+arbeitnow × 5/site → java +1, react +2, trùng giữa hai từ đếm
+  `updated`. Bấm crawl lại → Run 178 ghi `request` **giống hệt** Run 177; `/crawl/recent` gộp hai
+  lượt đó làm một. 9 từ khoá → 422; UI chặn nút + báo. Run cũ (trước tính năng) đọc ngược được.
+- Bẫy React đã tránh: guard "Crawl lại" là `useRef`, không phải state (`web/src/CLAUDE.md`).

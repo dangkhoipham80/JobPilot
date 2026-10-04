@@ -74,9 +74,12 @@ class CrawlStats:
     superseded: int = 0
     filtered: int = 0  # dropped by stack/exclude rules
     fresh: int = 0  # posted within crawl.fresh_hours
-    errors: int = 0  # whole sites that failed
+    #: Searches that failed. With one keyword per run that is "the site failed";
+    #: with several, a site can be ok (some searches worked) and still carry
+    #: errors — a partial failure, reported as such rather than as "0 found".
+    errors: int = 0
     #: Rows the database refused (see the savepoint in ``persist_jobs``). Kept
-    #: apart from ``errors``, which counts failed *sites*: a site that loses
+    #: apart from ``errors``, which counts failed *searches*: a site that loses
     #: some rows still reports ok, and folding the two together would let one
     #: losing every row read as "ran fine, nothing new".
     rejected: int = 0

@@ -129,3 +129,32 @@ Lớp 1 = PK `<source>:<native_id>`. Lớp 2 = cross-source `(company, title)` t
 - **Fetch strategy**: `PlaywrightFetcher` load bằng `domcontentloaded` rồi *cố* chờ `networkidle` 6s, timeout thì bỏ qua. Chờ `networkidle` như **điều kiện** load là bẫy: job board chạy analytics/socket không bao giờ im → trang render xong nhưng `goto` treo tới timeout rồi fail cả crawl. Nó cũng **raise theo status code**: trang chặn (403/429) là một *trang* hợp lệ với parser, không chặn ở tầng fetch thì lặng lẽ thành "0 job".
 - **Chọn fetcher theo thứ site phục vụ**: `HttpFetcher` cho document (RSS/JSON/HTML server-render), `PlaywrightFetcher` cho app (ITviec/VNW). Đừng dùng chung 1 fetcher cho mọi scraper trong production — `build_scrapers(fetcher=...)` chỉ dành cho test, vì browser bọc JSON thành `<pre>` và feed parser vỡ.
 - **`infer_level` vẫn quét cả JD**, nên JD nhắc "we hire senior engineers" có thể kéo job mid thành senior. Phần substring đã sửa, phạm vi quét thì chưa — thu về title-only sẽ mất job VN ghi "thực tập sinh" trong body.
+
+### Nhiều từ khoá + crawl lại (2026-10-04)
+
+- **Dấu phẩy tách *lượt tìm*, dấu cách thì không** (`pipeline.split_queries`, mirror ở
+  `CrawlSetup.splitKeywords`): `"java, spring boot"` = 2 lượt; "spring boot" là một cụm với board.
+  Bỏ trùng không phân biệt hoa thường; **tối đa `MAX_QUERIES` = 8** — vượt thì **422**, không cắt
+  bớt (cắt im lặng = báo crawl đã tìm thứ bạn không hỏi).
+- **Vòng lặp là site ngoài, từ khoá trong**: mỗi site chạy hết các từ khoá rồi mới `close()`.
+  Savepoint theo (site, từ khoá). Site chỉ `ok=False` khi **mọi** từ khoá đều fail (một từ thì đúng
+  luật cũ). **Fail một phần phải hiện ra**: `errors` cộng theo từng lượt tìm hỏng, `error` có tên từ
+  khoá, CLI in `PART … FAILED:`, trang Runs in dòng ⚠ dưới site, lịch sử in `java: failed` — review
+  bắt bản đầu hiện từ khoá bị chặn y như `java: +0`.
+- **Rate limit nằm ở `BaseScraper._fetch`, không ở call site** (review bắt): `RateLimiter` không giữ
+  trạng thái, và bản cũ chỉ `wait()` trước trang 2+ và trang chi tiết — đủ khi mỗi run một lượt tìm,
+  hổng ngay khi có nhiều: trang 1 của từ khoá sau bắn sát request cuối của từ khoá trước (Greenhouse 4
+  từ = 4 GET liền nhau, 0 sleep). Giờ: chờ trước **mọi** request trừ request đầu của run. Thêm
+  **memo URL theo run** (xoá ở `close()`): feed/ATS lọc tại chỗ nên listing giống nhau mọi từ khoá →
+  tải một lần; trang chi tiết của job hai từ khoá cùng thấy → không tải lại. Lỗi không được memo.
+- **`query_aware = False`** (LinkedIn alerts — đọc mail, bỏ qua query): chạy **một lần** mỗi run, không
+  gán cho từ khoá nào trong `by_query` — nếu không mọi job dồn vào từ khoá đầu và thành "updated" ở
+  các từ sau. Nên tổng `by_query` có thể nhỏ hơn `totals`.
+- **Ngữ nghĩa bộ đếm khi nhiều từ khoá**: `fetched`/`updated` là **lượt nhìn thấy**, không phải số job
+  — job do 2 từ khoá cùng thấy được đếm `updated` ở từ thứ hai. `inserted` vẫn là số job mới thật.
+- **`Run.stats.request = {queries, sources, limit}`** là thứ làm "Crawl lại y hệt" được:
+  `GET /crawl/recent` trả đúng shape `POST /crawl` nhận, frontend gửi lại **nguyên** item. Gộp các
+  cấu hình trùng (lịch tự động lặp 2 lần/ngày, không được đẩy mất lượt tìm một-lần). Run cũ không có
+  `request` được đọc ngược từ `query` + key của `sites`, `limit` = không biết (mặc định).
+- **Lịch tự động đọc `crawl.queries`**; rỗng thì giữ query cũ ghép từ 3 stack đầu (config cũ chạy y
+  như trước — dù query đó dài tới mức TopCV trả 0).

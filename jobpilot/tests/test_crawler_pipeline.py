@@ -329,3 +329,210 @@ def test_a_refused_row_does_not_shadow_or_annotate_the_job_it_matched(session_fa
         trace = db.get(Job, "thin:1").payload.get("dedup") or {}
         assert "superseded_by" not in trace  # the rolled-back annotation is gone
         assert [e["id"] for e in trace.get("suppressed", [])] == ["mixed:2"]
+
+
+# --------------------------------------------------------------------------- #
+# Several keywords in one run
+# --------------------------------------------------------------------------- #
+
+
+def test_keywords_split_on_commas_not_spaces():
+    from jobpilot.crawler.pipeline import split_queries
+
+    # "spring boot" is one phrase to a board, and must stay one search.
+    assert split_queries(" java , Spring  Boot; JAVA\nbackend,, ") == [
+        "java",
+        "Spring Boot",
+        "backend",
+    ]
+    assert split_queries("") == [] == split_queries(None)
+
+
+def test_the_scheduled_crawl_searches_each_configured_keyword():
+    from jobpilot.crawler.pipeline import default_queries
+
+    cfg = _cfg()
+    # No list configured: exactly the old single query, so an existing config
+    # crawls as it always did.
+    assert default_queries(cfg) == ["Java Spring Boot"]
+    cfg.crawl.queries = ["java", "spring boot", "Java"]
+    assert default_queries(cfg) == ["java", "spring boot"]
+
+
+class _Recording(FixtureScraper):
+    """Remembers what it was asked to search for, and how often it was closed."""
+
+    def __init__(self, *a, fail_on=(), **k):
+        super().__init__(*a, **k)
+        self.searched: list[str] = []
+        self.closed = 0
+        self.fail_on = set(fail_on)
+
+    def crawl(self, query="", limit=None):
+        self.searched.append(query)
+        if query in self.fail_on:
+            raise RuntimeError("blocked — anti-bot")
+        return super().crawl(query, limit=limit)
+
+    def close(self):
+        self.closed += 1
+        super().close()
+
+
+def test_each_keyword_is_its_own_search_on_every_site(session_factory):
+    a = _Recording(_pages(), source="a", rate_limiter=RateLimiter(0, 0))
+    b = _Recording(_pages(), source="b", rate_limiter=RateLimiter(0, 0))
+    with session_factory() as db:
+        report = run_crawl(
+            [a, b], _cfg(), db, query="java, spring boot", now=NOW, dedup_days=0, sources=["a", "b"]
+        )
+
+    assert a.searched == b.searched == ["java", "spring boot"]
+    # One browser per site for the whole run, not one per keyword.
+    assert a.closed == b.closed == 1
+    assert report.queries == ["java", "spring boot"]
+    # The second search finds the same postings: refreshed, never duplicated.
+    assert report.by_query["java"].inserted == 2
+    assert report.by_query["spring boot"].inserted == 0
+    assert report.by_query["spring boot"].updated == 2
+
+    with session_factory() as db:
+        assert db.query(Job).count() == 2
+        stats = db.query(Run).one().stats
+    assert stats["queries"] == ["java", "spring boot"]
+    assert stats["query"] == "java, spring boot"
+    assert stats["request"] == {
+        "queries": ["java", "spring boot"],
+        "sources": ["a", "b"],
+        "limit": None,
+    }
+    assert stats["by_query"]["java"]["inserted"] == 2
+
+
+def test_one_blocked_keyword_does_not_hide_what_the_others_found(session_factory):
+    partly = _Recording(_pages(), source="partly", fail_on={"java"}, rate_limiter=RateLimiter(0, 0))
+    wholly = _Recording(
+        _pages(), source="wholly", fail_on={"java", "golang"}, rate_limiter=RateLimiter(0, 0)
+    )
+    with session_factory() as db:
+        report = run_crawl(
+            [partly, wholly], _cfg(), db, query="java, golang", now=NOW, dedup_days=0
+        )
+
+    by_source = {s.source: s for s in report.sites}
+    assert by_source["partly"].ok is True
+    assert by_source["partly"].stats.inserted == 1
+    assert "java: blocked" in by_source["partly"].error
+    # Every search failed: that site did fail, exactly as with one keyword.
+    assert by_source["wholly"].ok is False
+    assert report.by_query["java"].errors == 2
+
+
+class _Counting:
+    """A fetcher that serves fixture pages and counts real requests, plus a
+    sleep that records every rate-limit wait — in one ordered event log."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.events: list[str] = []
+
+    def __call__(self, url):
+        self.events.append(f"GET {url}")
+        return self.pages.get(url, "")
+
+    def sleep(self, seconds):
+        self.events.append("SLEEP")
+
+
+def test_every_request_after_the_first_waits_including_the_next_keywords_first(session_factory):
+    """`RateLimiter` holds no state. The old waits sat before listing page 2+
+    and detail pages — complete for one search per run, a gap for several:
+    page 1 of the next keyword went out straight after the previous request."""
+    pages = {
+        "search?q=java": '<a class="job" href="j/1" data-id="1">x</a>',
+        "search?q=react": '<a class="job" href="j/2" data-id="2">x</a>',
+        "j/1": _detail("Backend Engineer Java", "ACME", skills="Java,Spring Boot"),
+        "j/2": _detail("Java React Engineer", "Initech", skills="Java,Spring Boot"),
+    }
+    net = _Counting(pages)
+
+    class PerQuery(FixtureScraper):
+        def search_url(self, query, page=1):
+            return f"search?q={query}" if page == 1 else ""
+
+    scraper = PerQuery(
+        {}, source="perq", fetcher=net, rate_limiter=RateLimiter(1, 1, sleep=net.sleep)
+    )
+    with session_factory() as db:
+        run_crawl([scraper], _cfg(), db, query="java, react", now=NOW, dedup_days=0)
+
+    gets = [e for e in net.events if e.startswith("GET")]
+    assert gets == ["GET search?q=java", "GET j/1", "GET search?q=react", "GET j/2"]
+    # A wait before every request but the first — the keyword seam included.
+    assert net.events == [
+        "GET search?q=java",
+        "SLEEP",
+        "GET j/1",
+        "SLEEP",
+        "GET search?q=react",
+        "SLEEP",
+        "GET j/2",
+    ]
+
+
+def test_a_listing_that_ignores_the_query_is_fetched_once_per_run(session_factory):
+    """Feeds and ATS boards serve the same listing whatever the keyword and
+    filter locally; several keywords must not multiply requests to them, and a
+    detail page two keywords both found is not fetched twice."""
+    one = _Counting(_two_java_jobs())
+    many = _Counting(_two_java_jobs())
+    for net, query in ((one, "java"), (many, "java, spring, react, backend")):
+        s = FixtureScraper({}, source="feedish", fetcher=net, rate_limiter=RateLimiter(0, 0))
+        with session_factory() as db:
+            run_crawl([s], _cfg(), db, query=query, now=NOW, dedup_days=0)
+    assert [e for e in many.events if e.startswith("GET")] == [
+        e for e in one.events if e.startswith("GET")
+    ]
+
+
+def test_a_source_that_ignores_the_query_runs_once_and_is_credited_to_no_keyword(session_factory):
+    alerts = _Recording(_pages(), source="alerts", rate_limiter=RateLimiter(0, 0))
+    alerts.query_aware = False
+    with session_factory() as db:
+        report = run_crawl([alerts], _cfg(), db, query="java, react", now=NOW, dedup_days=0)
+    assert alerts.searched == ["java"]
+    assert report.sites[0].stats.inserted == 1
+    # Not dumped on the first keyword, where it would look like java found it.
+    assert report.by_query["java"].inserted == report.by_query["react"].inserted == 0
+
+
+def test_a_partly_failed_site_still_counts_its_failure(session_factory):
+    partly = _Recording(_pages(), source="partly", fail_on={"java"}, rate_limiter=RateLimiter(0, 0))
+    with session_factory() as db:
+        report = run_crawl([partly], _cfg(), db, query="java, golang", now=NOW, dedup_days=0)
+    site = report.sites[0]
+    assert site.ok is True and site.stats.errors == 1
+    assert report.totals.errors == 1
+    with session_factory() as db:
+        assert db.query(Run).one().stats["sites"]["partly"]["errors"] == 1
+
+
+def test_scheduled_keywords_are_bounded_when_saved():
+    from jobpilot.config import CrawlCfg
+
+    with pytest.raises(ValueError, match="at most 8"):
+        CrawlCfg(queries=[f"k{i}" for i in range(9)])
+    assert CrawlCfg(queries=["java", "Java", "react"]).queries  # duplicates do not count twice
+
+
+def test_the_page_memo_is_bounded(monkeypatch):
+    from jobpilot.crawler import base
+
+    monkeypatch.setattr(base, "MEMO_BUDGET_CHARS", 10)
+    net = _Counting({"a": "x" * 8, "b": "y" * 8})
+    s = FixtureScraper({}, source="m", fetcher=net, rate_limiter=RateLimiter(0, 0))
+    for url in ("a", "b", "a", "b"):
+        s._fetch(url)
+    # "a" fits and is served from memory; "b" would overflow, so it goes back
+    # to the network every time — politely, but uncached.
+    assert [e for e in net.events if e.startswith("GET")] == ["GET a", "GET b", "GET b"]

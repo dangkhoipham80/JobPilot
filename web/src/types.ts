@@ -710,6 +710,9 @@ export interface TaskResult {
   sites?: CrawlSiteResult[];
   totals?: Record<string, number>;
   query?: string;
+  /** The keywords searched, in order — several when the query had commas. */
+  queries?: string[];
+  by_query?: Record<string, { inserted: number; updated: number; errors: number }>;
   /* tailor */
   version?: number;
   round?: number;
@@ -775,6 +778,8 @@ export interface Settings {
     match_score_min: number;
     stacks: string[];
     exclude_keywords: string[];
+    /** What the scheduled crawl searches for, one search each. Empty = the old single query. */
+    queries: string[];
     rate_limit_seconds: [number, number];
   };
   sources: SourceSetting[];
@@ -957,9 +962,23 @@ export const FUNNEL_ORDER: JobStatus[] = [
 
 /** One crawl's scope. All optional; omitted fields fall back to Settings. */
 export interface CrawlRequest {
+  /** One or more keywords, comma-separated; each is its own search. */
   query?: string;
   sources?: string[];
   limit?: number;
+}
+
+/** A past crawl setup, exactly what `POST /crawl` takes (`GET /crawl/recent`). */
+export interface RecentCrawl {
+  run_id: number;
+  started_at: string | null;
+  query: string;
+  queries: string[];
+  /** null = every enabled source. */
+  sources: string[] | null;
+  /** null = the configured default. */
+  limit: number | null;
+  inserted: number | null;
 }
 
 /** A source as the crawl form sees it. */

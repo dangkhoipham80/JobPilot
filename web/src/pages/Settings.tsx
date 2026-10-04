@@ -122,6 +122,12 @@ export function Settings() {
           />
         </div>
         <TagField
+          label={t("crawlQueries")}
+          hint={t("crawlQueriesHint")}
+          value={draft.crawl.queries ?? []}
+          onChange={(queries) => set({ crawl: { ...draft.crawl, queries } })}
+        />
+        <TagField
           label={t("stacks")}
           hint={t("stacksHint")}
           value={draft.crawl.stacks}

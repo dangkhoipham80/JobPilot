@@ -122,6 +122,7 @@ def job_url(job_id: str) -> str:
 
 class LinkedInAlertsScraper(BaseScraper):
     source = "linkedin"
+    query_aware = False  # reads whatever alerts LinkedIn emailed; the query plays no part
 
     def __init__(self, *, mailbox: Mailbox | None = None, since_days: int = 14, **kw) -> None:
         # No fetcher, no robots policy: this source never makes an HTTP request.

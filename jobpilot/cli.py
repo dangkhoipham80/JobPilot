@@ -191,6 +191,11 @@ def cmd_crawl(args: argparse.Namespace) -> int:
         return 1
 
     query = args.query or default_query(cfg)
+    from jobpilot.crawler.pipeline import MAX_QUERIES, split_queries
+
+    if len(split_queries(query)) > MAX_QUERIES:
+        print(f"At most {MAX_QUERIES} keywords per crawl.", file=sys.stderr)
+        return 2
     limit = args.limit or cfg.crawl.jobs_per_site
     print(f"Crawling {[s.source for s in scrapers]}  query={query!r}  limit={limit}")
     with session_scope() as db:
@@ -198,9 +203,10 @@ def cmd_crawl(args: argparse.Namespace) -> int:
 
     for site in report.sites:
         s = site.stats
-        # PART, not ok: rows the database refused are lost postings, and a site
-        # that lost all of them must not print like a quiet day.
-        status = "FAIL" if not site.ok else ("PART" if s.rejected else "ok ")
+        # PART, not ok: rows the database refused are lost postings, and a
+        # keyword that failed is a search that never happened — neither may
+        # print like a quiet day.
+        status = "FAIL" if not site.ok else ("PART" if s.rejected or site.error else "ok ")
         detail = (
             f"error={site.error}"
             if not site.ok
@@ -209,9 +215,16 @@ def cmd_crawl(args: argparse.Namespace) -> int:
                 f"dup={s.duplicates} kept-for-jd={s.superseded} "
                 f"filtered={s.filtered} fresh={s.fresh}"
                 + (f" REJECTED={s.rejected} (see log: persist_failed)" if s.rejected else "")
+                + (f" FAILED: {site.error}" if site.error else "")
             )
         )
         print(f"  [{status}] {site.source:14s} {detail}")
+    if len(report.queries) > 1:
+        for q, st in report.by_query.items():
+            print(
+                f"  · {q!r}: new={st.inserted} updated={st.updated}"
+                + (f" FAILED on {st.errors} site(s)" if st.errors else "")
+            )
     t = report.totals
     print(
         f"Total: new={t.inserted} updated={t.updated} duplicates={t.duplicates} fresh={t.fresh}"
@@ -330,7 +343,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 1
         for site in result["sites"]:
             rejected = site.get("rejected", 0)
-            status = "FAIL" if not site["ok"] else ("PART" if rejected else "ok ")
+            partial = site["ok"] and site.get("error")
+            status = "FAIL" if not site["ok"] else ("PART" if rejected or partial else "ok ")
             detail = (
                 f"error={site['error']}"
                 if not site["ok"]
@@ -339,6 +353,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     f"upd={site['updated']} dup={site['duplicates']} "
                     f"kept-for-jd={site.get('superseded', 0)} fresh={site['fresh']}"
                     + (f" REJECTED={rejected} (see log: persist_failed)" if rejected else "")
+                    + (f" FAILED: {site['error']}" if partial else "")
                 )
             )
             print(f"  [{status}] {site['source']:14s} {detail}")
@@ -628,7 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_cv.set_defaults(func=cmd_cv)
 
     p_crawl = sub.add_parser("crawl", help="crawl enabled sources into the DB (Phase 3)")
-    p_crawl.add_argument("--query", default=None, help="search query (default: from config stacks)")
+    p_crawl.add_argument("--query", default=None, help="keywords, comma-separated: each is its own search (default: crawl.queries)")
     p_crawl.add_argument(
         "--no-robots", action="store_true", help="skip robots.txt checks (debug only)"
     )
@@ -705,7 +720,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_slack.set_defaults(func=cmd_slack)
 
     p_run = sub.add_parser("run", help="crawl once, or on a loop (Phase 8)")
-    p_run.add_argument("--query", default=None, help="search query (default: from config stacks)")
+    p_run.add_argument("--query", default=None, help="keywords, comma-separated: each is its own search (default: crawl.queries)")
     p_run.add_argument("--no-robots", action="store_true", help="skip robots.txt (debug only)")
     p_run.add_argument("--every", type=int, default=0, help="repeat every N minutes")
     p_run.set_defaults(func=cmd_run)

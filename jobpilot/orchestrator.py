@@ -450,15 +450,16 @@ def crawl_body(
     sources: list[str] | None = None,
     limit: int | None = None,
 ) -> TaskBody:
-    """A crawl over the enabled sources, summarised per site.
+    """A crawl over the enabled sources, summarised per site and per keyword.
 
-    ``sources`` and ``limit`` scope one run only; neither is written back to
-    config, so a narrow one-off crawl can't quietly become the new default.
+    ``query`` may hold several comma-separated keywords, each searched on every
+    site. ``sources`` and ``limit`` scope one run only; none of it is written
+    back to config, so a narrow one-off crawl can't quietly become the default.
     """
 
     def body(progress: Progress) -> dict:
         from jobpilot.config import get_config
-        from jobpilot.crawler.pipeline import default_query, run_crawl
+        from jobpilot.crawler.pipeline import default_queries, run_crawl, split_queries
         from jobpilot.crawler.registry import build_scrapers
         from jobpilot.store.db import session_scope
 
@@ -470,14 +471,21 @@ def crawl_body(
                 f"no enabled source{asked} has a registered scraper — check `sources` in Settings"
             )
 
-        resolved = query or default_query(cfg)
-        progress(f"crawling {len(scrapers)} source(s) for {resolved!r}")
+        queries = split_queries(query) or default_queries(cfg)
+        resolved = ", ".join(queries)
+        progress(f"crawling {len(scrapers)} source(s) for {len(queries)} keyword(s): {resolved}")
         with session_scope() as db:
             # Hand the reporter down so each site announces itself. Without it
             # the task printed one line for the whole batch and then nothing for
             # minutes, which is indistinguishable from being stuck.
             report = run_crawl(
-                scrapers, cfg, db, query=resolved, limit=limit, on_progress=progress
+                scrapers,
+                cfg,
+                db,
+                query=resolved,
+                limit=limit,
+                on_progress=progress,
+                sources=sources,
             )
 
             sites = [
@@ -501,6 +509,11 @@ def crawl_body(
             return {
                 "run_id": report.run_id,
                 "query": resolved,
+                "queries": report.queries,
+                "by_query": {
+                    q: {"inserted": st.inserted, "updated": st.updated, "errors": st.errors}
+                    for q, st in report.by_query.items()
+                },
                 "sites": sites,
                 "totals": {
                     "inserted": t.inserted,

@@ -95,9 +95,11 @@ uvicorn jobpilot.api.main:app --reload   # API + dashboard đã build, tại :80
 cd web && npm run dev               # Vite tại :5173 — chỉ khi đang sửa UI; nó proxy /api
                                     # sang :8000 nên dev cũng same-origin như bản deploy.
 python -m jobpilot.cli crawl        # crawl các nguồn đang bật → Postgres
-python -m jobpilot.cli crawl --query "java spring" --limit 50   # scope 1 lần chạy
-                                    # query NGẮN thôi: nó thành slug ở từng site,
+python -m jobpilot.cli crawl --query "java, spring boot" --limit 50   # scope 1 lần chạy
+                                    # dấu phẩy = nhiều lượt tìm (tối đa 8), mỗi từ
+                                    # NGẮN thôi: nó thành slug ở từng site,
                                     # "java spring boot backend" → TopCV 0 job.
+                                    # Lịch tự động đọc `crawl.queries` (Cài đặt).
                                     # `crawl.max_pages` (mặc định 5) quyết định đi thêm
                                     # bao nhiêu trang. Hoặc dùng card "Crawl setup" ở trang Runs.
 python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích + link công ty cho job cũ (idempotent)
@@ -196,6 +198,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | deploy-mac | **Mac mini** thay laptop Windows: 3 LaunchAgent qua `run.sh` (PATH launchd), chạy khi máy bật, DB dựng mới | `deploy/macos/`, `DEPLOY.md §M` |
 | crawl-fix | id > 128 ký tự làm đỏ cả crawl → `make_job_id()` + savepoint mỗi job/site, row hỏng = `rejected` | `crawler/types.py`, `persist.py`, `pipeline.py` |
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
+| multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
 1018 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +

@@ -1,6 +1,7 @@
 import type {
   CrawlRequest,
   CrawlSetupInfo,
+  RecentCrawl,
   Application,
   ApplicationEvent,
   InboxSettings,
@@ -226,6 +227,7 @@ export const api = {
   startCrawl: (body: CrawlRequest = {}) =>
     req<Task>("/crawl", { method: "POST", body: JSON.stringify(body) }),
   crawlSetup: () => req<CrawlSetupInfo>("/crawl/setup"),
+  recentCrawls: (limit = 3) => req<RecentCrawl[]>(`/crawl/recent${qs({ limit })}`),
   tasks: (kind?: string, page: PageQuery = {}) => req<Page<Task>>(`/tasks${qs({ kind, ...page })}`),
   task: (id: string) => req<Task>(`/tasks/${id}`),
   runs: (kind?: string, page: PageQuery = {}) =>

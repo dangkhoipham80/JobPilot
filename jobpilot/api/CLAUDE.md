@@ -79,4 +79,7 @@
   riêng một request để gate nút Crawl. Một guard nhìn nhầm cửa sổ sẽ báo "không có gì đang
   chạy" và cho chạy task thứ hai.
 - **`/applications/{id}/events` cố ý KHÔNG phân trang** — lịch sử của *một* đơn, pager trên
-  timeline 3 dòng là chrome thuần tuý. Là endpoint list duy nhất còn trả mảng trần.
+  timeline 3 dòng là chrome thuần tuý. Một trong **hai** endpoint list còn trả mảng trần.
+- **`GET /crawl/recent` (2026-10-04) là ngoại lệ thứ hai**: top-N cố định (`limit` ≤ 10, mặc định 3)
+  các cấu hình crawl *khác nhau* gần nhất — không có trang 2 để đi tới, nên `total` không trả lời câu
+  hỏi nào. Mỗi item đúng shape `POST /crawl` nhận, để "Crawl lại" gửi nguyên item về.

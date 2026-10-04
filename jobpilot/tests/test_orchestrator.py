@@ -529,3 +529,49 @@ def test_suggest_keywords_reads_stack_and_role_not_prose():
     # Seniority dropped, company dropped, prose never considered.
     assert out["roles"] == ["Software Engineer Backend"]
     assert not any("Employee of the Year" in t for t in out["tech"])
+
+
+def test_too_many_keywords_are_refused_not_truncated(client, monkeypatch):
+    c, _ = client
+    monkeypatch.setattr("jobpilot.api.routes.ops.crawl_body", lambda **kw: (lambda p: {}))
+    r = c.post("/crawl", headers=AUTH, json={"query": ", ".join(f"k{i}" for i in range(9))})
+    assert r.status_code == 422
+    assert "at most 8" in r.json()["detail"]
+
+
+def test_recent_crawls_are_distinct_setups_ready_to_rerun(client, session_factory):
+    """What `POST /crawl` takes, newest first, one row per distinct setup — the
+    scheduled crawl repeating itself must not crowd out a one-off search."""
+    c, _ = client
+
+    def run(stats):
+        return Run(kind="crawl", started_at=vn_now(), finished_at=vn_now(), stats=stats)
+
+    def req(queries, sources=None, limit=None):
+        return {"queries": queries, "sources": sources, "limit": limit}
+
+    with session_factory() as s:
+        s.add_all(
+            [
+                # Written before runs recorded their request: read back from
+                # the query string and the sites that ran.
+                run({"query": "Java Spring Boot Backend", "sites": {"topcv": {}, "itviec": {}}}),
+                run({"request": req(["react"], ["topcv"], 25), "totals": {"inserted": 1}}),
+                run({"request": req(["java", "spring boot"]), "totals": {"inserted": 7}}),
+                run({"request": req(["Java", "Spring Boot"]), "totals": {"inserted": 0}}),
+            ]
+        )
+        s.commit()
+
+    r = c.get("/crawl/recent", headers=AUTH)
+    assert r.status_code == 200
+    items = r.json()
+    assert [i["queries"] for i in items] == [
+        ["Java", "Spring Boot"],  # newest; the older same-setup row is folded into it
+        ["react"],
+        ["Java Spring Boot Backend"],
+    ]
+    assert items[1]["sources"] == ["topcv"] and items[1]["limit"] == 25
+    assert items[2]["sources"] == ["itviec", "topcv"] and items[2]["limit"] is None
+    assert items[0]["query"] == "Java, Spring Boot"
+    assert len(c.get("/crawl/recent?limit=1", headers=AUTH).json()) == 1
