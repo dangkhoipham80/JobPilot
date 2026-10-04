@@ -139,7 +139,7 @@ def test_status_is_written_last_so_finished_tasks_are_fully_populated(q):
 
 
 def test_tasks_are_serialised_by_the_single_worker(q):
-    """Overlapping Docker builds and browsers would fight; queued must mean queued."""
+    """Overlapping LaTeX builds and browsers would fight; queued must mean queued."""
     order = []
 
     def slow(name):

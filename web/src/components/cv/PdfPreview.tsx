@@ -286,7 +286,7 @@ function Placeholder({ compiling }: { compiling: boolean }) {
         )}
         <p className="text-sm">{compiling ? t("runningXelatex") : t("hitCompile")}</p>
         {!compiling && (
-          <p className="max-w-xs text-xs leading-relaxed opacity-80">{t("needsDocker")}</p>
+          <p className="max-w-xs text-xs leading-relaxed opacity-80">{t("needsEngine")}</p>
         )}
       </div>
     </div>

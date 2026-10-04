@@ -1,7 +1,8 @@
 """Phase 17: the cover letter as a document (SKILL.md §2 step 4).
 
 These tests stop at the ``.tex``. Whether that ``.tex`` compiles is a question
-for Docker, and it was answered by building it for real — see PHASES.md.
+for a real LaTeX engine, and it was answered by building it for real — see
+PHASES.md.
 """
 
 from __future__ import annotations

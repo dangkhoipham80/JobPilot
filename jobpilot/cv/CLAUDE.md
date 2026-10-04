@@ -47,33 +47,30 @@ list. `template.json`:
   không có glyph tiếng Việt và chỗ thiếu glyph là một **khoảng trắng im lặng** trong PDF, không
   phải lỗi build. Verify bằng cách đọc lại text layer (`pypdf`), đừng nhìn số trang rồi kết luận.
 
-### Hai engine build PDF: tectonic (mặc định) và docker (đường lui)
+### Engine build PDF: tectonic (duy nhất)
 
-`cv.engine` = `auto` | `tectonic` | `docker`; `auto` ưu tiên tectonic, không có thì rơi về
-docker, không có cả hai thì `BuildError` chỉ cách cài **cả hai**. Code: `tailor/build.py`.
+Code: `tailor/build.py`. `cv.engine` = `auto` | `tectonic` (cùng một thứ). **Engine Docker
+(`csmith/awesome-cv-builder`) đã gỡ ngày 2026-10-04**: tectonic là mặc định từ cv-C và ra cùng PDF
+trên cả hai template; image 3.18 GB, chỉ x86-64; và máy chạy thật (Mac mini) không có Docker, nên
+đường lui là một đường **không ai kiểm** — đúng lúc luật "sửa `.cls` phải build bằng cả hai engine"
+không còn làm được. Config còn sót `cv.engine: docker` ⇒ `BuildError` nói rõ đã gỡ + cách cài
+tectonic; key `docker_image` cũ thì bị bỏ qua.
 
 **Tìm tectonic: PATH trước, rồi `tools/` trong repo** (`_find_executable`). Thả binary vào `tools/`
 là chạy, **không cần config** — cố ý, vì `cv.tectonic_bin` với đường dẫn tuyệt đối chỉ đúng trên
-đúng một máy, và khi nó sai thì `auto` **lặng lẽ** rơi về Docker: build vẫn ra PDF nên không ai
-biết engine đã đổi. Chỉ **tên lệnh trần** mới được hưởng fallback `tools/`; một path đã cấu hình mà
-sai thì báo lỗi, không im lặng chạy file khác trùng tên.
+đúng một máy. Chỉ **tên lệnh trần** mới được hưởng fallback `tools/`; một path đã cấu hình mà sai
+thì báo lỗi, không im lặng chạy file khác trùng tên.
 ⚠️ Test nào stub `shutil.which` **phải** trỏ `build.REPO_ROOT` sang thư mục rỗng (fixture autouse
 `_empty_tools_dir` ở `test_build.py`), nếu không máy đã tải binary sẽ cho kết quả khác CI.
 
-- **Chọn tectonic chỉ vì chi phí cài, không phải vì output.** Đã đo trên **Master CV thật** +
-  sample có tiếng Việt, cả hai template: **cùng số trang, cùng tập từ trong text layer, cùng
-  verdict của `ats.py`** (trừ đúng một khác biệt, xem dưới). Tectonic ~10 MB binary tĩnh +
-  ~50 MB cache, không daemon; ảnh docker 3.18 GB + phải nhớ bật Docker Desktop.
-- **Khác biệt thật DUY NHẤT: template `plain` build bằng docker nhả ra 2 ligature `ﬁ`, tectonic
-  thì không** ⇒ finding `ligatures` của `ats.py` **biến mất** khi đổi engine. Đây là *tốt hơn*
-  (recruiter search "office" không khớp "oﬃce"), nhưng nó có nghĩa: **báo cáo ATS của cùng một
-  CV phụ thuộc engine đã build nó**. Thấy finding đổi mà JSON không đổi thì nghi engine trước,
-  đừng đi sửa template.
+- **Lịch sử còn đúng:** hồi còn Docker, template `plain` build bằng docker nhả 2 ligature `ﬁ`
+  (finding `ligatures` của `ats.py`), tectonic thì không. Một CV cũ build bằng Docker có thể có
+  finding đó mà build lại thì mất — là do engine, đừng đi sửa template.
 - **`awesome-cv.cls` sửa lần hai (2026-10-04): CV không có trường liên hệ nào không build được.**
   `\makecvheader` kết thúc dòng social bằng `\\` dù dòng đó rỗng ⇒ ở vertical mode ⇒ *"There's no
   line here to end"* — đúng CV rỗng mà DB mới seed, tức **lần build đầu tiên** của user mới. Giờ là
   `\ifhmode\\[…]\fi`. Verify bằng tectonic: CV rỗng/chỉ có tên build được, CV có liên hệ ra PDF
-  **giống từng byte** trước khi sửa. **Docker chưa verify** (máy Mac không có docker).
+  **giống từng byte** trước khi sửa.
   Cùng lỗi đó ở dòng **position** (review bắt được): `\position{}` rỗng vẫn *định nghĩa*
   `\@position` ⇒ class in nó và `\\` trần. `Header.position` mặc định `""` — xoá placeholder
   "Software Engineer" hay `cv import` thiếu field là gặp. Sửa ở **template** (`<% if h.position %>`)
@@ -88,11 +85,12 @@ sai thì báo lỗi, không im lặng chạy file khác trùng tên.
     (docker) cho ghi đè im lặng, fontspec mới (tectonic) báo `Command '\FA' already defined`.
     `\renewfontfamily` là cái bẫy — TeX Live trong ảnh docker **không có** lệnh đó, dùng nó là
     đổi lỗi tectonic lấy lỗi docker. Đang dùng `\let\FA\relax` trước `\newfontfamily`: cả hai
-    đều đọc là "chưa định nghĩa". **Đổi bất cứ dòng nào trong hai file này thì phải build lại
-    bằng CẢ HAI engine**, vì mỗi engine chỉ bắt được một nửa số lỗi.
-- **Tectonic để lại `.log`, docker thì không** — nên `build_cv()` xoá `.log` cùng lúc với
-  `.pdf`. Không xoá thì: build bằng tectonic (có log) → đổi sang docker → thiếu pypdf →
-  `_pages_from_log` đọc log cũ và báo số trang của **một PDF đã không còn tồn tại**.
+    đều đọc là "chưa định nghĩa". (Giờ chỉ còn tectonic nên `\renewfontfamily` cũng dùng được,
+    nhưng file vendor sửa càng ít càng tốt — để nguyên.) Đổi dòng nào trong hai file này thì
+    **build lại cả hai template, cả CV lẫn cover letter**, và so PDF của CV mẫu trước/sau.
+- **`build_cv()` xoá `.pdf` và `.log` cũ trước khi build.** Build dir dùng lại theo scope: không xoá
+  thì một lượt hỏng có PDF hôm qua trả lời thay, và thiếu pypdf thì `_pages_from_log` đọc log cũ
+  báo số trang của **một PDF đã không còn tồn tại**.
 - **Log của tectonic ghi `Output written on cv.xdv`, không phải `cv.pdf`.** Regex hiện khớp
   được chỉ vì phần tên file là wildcard — có test ghim, đừng "dọn" nó chặt lại.
 - Build **lần đầu** cần mạng (tectonic tải gói TeX về cache) và chậm; lần sau offline, ~1–2s.

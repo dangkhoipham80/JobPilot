@@ -1,4 +1,4 @@
-"""Phase 5: the tailor/review API surface (fixture engine — no network, no Docker)."""
+"""Phase 5: the tailor/review API surface (fixture engine — no network, no LaTeX)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def tailor_engine() -> FixtureEngine:
 
 @pytest.fixture
 def client(session_factory, tailor_engine, monkeypatch):
-    # Skip the Docker build; page count is exercised in the service tests.
+    # Skip the LaTeX build; page count is exercised in the service tests.
     monkeypatch.setattr(
         "jobpilot.tailor.service.compile_document", lambda doc, scope: type("R", (), {"pages": 1})()
     )

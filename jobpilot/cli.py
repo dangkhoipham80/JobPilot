@@ -602,7 +602,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_backfill.set_defaults(func=cmd_backfill)
 
     p_build = sub.add_parser(
-        "build", help="compile a CV to PDF (tectonic or docker, see cv.engine)"
+        "build", help="compile a CV to PDF with tectonic"
     )
     p_build.add_argument("dir", nargs="?", default=None, help="work dir (default: repo root)")
     p_build.add_argument("--entry", default="cv.tex", help="LaTeX entry file")

@@ -166,9 +166,9 @@ footer{border-top:2px solid var(--ink);padding-top:16px;font-size:13px;color:var
 
   <div class="step"><div class="n">1</div><div>
     <h3>Cần có sẵn</h3>
-    <p>Python 3.11+ · Node 18+ · Docker Desktop (để build PDF LaTeX) · PostgreSQL 17 (bản cài trên máy, hoặc dùng compose).</p>
+    <p>Python 3.11+ · Node 18+ · tectonic (để build PDF LaTeX) · PostgreSQL 17 (bản cài trên máy, hoặc dùng compose).</p>
     <pre><span class="c"># kiểm tra nhanh</span>
-python --version &amp;&amp; node --version &amp;&amp; docker --version &amp;&amp; psql --version</pre>
+python --version &amp;&amp; node --version &amp;&amp; tectonic --version &amp;&amp; psql --version</pre>
   </div></div>
 
   <div class="step"><div class="n">2</div><div>
@@ -258,9 +258,9 @@ P('00','Nền tảng, config, secrets','Phase 0 dựng khung. Điểm dễ sai n
   exp:'In các target: install, config, db-up, migrate, api, web, crawl, test, dev.'}
 ]);
 
-P('01','Build CV ra PDF qua Docker','Toàn bộ PDF trong dự án đi qua image `csmith/awesome-cv-builder`. Bản tailored ghi vào `out/cv/<scope>/`, không bao giờ đụng Master.',[
+P('01','Build CV ra PDF bằng tectonic','Toàn bộ PDF trong dự án đi qua tectonic (engine Docker đã gỡ). Bản tailored ghi vào `out/cv/<scope>/`, không bao giờ đụng Master.',[
  {id:'TC-01-01',c:'Build PDF từ CLI',r:'sinh cv.pdf, exit 0',tag:'manual',
-  steps:['Bật Docker Desktop','`python -m jobpilot.cli cv build`'],
+  steps:['`tectonic --version` chạy được','`python -m jobpilot.cli cv build`'],
   exp:'Sinh PDF ở `out/cv/master/cv.pdf`, mở được, nội dung khớp CV trong DB.'},
  {id:'TC-01-02',c:'Đếm số trang',r:'1 trang, hoặc "unknown" nếu thiếu pypdf',tag:'auto',
   steps:['Chạy build như trên và đọc dòng log về page count'],
@@ -357,7 +357,7 @@ P('04','Web Dashboard','Control plane chính. Bind localhost, không expose ra n
   exp:'Không tràn ngang, không chồng chữ, các nút vẫn bấm được.'}
 ]);
 
-P('04.5','CV Studio','Nguồn sự thật của nội dung CV là **JSON structured** → Jinja2 → `.tex` → Docker. Mỗi lần save là một row `cv_versions`.',[
+P('04.5','CV Studio','Nguồn sự thật của nội dung CV là **JSON structured** → Jinja2 → `.tex` → tectonic. Mỗi lần save là một row `cv_versions`.',[
  {id:'TC-045-01',c:'DB mới tự seed CV **rỗng**',r:'không có dữ liệu cá nhân nào',tag:'auto',
   steps:['Trỏ vào một DB trống, `alembic upgrade head`','`python -m jobpilot.cli cv seed`','Mở `/cv`'],
   exp:'Tạo Master CV **rỗng** (`cv/skeleton.py`). Tuyệt đối **không** seed từ `cv/sample.py` — đó là CV hư cấu chỉ dùng cho test (nguyên tắc 3).',pin:'test_cv_store.py'},
@@ -372,7 +372,7 @@ P('04.5','CV Studio','Nguồn sự thật của nội dung CV là **JSON structu
   exp:'Có version mới với `author = user`. Version cũ vẫn truy cập được — bảng là append-only.',pin:'test_cv_api.py'},
  {id:'TC-045-05',c:'Compile PDF từ Studio',r:'PDF phản ánh đúng thay đổi',tag:'manual',
   steps:['Đổi vị trí một section, ẩn một section, sửa một dòng','Bấm Compile rồi xem preview'],
-  exp:'PDF thật (Docker LaTeX) phản ánh đúng cả ba thay đổi.'},
+  exp:'PDF thật (tectonic) phản ánh đúng cả ba thay đổi.'},
  {id:'TC-045-06',c:'Rollback về version cũ',r:'PDF identical với bản gốc',tag:'auto',
   steps:['`POST /cv/master/rollback/1`','Compile lại và so sánh với PDF của version 1'],
   exp:'Nội dung PDF **trùng khớp** bản gốc. Rollback là một lần save mới, không xoá lịch sử.',pin:'test_cv_store.py'},

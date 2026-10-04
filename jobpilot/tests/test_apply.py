@@ -37,8 +37,8 @@ def db(session_factory, tmp_path, monkeypatch):
     )
 
     # Stub the LaTeX build. Left real, every test that applies with a letter
-    # engine would start a Docker container: slow, and green only on machines
-    # that happen to have Docker. The letter PDF gets its own tests, which build
+    # engine would run tectonic: slow, and green only on machines that happen
+    # to have it. The letter PDF gets its own tests, which build
     # for real; here it just needs to exist.
     def fake_compile(_letter, _doc, _job, dest, today=None):
         dest.mkdir(parents=True, exist_ok=True)
@@ -402,7 +402,7 @@ def test_the_letter_pdf_is_built_and_recorded(db, tmp_path):
 
 
 def test_a_letter_pdf_that_will_not_build_still_applies(db, tmp_path, monkeypatch):
-    """Docker being down is not a reason to sit on an application whose CV
+    """A LaTeX engine that will not run is not a reason to sit on an application whose CV
     already built. The letter still goes out as text; the row says why there is
     no PDF instead of leaving a NULL nobody can explain."""
 
@@ -465,7 +465,7 @@ def test_no_letter_pdf_means_no_broken_attachment(db, tmp_path, monkeypatch):
     """A CV must never go out with a missing or stale file stapled to it."""
 
     def boom(*_a, **_k):
-        raise BuildError("docker not found on PATH")
+        raise BuildError("no LaTeX engine found")
 
     sent = {}
     monkeypatch.setattr("jobpilot.apply.dispatcher.compile_letter", boom)

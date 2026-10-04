@@ -5,7 +5,7 @@ Hướng dẫn cho Claude Code khi làm việc trong repo này.
 ## Repo là gì
 
 Hai lớp:
-1. **CV Template** — bộ khung LaTeX [Awesome-CV](https://github.com/posquit0/Awesome-CV) (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`), build bằng tectonic (Docker là đường lui). Repo **chỉ chứa khung**, không chứa CV nào.
+1. **CV Template** — bộ khung LaTeX [Awesome-CV](https://github.com/posquit0/Awesome-CV) (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`), build bằng tectonic. Repo **chỉ chứa khung**, không chứa CV nào.
 2. **JobPilot (đang xây)** — agent crawl job (ITviec/TopCV/VietnamWorks) → quản lý qua **Web Dashboard local** (control plane chính; Slack là kênh phụ) → tailor CV → duyệt/sửa → apply hybrid. Stack: FastAPI + React + PostgreSQL. Xem `PLAN.md` (kiến trúc) và `SKILL.md` (logic tailor).
 
 ## Đọc trước khi làm
@@ -73,18 +73,14 @@ Ràng buộc:
 
 ### Build CV (Master hoặc tailored)
 ```bash
-# Engine mặc định: tectonic (một binary tĩnh, không cần daemon). Tại thư mục chứa cv.tex:
+# Engine duy nhất: tectonic (một binary tĩnh, không cần daemon). Tại thư mục chứa cv.tex:
 tectonic -X compile cv.tex
-# Docker vẫn chạy được — engine dự phòng, xem `cv.engine`:
-docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder            # Windows PowerShell
-docker run -u $UID:$GID --rm -v $PWD:/work csmith/awesome-cv-builder # Linux/macOS/WSL
 # Output: cv.pdf
 ```
-`cv.engine` = `auto` (mặc định, ưu tiên tectonic) | `tectonic` | `docker`. Tìm tectonic theo thứ tự
-**PATH → `tools/` trong repo** (thư mục này đã gitignore), nên **thả binary vào `tools/` là xong,
-không cần config gì**. `cv.tectonic_bin` vẫn dùng được nhưng một đường dẫn tuyệt đối chỉ đúng trên
-một máy — sai thì `auto` **lặng lẽ** build bằng Docker; `jobpilot cv build` in ra engine đã chạy để
-chuyện đó không còn im lặng. Hai engine ra **cùng PDF** — luật + bẫy ở `jobpilot/cv/CLAUDE.md`.
+**Engine Docker đã gỡ (2026-10-04)** — `cv.engine: docker` còn sót trong config sẽ ra `BuildError`
+nói rõ điều đó. Tìm tectonic theo thứ tự **PATH → `tools/` trong repo** (thư mục này đã gitignore),
+nên **thả binary vào `tools/` là xong, không cần config gì**. `cv.tectonic_bin` vẫn dùng được nhưng
+một đường dẫn tuyệt đối chỉ đúng trên một máy. Luật + bẫy ở `jobpilot/cv/CLAUDE.md`.
 
 ### JobPilot (khi đã scaffold — xem cấu trúc ở PLAN.md §8)
 ```bash
@@ -202,7 +198,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
 
 1018 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
-build PDF bằng **tectonic và Docker** (Master + tailored, cả 2 template), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
+build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
 6 model, tailor 2/2 qua guardrail vòng đầu. Trang `/models` đổi model từ UI ghi xuống
@@ -230,12 +226,10 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
 - **Raw LaTeX đã có** (bẫy preview ở `PHASES.md`): `cv_versions.meta.tex_override` đè cách JSON *serialize*, không thay JSON. **Một chiều** — không gì parse `.tex` về JSON — nên khi nó còn hiệu lực thì sửa field **không tới được PDF**, UI phải nói ra. Lưu document không xoá nó; `rollback` mang nó theo.
 - **CV Studio còn thiếu**: HTML live preview, theme gallery. Template thì **đã có 2** (`awesome_cv`,
   `plain`) và thêm cái nữa = thêm một thư mục — luật + bẫy ở `jobpilot/cv/CLAUDE.md`. Diff 2 version bất kỳ **đã có** (Phase 16) — dùng chung `tailor/diff.py` với CV Review, chỉ khác bộ chữ (`VERSION_LABELS` vs `TAILOR_LABELS`). Thêm loại so sánh mới = thêm một `DiffLabels`, **đừng fork hàm diff**: hai bộ luật song song sẽ lệch nhau lúc nào không biết.
-- **Build PDF cần một engine LaTeX trên máy**: `tectonic` (mặc định, một binary tĩnh ~10 MB,
-  không daemon) hoặc `docker`. Không có cả hai thì `BuildError` chỉ cách cài **cả hai**;
-  `cv.engine` = `auto|tectonic|docker`, `cv.tectonic_bin` trỏ tới binary để ngoài PATH. Hai engine
-  ra cùng PDF — **một khác biệt đã biết**: `plain` build bằng docker nhả 2 ligature `ﬁ` nên có
-  thêm finding `ligatures`, tectonic thì không. Chi tiết + bẫy khi sửa `.cls`/`.sty`:
-  `jobpilot/cv/CLAUDE.md`.
+- **Build PDF cần `tectonic` trên máy** (một binary tĩnh ~10 MB, không daemon). Không có thì
+  `BuildError` chỉ cách cài; `cv.tectonic_bin` trỏ tới binary để ngoài PATH. Engine Docker đã gỡ
+  (2026-10-04): image 3.18 GB, chỉ x86-64, và máy chạy thật không có Docker nên đường đó không còn
+  ai kiểm. Chi tiết + bẫy khi sửa `.cls`/`.sty`: `jobpilot/cv/CLAUDE.md`.
 - **Cần `pip install -e '.[cv]'`** cho `pypdf`, nếu không page count trả `None` (badge "1 trang" biến mất, không còn cảnh báo CV tràn 2 trang). Build PDF vẫn chạy bình thường — chỉ mất phần đếm trang.
 - **Queue vẫn 1 worker**: tailor xếp sau một crawl đang chạy sẽ đứng `queued` vài phút. Đúng nghĩa "queued", nhưng nếu thấy vướng thì nâng `max_workers` — task body đã mở session riêng nên an toàn về mặt DB.
 - **Slack đã verify thật** (2026-08-08): cần đúng **một** scope `chat:write`, Socket Mode +
@@ -267,8 +261,8 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   tailnet — xem `DEPLOY.md §0` trước khi đụng vào chuyện phơi ra ngoài.
   VPS đặt ở **VN** vì ITviec/TopCV/VietnamWorks sau Cloudflare, IP datacenter nước ngoài
   bị challenge nhiều hơn; đường lui nếu vẫn bị chặn: crawl ở laptop, DB ở VPS, chỉ đổi
-  `DATABASE_URL` (`DEPLOY.md §7`). Kiến trúc nào cũng được kể từ khi build PDF mặc định
-  dùng **tectonic**; chỉ `cv.engine: docker` mới bắt buộc **x86-64** (ảnh chỉ có amd64).
+  `DATABASE_URL` (`DEPLOY.md §7`). Kiến trúc nào cũng được (x86-64 hoặc ARM64) vì build PDF
+  dùng **tectonic**.
 - Stack = Python (FastAPI + Playwright stealth + tectonic LaTeX) + React(Vite/TS/Tailwind/shadcn) + PostgreSQL + slack-bolt.
 - LLM = **Claude mặc định**, openai/gemini chọn được **theo từng việc** (`llm.*`, Phase 20b). Không chạy model local.
   Từ 2026-10-04 có thêm **`claude_cli`** = Claude qua gói Pro/Max của user (đang được chọn trên

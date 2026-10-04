@@ -152,11 +152,9 @@ Ba lớp phòng thủ hiện có, theo thứ tự quan trọng:
 
 Đĩa và kiến trúc **đã nới ra** từ khi build PDF bỏ Docker: trước đây cần 25 GB
 (ảnh `csmith/awesome-cv-builder` 3.18 GB) và **bắt buộc** x86-64 vì ảnh đó chỉ có
-amd64. Giờ engine mặc định là tectonic — một binary tĩnh ~10 MB — nên gói
-50–66k/tháng 20 GB cũng đủ, và ARM64 dùng được.
-
-⚠️ Nếu **vẫn** muốn chạy engine Docker (`cv.engine: docker`) thì các con số cũ
-quay lại: ≥25 GB đĩa và **chỉ** x86-64.
+amd64. Giờ engine **duy nhất** là tectonic — một binary tĩnh ~10 MB — nên gói
+50–66k/tháng 20 GB cũng đủ, và ARM64 dùng được. (Engine Docker đã gỡ hẳn ngày
+2026-10-04.)
 
 ## 2. Cài trên VPS
 
@@ -288,8 +286,7 @@ Theo đúng luật trong `CLAUDE.md`: test xanh không chứng minh nó chạy.
 - [ ] Chạy 1 crawl, xem progress chảy realtime ở trang Runs.
 - [ ] Build 1 CV PDF → kiểm đường LaTeX. Chạy **lần thứ hai** nữa: lần 1 tectonic
       còn đang tải gói TeX về cache (chậm, cần mạng), lần 2 mới là tốc độ thật và
-      là lúc lộ ra lỗi quyền ghi cache. Nếu đang chạy `cv.engine: docker` thì lần 2
-      còn là lúc lộ lỗi quyền file khi container ghi PDF bằng root.
+      là lúc lộ ra lỗi quyền ghi cache.
 - [ ] **Đọc lại PDF vừa build, đừng chỉ xem nó tồn tại**: `jobpilot cv build` in số
       trang, và nếu CV có tiếng Việt thì mở PDF kiểm dấu. Thiếu glyph là một khoảng
       trắng im lặng, không phải lỗi build (`jobpilot/cv/CLAUDE.md`).

@@ -162,7 +162,7 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - **Input**: `Job.description_md` + **Master CV** (`resume/*.tex` hiện tại là nguồn sự thật).
 - **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) rewrite có kiểm soát các section (`summary`, `skill`, thứ tự/nhấn mạnh `experience`/`project`) → (4) sinh **cover letter** → (5) build PDF.
 - **Guardrail**: không bịa; mọi thay đổi phải map về dữ kiện có thật. Output kèm **diff giải thích** để user duyệt.
-- **Build**: tạo bản sao `resume/` theo job (thư mục `out/<job_id>/`), render biến, gọi engine LaTeX (`cv.engine`: tectonic mặc định, docker là đường lui), lấy `cv.pdf`.
+- **Build**: tạo bản sao `resume/` theo job (thư mục `out/<job_id>/`), render biến, gọi engine LaTeX (tectonic — engine Docker đã gỡ 2026-10-04), lấy `cv.pdf`.
 - **ATS**: chèn keyword từ JD một cách tự nhiên vào phần có thật; giữ format sạch để ATS đọc được.
 
 ### 5.4 `apply/` — dispatcher nộp đơn (hybrid)
@@ -243,7 +243,7 @@ Rà soát nhanh `resume/*.tex` — các cải thiện đề xuất (làm ở Pha
 | Store | **PostgreSQL** (JSONB) + Alembic | Quan hệ cho funnel/filter + JSONB cho JD; migrations. |
 | Slack | slack-bolt (Socket Mode) | Kênh **phụ**: thông báo + thao tác nhanh. Không cần public URL. |
 | LLM | **Claude API** mặc định; openai / gemini chọn được theo từng việc (Phase 20b) | Tailor CV + cover letter + đọc thư NTD. |
-| CV build | `tectonic` (mặc định) — Docker `csmith/awesome-cv-builder` là đường lui | Binary tĩnh ~10 MB, không daemon; đổi qua `cv.engine`. |
+| CV build | `tectonic` (duy nhất; Docker `csmith/awesome-cv-builder` đã gỡ 2026-10-04) | Binary tĩnh ~10 MB, không daemon, x86-64 + ARM64. |
 | Email | Gmail API hoặc SMTP | Kênh apply full-auto. |
 | Config | `.env` + `config.yaml` | Secrets tách khỏi code. |
 | Chạy local | `docker-compose` (Postgres) + `make dev` | 1 lệnh dựng Postgres + API + web. |
