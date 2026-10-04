@@ -80,10 +80,12 @@ def blocker(task: Task) -> str:
         provider = provider_for(name)
     except LlmError as exc:
         return str(exc)
-    if not api_key(name):
+    if not api_key(name) and not provider.key_optional:
         return (
             f"{provider.label} is configured for {task}, but {provider.env_var} is not set in .env"
         )
+    if provider.preflight is not None and (reason := provider.preflight()):
+        return f"{provider.label} is configured for {task}, but {reason}"
     return ""
 
 
@@ -115,4 +117,5 @@ def warnings(task: Task) -> list[str]:
         ]
     if not note.trains_on_input:
         return []
-    return [f"{name}: {note.summary} This task sends {payload}. {note.url} (checked {CHECKED_ON})."]
+    checked = note.checked_on or CHECKED_ON
+    return [f"{name}: {note.summary} This task sends {payload}. {note.url} (checked {checked})."]

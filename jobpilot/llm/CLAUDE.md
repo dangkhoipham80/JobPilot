@@ -79,6 +79,55 @@
   chỉ là *menu*, `llm bench` mới là bằng chứng. Và khi so id thì phải **so theo prefix**:
   Anthropic liệt kê `claude-haiku-4-5-20251001` còn alias mình gọi là `claude-haiku-4-5` — so khớp
   chính xác từng đánh dấu nhầm model đang chạy tốt là "không khả dụng".
-- **Không chạy model local.** Mọi task LLM đi qua API của provider. Đánh đổi đã chấp nhận:
+- **Không chạy model local.** Mọi task LLM đi qua một provider Claude/OpenAI/Gemini — qua API,
+  hoặc qua gói Claude của user (`claude_cli`, bên dưới). Đánh đổi đã chấp nhận:
   thư nhà tuyển dụng **đã khớp đơn** thì rời khỏi máy. Cái *vẫn* đúng: thư không khớp đơn nào
   dừng lại trong máy (xem `jobpilot/apply/CLAUDE.md` § Inbox sync).
+
+### Provider `claude_cli` — chạy trên gói Claude của user (2026-10-04)
+
+User chốt: JobPilot host trên máy của chính họ, gói Pro/Max dùng không hết ⇒ dùng nó thay vì
+trả tiền API. `llm/claude_cli.py` gọi `claude -p` (print mode), cùng model với `claude` nhưng
+**trừ vào hạn mức gói**, không tính tiền theo token.
+
+- **Chỉ cho dùng cá nhân.** Anthropic cấm *sản phẩm* cho người dùng của họ login bằng claude.ai;
+  một người tự động hoá gói của chính mình trên máy mình là chuyện khác, nhưng **không phải đường
+  docs khuyên** cho script (đó là bare mode = API key). Nó gãy ngày nào thì đổi về `claude` trên
+  `/models`, không code nào phía trên phải đổi.
+- **Auth = phiên login `claude` sẵn có trên máy; token là tuỳ chọn** (`Provider.key_optional`).
+  Đã thử thật từ một LaunchAgent (PATH `/usr/bin:/bin:…`, đúng môi trường của API): `claude auth
+  status` → `loggedIn: true`, gọi `-p` thành công — LaunchAgent trong phiên GUI đọc được keychain.
+  `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`) chỉ cần ở nơi không có phiên login (ssh, máy
+  không ai đăng nhập). Blocker chỉ đòi **binary** (`Provider.preflight`); binary tìm cả ở
+  `~/.local/bin` vì PATH của launchd không có nó. `registry.ready()` — không phải `api_key()` — là
+  thứ `/stats/llm` trả về cho `has_key`/`providers`, nếu không UI làm xám đúng backend đang chạy được.
+- **$0 chỉ đúng khi login là gói.** `subscription_problem()` đọc `claude auth status --json`
+  (cache 5 phút) và **chặn** nếu chưa login, `apiProvider != firstParty` (Bedrock/Vertex), hoặc
+  login Console (tính tiền theo token) — fail-closed khi không đọc được. Chạy ở blocker **và** đầu
+  `structured()` (vì `cli tailor`/`llm bench` không đi qua route). Env con xoá
+  `ANTHROPIC_API_KEY`/`AUTH_TOKEN`/`BASE_URL` + `CLAUDE_CODE_USE_BEDROCK|VERTEX|FOUNDRY`: CLI ưu
+  tiên chúng hơn gói ⇒ để lọt là bị tính tiền trong khi `llm_calls` ghi $0.
+- **Test không bao giờ gọi `claude` thật**: `conftest._no_real_claude_cli` ghim `find_claude → None`
+  (máy dev chạy như CI). `/stats/llm` hỏi `ready()` của mọi provider ⇒ thiếu chốt này thì suite
+  shell ra `claude auth status` và pass/fail theo cách máy đó đang login.
+- **System prompt đi bằng `--system-prompt-file`, không bao giờ argv.** Với tailor nó là cả Master
+  CV, và argv thì mọi process trên máy đọc được (`ps`) suốt ~1 phút. Trên Windows `claude.cmd`
+  (npm) chạy qua cmd.exe, cắt argument nhiều dòng ở newline đầu ⇒ model nhận CV cụt mà vẫn trả lời.
+  File nằm trong temp dir 0700, xoá khi xong. `encoding="utf-8"` tường minh (Windows mặc định cp1252
+  ⇒ JD tiếng Việt nổ `UnicodeEncodeError`).
+- **System prompt riêng thay prompt ~32k token của Claude Code** — đo thật: 32.198 → ~1.200 token
+  input/lượt. Trên gói, token là tiền tệ; thiếu flag này hạn mức cạn nhanh gấp ~27 lần. Cộng
+  `--tools ""`, `--strict-mcp-config`, `--setting-sources ""`, `--no-session-persistence` (không
+  để lại session chứa cả Master CV dưới `~/.claude`) và **cwd là thư mục tạm rỗng** (không nạp
+  `CLAUDE.md` của repo vào prompt CV).
+- **Retry = transcript trong một prompt** (print mode chỉ nhận một lượt user). Đã chạy thật:
+  tailor Opus bịa "SQL, NoSQL" → guardrail chặn → lượt 2 qua transcript sửa đúng.
+- **`cost_usd = 0.0`, không phải `None`.** Giá *biết* là 0 (gói đã trả); `None` nghĩa là "không
+  biết giá". `total_cost_usd` của CLI là giá *nếu đi API*, không phải thứ ai đã trả — đừng ghi nó.
+- **Data policy khác `claude`.** Gói nằm dưới **consumer terms**: train hay không theo setting
+  "Help improve Claude" của tài khoản ⇒ `PolicyNote.depends_on_account`, cảnh báo nhưng không in
+  như chắc chắn.
+- **Đo 2026-10-04** (haiku-4-5): classify **5/5**, intake **11/11** — ngang provider API, nhưng
+  **p50 6–8 s** (API ~1,3 s) vì khởi động CLI. Tailor Opus 2 lượt: 71 s. Chậm, không sai.
+- **Hết hạn mức ở `-p` mode docs không mô tả.** Client chuyển nguyên văn `result` của CLI vào
+  `LlmError` thay vì đoán câu chữ.

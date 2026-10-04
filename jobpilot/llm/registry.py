@@ -18,6 +18,9 @@ from typing import Callable
 from jobpilot.llm.base import LlmError, StructuredClient
 from jobpilot.llm.claude import DEFAULT_MODEL as CLAUDE_MODEL
 from jobpilot.llm.claude import ClaudeClient
+from jobpilot.llm.claude_cli import DEFAULT_MODEL as CLAUDE_CLI_MODEL
+from jobpilot.llm.claude_cli import ClaudeCliClient
+from jobpilot.llm.claude_cli import preflight as claude_cli_preflight
 from jobpilot.llm.gemini import DEFAULT_MODEL as GEMINI_MODEL
 from jobpilot.llm.gemini import GeminiClient
 from jobpilot.llm.openai import DEFAULT_MODEL as OPENAI_MODEL
@@ -41,6 +44,15 @@ class Provider:
     #: provider's request shape depends on it: Claude's extended thinking is
     #: worth paying for on tailor and letter and pointless on classify.
     build: Callable[[str, str, str], StructuredClient]
+    #: Anything besides the credential that must hold for this backend to run
+    #: here — returns the reason it can't, or ''. Only the CLI provider needs
+    #: one: an API key is the whole precondition for the SDK backends.
+    preflight: Callable[[], str] | None = None
+    #: The credential is an *option*, not a precondition. True for the CLI
+    #: provider: a logged-in `claude` on this machine is enough — verified from
+    #: a launchd agent, which is how the API runs — and the token only matters
+    #: where no login session is reachable (ssh, a box nobody logs in to).
+    key_optional: bool = False
 
 
 #: Tasks that do not get Claude's extended thinking. Both are reading tasks
@@ -62,6 +74,24 @@ PROVIDERS: dict[str, Provider] = {
         build=lambda model, key, task: ClaudeClient(
             model=model, api_key=key, thinking=task not in NO_THINKING
         ),
+    ),
+    # Same models as "claude", billed to the user's Claude subscription through
+    # the local `claude` CLI instead of per token. See llm/claude_cli.py.
+    "claude_cli": Provider(
+        key="claude_cli",
+        label="Claude subscription (claude CLI)",
+        default_model=CLAUDE_CLI_MODEL,
+        secret_attr="claude_code_oauth_token",
+        env_var="CLAUDE_CODE_OAUTH_TOKEN",
+        extra="",
+        # Thinking costs plan usage like any other token, so the reading tasks
+        # ask for low effort — the same call ClaudeClient makes by switching
+        # thinking off for them.
+        build=lambda model, key, task: ClaudeCliClient(
+            model=model, token=key, effort="low" if task in NO_THINKING else None
+        ),
+        preflight=claude_cli_preflight,
+        key_optional=True,
     ),
     "openai": Provider(
         key="openai",
@@ -95,6 +125,19 @@ def api_key(name: str) -> str:
     from jobpilot.config import get_secrets
 
     return getattr(get_secrets(), provider_for(name).secret_attr, "") or ""
+
+
+def ready(name: str) -> bool:
+    """Whether ``name`` can be tried at all: its credential, or no need for one.
+
+    What the dashboard shows as "has key" and uses to grey out a provider. For
+    the API backends it is exactly "the key is set"; for the CLI one a missing
+    token is fine and a missing binary is not.
+    """
+    provider = provider_for(name)
+    if not (api_key(name) or provider.key_optional):
+        return False
+    return not (provider.preflight and provider.preflight())
 
 
 def client_for(task: str) -> StructuredClient:

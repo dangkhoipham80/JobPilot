@@ -386,14 +386,22 @@ def cmd_llm(args: argparse.Namespace) -> int:
     if args.llm_command == "providers":
         from jobpilot.llm.pricing import CHECKED_ON, policy_for
         from jobpilot.llm.redact import shadowed_secrets
-        from jobpilot.llm.registry import PROVIDERS, api_key
+        from jobpilot.llm.registry import PROVIDERS, api_key, ready
 
         cfg = get_config().llm
         for name, provider in sorted(PROVIDERS.items()):
             note = policy_for(name, paid_tier=cfg.paid_tier(name))
-            trains = "TRAINS ON INPUT" if note and note.trains_on_input else "no training"
-            key = "key set" if api_key(name) else f"no {provider.env_var}"
-            print(f"{name:8} {provider.default_model:24} {key:22} {trains}")
+            if note and note.trains_on_input:
+                trains = "MAY TRAIN (account setting)" if note.depends_on_account else "TRAINS ON INPUT"
+            else:
+                trains = "no training"
+            if api_key(name):
+                key = "key set"
+            elif provider.key_optional:
+                key = "uses claude login" if ready(name) else "not usable (see below)"
+            else:
+                key = f"no {provider.env_var}"
+            print(f"{name:10} {provider.default_model:24} {key:30} {trains}")
 
         # "key set" above is not the same as "the key you edited is the one in
         # use". An environment variable beats .env and says nothing about it.
