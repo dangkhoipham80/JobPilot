@@ -1,14 +1,11 @@
 [Unit]
 Description=JobPilot API + dashboard
-# Docker is NOT a dependency any more. The default LaTeX engine is tectonic, a
-# plain binary with no daemon (cv.engine = auto|tectonic|docker), so a box built
-# from DEPLOY.md has no docker.service at all — and `Requires=` on a unit that
-# does not exist makes systemd refuse to start *this* one, taking the entire API
-# and dashboard down over a PDF builder. Left as a soft `Wants=` so a box
-# deliberately set to cv.engine: docker still gets dockerd ordered first, without
-# that being fatal for everyone else.
-After=network-online.target postgresql.service docker.service
-Wants=network-online.target docker.service
+# No docker.service here: PDFs are built with tectonic, a plain binary with no
+# daemon (the Docker LaTeX engine was removed), so a box built from DEPLOY.md has
+# no Docker at all. Never `Requires=` a unit that may not exist — systemd then
+# refuses to start *this* one, taking the API and dashboard down over it.
+After=network-online.target postgresql.service
+Wants=network-online.target
 
 [Service]
 Type=exec

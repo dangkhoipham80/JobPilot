@@ -96,7 +96,7 @@ Sinh `cover_letter.tex` → PDF (đã làm ở Phase 17):
 
 ### Bước 5 — Build & verify
 - Copy `resume/` + assets vào `out/<job_id>/`, apply edits.
-- Build bằng engine LaTeX đang chọn (`cv.engine`: tectonic mặc định, docker là đường lui — lệnh trong `README.md`).
+- Build bằng tectonic (lệnh trong `README.md`).
 - **Verify**: build thành công + CV đúng 1 trang + không lỗi LaTeX undefined. Fail → trả lỗi cho orchestrator (state `FAILED`), không post CV hỏng.
 
 ## 3. Định dạng diff cho Slack (để user duyệt)

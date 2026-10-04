@@ -104,7 +104,7 @@ def test_fork_from_master_copies_current_master(db):
 
 
 # --------------------------------------------------------------------------- #
-# compile.py (everything up to the Docker call, which needs a real daemon)
+# compile.py (everything up to the LaTeX call, which needs a real engine)
 # --------------------------------------------------------------------------- #
 def test_scope_slug_is_filesystem_safe():
     assert scope_slug("master") == "master"

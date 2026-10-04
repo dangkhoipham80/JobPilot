@@ -11,7 +11,7 @@
 This repo has two layers:
 
 1. **CV template** — the Awesome-CV LaTeX scaffolding (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`),
-   built with tectonic (or Docker). Useful by itself; see [Just the CV builder](#-just-the-cv-builder).
+   built with tectonic. Useful by itself; see [Just the CV builder](#-just-the-cv-builder).
 2. **JobPilot** — a FastAPI + React + PostgreSQL pipeline that crawls jobs, tailors your CV per job
    with an LLM, dispatches applications and tracks what came back. Architecture in
    [`PLAN.md`](PLAN.md), CV-tailoring rules in [`SKILL.md`](SKILL.md), contributor guide in
@@ -242,34 +242,22 @@ tectonic -X compile cv.tex
 Output is `cv.pdf` in the same directory. JobPilot runs the same engine, writing tailored builds to
 `out/cv/<scope>/` and never touching your master.
 
-Docker still works and stays supported as a fallback:
-
-```bash
-# Linux / macOS / WSL
-docker run -u $UID:$GID --rm -v "$PWD:/work" csmith/awesome-cv-builder
-# Windows PowerShell
-docker run --rm -v ${PWD}:/work csmith/awesome-cv-builder
-```
-
-`cv.engine` picks between them — `auto` (default) prefers tectonic and falls back to docker. The two
-produce the same PDF; tectonic is the default only because it is ~10 MB and needs nothing running,
-against a 3.18 GB image behind a daemon.
+Tectonic is the only engine: ~10 MB, nothing running, binaries for x86-64 and ARM64. (The
+`csmith/awesome-cv-builder` Docker image, 3.18 GB behind a daemon, used to be a fallback and was
+removed; a config still saying `cv.engine: docker` gets a build error that says so.)
 
 Tectonic is looked for on `PATH` first, then in **`tools/`** inside the repo — so on a machine where
 you would rather not touch `PATH`, dropping the downloaded binary in `tools/` is enough and needs no
 configuration. (`cv.tectonic_bin` still works, but an absolute path there is true of one machine
-only, and when it is wrong `auto` quietly builds with Docker instead.) `jobpilot cv build` prints
-which engine ran, so that fallback is visible rather than silent.
+only.)
 
 Prefer editing through the **CV Studio** rather than by hand: content is structured JSON that is
 serialized to `.tex` via Jinja2, so hand-edited `.tex` loses the round trip. Change the accent colour
 with `theme.color` in the Studio, not in the `.cls`.
 
 **Troubleshooting.** Tectonic downloads the TeX packages the document asks for on its first run and
-caches them (~50 MB), so build #1 needs network and is slow; later builds are offline. With the
-docker engine on Windows, give Docker Desktop access to the drive under Settings → Resources → File
-Sharing; on Linux/macOS the `-u $UID:$GID` flag keeps output files owned by you. Install the `[cv]`
-extra for `pypdf`, or the page count reads as unknown.
+caches them (~50 MB) per user, so build #1 needs network and is slow; later builds are offline.
+Install the `[cv]` extra for `pypdf`, or the page count reads as unknown.
 
 ---
 
@@ -303,7 +291,6 @@ MIT — see [LICENSE](LICENSE).
 ## ⭐ Acknowledgments
 
 - [Awesome-CV](https://github.com/posquit0/Awesome-CV) by Claud D. Park
-- [Tectonic](https://tectonic-typesetting.github.io/) — the default LaTeX engine
-- [csmith/awesome-cv-builder](https://hub.docker.com/r/csmith/awesome-cv-builder) Docker image (fallback engine)
+- [Tectonic](https://tectonic-typesetting.github.io/) — the LaTeX engine
 - Job data from [We Work Remotely](https://weworkremotely.com/) and
   [Arbeitnow](https://www.arbeitnow.com/) via their public feeds

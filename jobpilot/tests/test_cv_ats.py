@@ -5,7 +5,7 @@ question that actually decides whether a human ever reads the CV: can a parser
 get the contact details and the section headings back out of the file?
 
 Every fixture here is a *text layer*, not a PDF — that is exactly what an ATS
-receives, and it keeps the checks testable without a Docker build.
+receives, and it keeps the checks testable without a LaTeX build.
 """
 
 from __future__ import annotations

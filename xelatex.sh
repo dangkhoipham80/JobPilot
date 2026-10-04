@@ -8,9 +8,6 @@
 # a `docker run csmith/awesome-cv-builder`. Tectonic fetches exactly the packages
 # a document asks for and caches them, so neither half is needed any more.
 #
-# Docker is still supported as JobPilot's fallback engine (`cv.engine`, see
-# README.md); it is just no longer the thing you install first.
-#
 #   macOS:  brew install tectonic
 #   Linux:  see DEPLOY.md, or https://tectonic-typesetting.github.io/install.html
 set -e

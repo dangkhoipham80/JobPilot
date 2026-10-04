@@ -144,8 +144,7 @@ def compile_document(
 ) -> BuildResult:
     """Render + build. Raises ``BuildError`` if the LaTeX build fails.
 
-    Which engine runs is ``cv.engine`` (see ``tailor/build.py``); both produce
-    the same PDF.
+    Built with tectonic (see ``tailor/build.py``).
     """
     return build_cv(prepare_build_dir(doc, scope, root, override))
 

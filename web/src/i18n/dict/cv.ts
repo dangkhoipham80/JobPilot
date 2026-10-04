@@ -172,9 +172,9 @@ export const cv = ns({
     compiling: "Compiling…",
     buildFailed: "LaTeX build failed",
     staleBuild: "Showing the last compiled build — save and compile to see your edits.",
-    runningXelatex: "Running xelatex in Docker…",
+    runningXelatex: "Running xelatex (tectonic)…",
     hitCompile: "Hit Compile to render the PDF.",
-    needsDocker: "Needs Docker running — the build uses the Awesome-CV image.",
+    needsEngine: "Needs tectonic installed on the host — the first build downloads the TeX packages it uses.",
 
     // --- ATS panel --------------------------------------------------------
     atsNotCheckedLead: "Readability not checked — no PDF text extractor installed. Run",
@@ -345,9 +345,9 @@ export const cv = ns({
     compiling: "Đang compile…",
     buildFailed: "Build LaTeX thất bại",
     staleBuild: "Đang hiện bản build gần nhất — lưu rồi compile để thấy phần vừa sửa.",
-    runningXelatex: "Đang chạy xelatex trong Docker…",
+    runningXelatex: "Đang chạy xelatex (tectonic)…",
     hitCompile: "Bấm Compile để render PDF.",
-    needsDocker: "Cần Docker đang chạy — bản build dùng image Awesome-CV.",
+    needsEngine: "Cần cài tectonic trên máy chủ — lần build đầu sẽ tải các gói TeX nó dùng.",
 
     atsNotCheckedLead: "Chưa kiểm tra khả năng đọc — máy chưa cài bộ trích text từ PDF. Chạy",
     atsNotCheckedRest: "để xem một ATS đọc được những gì.",

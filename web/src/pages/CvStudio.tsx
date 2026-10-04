@@ -35,7 +35,7 @@ const NEW_SECTION: Record<CvSectionType, () => CvSection> = {
 /**
  * CV Studio (PLAN.md §5.6.1). The structured JSON is the source of truth: edits
  * stay local until Save, which appends a new version; Compile renders that
- * version to PDF through the Docker LaTeX builder.
+ * version to PDF with tectonic.
  */
 export function CvStudio({ version: wsVersion }: { version: number }) {
   // /cv edits the Master CV; /cv/<job id> edits that job's tailored fork.

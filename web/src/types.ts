@@ -793,10 +793,9 @@ export interface Settings {
   cv: {
     master_dir: string;
     out_dir: string;
-    /** Which LaTeX engine builds the PDF; "auto" prefers tectonic. */
+    /** Which LaTeX engine builds the PDF: "auto" | "tectonic" (the only one). */
     engine: string;
     tectonic_bin: string;
-    docker_image: string;
     theme: string;
   };
   llm: LlmSettings;
