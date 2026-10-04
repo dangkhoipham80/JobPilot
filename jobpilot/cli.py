@@ -198,7 +198,9 @@ def cmd_crawl(args: argparse.Namespace) -> int:
 
     for site in report.sites:
         s = site.stats
-        status = "ok " if site.ok else "FAIL"
+        # PART, not ok: rows the database refused are lost postings, and a site
+        # that lost all of them must not print like a quiet day.
+        status = "FAIL" if not site.ok else ("PART" if s.rejected else "ok ")
         detail = (
             f"error={site.error}"
             if not site.ok
@@ -206,12 +208,15 @@ def cmd_crawl(args: argparse.Namespace) -> int:
                 f"fetched={s.fetched} new={s.inserted} upd={s.updated} "
                 f"dup={s.duplicates} kept-for-jd={s.superseded} "
                 f"filtered={s.filtered} fresh={s.fresh}"
+                + (f" REJECTED={s.rejected} (see log: persist_failed)" if s.rejected else "")
             )
         )
         print(f"  [{status}] {site.source:14s} {detail}")
     t = report.totals
     print(
-        f"Total: new={t.inserted} updated={t.updated} duplicates={t.duplicates} fresh={t.fresh} (run #{report.run_id})"
+        f"Total: new={t.inserted} updated={t.updated} duplicates={t.duplicates} fresh={t.fresh}"
+        + (f" rejected={t.rejected}" if t.rejected else "")
+        + f" (run #{report.run_id})"
     )
     return 0
 
@@ -324,7 +329,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"CRAWL FAILED: {exc}", file=sys.stderr)
             return 1
         for site in result["sites"]:
-            status = "ok " if site["ok"] else "FAIL"
+            rejected = site.get("rejected", 0)
+            status = "FAIL" if not site["ok"] else ("PART" if rejected else "ok ")
             detail = (
                 f"error={site['error']}"
                 if not site["ok"]
@@ -332,6 +338,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     f"fetched={site['fetched']} new={site['inserted']} "
                     f"upd={site['updated']} dup={site['duplicates']} "
                     f"kept-for-jd={site.get('superseded', 0)} fresh={site['fresh']}"
+                    + (f" REJECTED={rejected} (see log: persist_failed)" if rejected else "")
                 )
             )
             print(f"  [{status}] {site['source']:14s} {detail}")

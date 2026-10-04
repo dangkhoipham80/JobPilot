@@ -235,6 +235,9 @@ function TaskRow({ task }: { task: Task }) {
                 {t("colKept")}
               </th>
               <th className="font-medium tabular-nums">{t("colFresh")}</th>
+              <th className="font-medium tabular-nums" title={t("colRejectedWhy")}>
+                {t("colRejected")}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -250,9 +253,14 @@ function TaskRow({ task }: { task: Task }) {
                         they did not report zero, they did not report. */}
                     <td className="tabular-nums">{site.superseded ?? "—"}</td>
                     <td className="tabular-nums">{site.fresh}</td>
+                    <td
+                      className={cn("tabular-nums", (site.rejected ?? 0) > 0 && "text-critical")}
+                    >
+                      {site.rejected ?? "—"}
+                    </td>
                   </>
                 ) : (
-                  <td colSpan={5} className="truncate py-0.5" title={site.error ?? ""}>
+                  <td colSpan={6} className="truncate py-0.5" title={site.error ?? ""}>
                     {site.error}
                   </td>
                 )}
@@ -284,11 +292,15 @@ function summarise(stats: Record<string, unknown> | undefined): string {
   const parts: string[] = [];
   if (typeof stats.query === "string" && stats.query) parts.push(`"${stats.query}"`);
 
-  const sites = stats.sites as Record<string, { ok?: boolean; inserted?: number }> | undefined;
+  const sites = stats.sites as
+    | Record<string, { ok?: boolean; inserted?: number; rejected?: number }>
+    | undefined;
   if (sites && typeof sites === "object") {
     parts.push(
       ...Object.entries(sites).map(([name, s]) =>
-        s?.ok === false ? `${name}: failed` : `${name}: +${s?.inserted ?? 0}`,
+        s?.ok === false
+          ? `${name}: failed`
+          : `${name}: +${s?.inserted ?? 0}${s?.rejected ? ` rejected=${s.rejected}` : ""}`,
       ),
     );
   }

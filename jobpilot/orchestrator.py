@@ -490,6 +490,7 @@ def crawl_body(
                     "updated": site.stats.updated,
                     "duplicates": site.stats.duplicates,
                     "superseded": site.stats.superseded,
+                    "rejected": site.stats.rejected,
                     "filtered": site.stats.filtered,
                     "fresh": site.stats.fresh,
                 }
@@ -506,6 +507,7 @@ def crawl_body(
                     "updated": t.updated,
                     "duplicates": t.duplicates,
                     "superseded": t.superseded,
+                    "rejected": t.rejected,
                     "fresh": t.fresh,
                     "filtered": t.filtered,
                 },

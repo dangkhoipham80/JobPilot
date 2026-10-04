@@ -72,6 +72,8 @@ export const runs = ns({
     colKept: "kept",
     colKeptWhy: "kept despite matching another board, because that board's copy had no JD",
     colFresh: "fresh",
+    colRejected: "rejected",
+    colRejectedWhy: "postings the database refused to store — see persist_failed in the crawl log",
 
     /* History ------------------------------------------------------------- */
     history: "History",
@@ -132,6 +134,8 @@ export const runs = ns({
     colKept: "giữ lại",
     colKeptWhy: "vẫn giữ dù trùng tin của board khác, vì bản bên đó không có JD",
     colFresh: "mới đăng",
+    colRejected: "bị từ chối",
+    colRejectedWhy: "tin mà database từ chối lưu — xem persist_failed trong log crawl",
 
     history: "Lịch sử",
     historyCount: "{count} run",
