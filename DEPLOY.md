@@ -3,24 +3,87 @@
 > Truy cập từ điện thoại/laptop **chỉ qua Tailscale**. Không mở port công khai,
 > không domain, không Cloudflare.
 
-**Đang chạy thật: phương án A (laptop Windows).** Phần VPS bên dưới là phương án
-thay thế, chưa dựng.
+**Đang chạy thật: phương án M (Mac mini ở nhà)**, từ 2026-10-04. Laptop Windows
+(A) là cách cũ, VPS (B) là phương án thay thế, cả hai chưa/không còn dựng.
 
-| | A. Laptop Windows *(đang dùng)* | B. VPS Linux |
-|---|---|---|
-| Chi phí | **0đ** (~25k điện/tháng) | ~100k/tháng |
-| Uptime | khi laptop bật | 24/7 |
-| IP dùng để crawl | **dân dụng VN** — ít bị Cloudflare challenge nhất | datacenter |
-| Cài đặt | §A bên dưới | §1–§6 |
+| | M. Mac mini *(đang dùng)* | A. Laptop Windows | B. VPS Linux |
+|---|---|---|---|
+| Chi phí | **0đ** (~10–15k điện/tháng, idle ~5–7 W) | 0đ (~25k điện) | ~100k/tháng |
+| Uptime | **khi máy bật** — tắt máy là tắt JobPilot, cố ý | khi laptop bật | 24/7 |
+| IP dùng để crawl | **dân dụng VN** | dân dụng VN | datacenter |
+| Cài đặt | §M bên dưới | §A | §1–§6 |
 
-Chọn A vì laptop đã được set **không bao giờ ngủ**, nên nó gần như là server 24/7
-sẵn rồi; và crawl từ IP nhà là thứ VPS không mua được bằng tiền. Khi nào laptop
-tắt/mang đi thường xuyên tới mức khó chịu thì chuyển sang B — chi phí chuyển thấp
-vì state nằm hết trong Postgres: `pg_dump` → restore → đổi `DATABASE_URL`.
+Chọn M vì miễn phí, nhẹ (rảnh: Postgres + API ~200–300 MB RAM; Chromium chỉ sống
+vài phút mỗi lần crawl) và crawl từ IP nhà là thứ VPS không mua được bằng tiền.
+Chuyển máy rẻ vì state nằm hết trong Postgres: `pg_dump` → restore → đổi `DATABASE_URL`.
 
 ---
 
-## A. Laptop Windows (phương án đang chạy)
+## M. Mac mini (phương án đang chạy)
+
+Điều kiện có sẵn: Homebrew `postgresql@17` (`brew services start postgresql@17`),
+`tectonic` trong `/opt/homebrew/bin`, `.venv` đã `make install-all`, `.env` có
+`JOBPILOT_API_TOKEN` + `DATABASE_URL`, Tailscale app bật **Launch at login**, và
+máy **không system sleep** khi cắm điện (`pmset -g | grep ' sleep'` phải ra `0`;
+chưa thì `sudo pmset -c sleep 0`). Màn hình tắt thoải mái. Mac ngủ thì "máy đang
+bật" mà điện thoại vẫn không vào được dashboard.
+
+```bash
+# 1. Tailscale (một lần) — HTTPS -> 127.0.0.1:8000, chỉ trong tailnet
+tailscale serve --bg 8000
+
+# 2. Build dashboard với token thật + migrate (chạy lại sau mỗi lần pull code)
+./deploy/macos/update.sh          # lần đầu chưa có agent thì nó dừng ở bước restart, đúng
+
+# 3. Ba launchd agent (không cần sudo)
+./deploy/macos/install.sh         # --uninstall để gỡ
+```
+
+Tạo ra trong `~/Library/LaunchAgents`: **com.jobpilot.api** (lúc đăng nhập, chết là
+launchd bật lại), **com.jobpilot.crawl** (08:30 & 18:30), **com.jobpilot.backup**
+(lúc đăng nhập + 03:00, ra `~/JobPilotBackups`). Log ở `logs/{api,crawl,backup}.log`.
+
+Lệnh hay dùng:
+
+```bash
+launchctl list | grep jobpilot                                  # PID + exit code cuối
+launchctl kickstart -k gui/$(id -u)/com.jobpilot.api            # restart API
+launchctl kickstart gui/$(id -u)/com.jobpilot.crawl             # crawl ngay
+tail -f logs/api.log
+```
+
+Những thứ đã cân nhắc, đừng "sửa" ngược lại:
+
+- **LaunchAgent, không phải LaunchDaemon.** Sống theo phiên đăng nhập = đúng vòng đời
+  "bật máy thì chạy, tắt máy thì thôi". FileVault đang bật nên không auto-login
+  được, nhưng màn hình mở khoá lúc boot **chính là** đăng nhập — gõ mật khẩu xong
+  là cả ba agent lên. Postgres (brew services) và Tailscale cũng ở tầng này; một
+  daemon sẽ lên *trước* những thứ nó cần.
+- **Mọi agent đi qua `run.sh`, không gọi thẳng python.** launchd đưa
+  `PATH=/usr/bin:/bin:/usr/sbin:/sbin` — không có `tectonic` lẫn `pg_dump`. Keg
+  `postgresql@NN/bin` được đặt **trước** `/opt/homebrew/bin`: bản đang link vào
+  `bin` có thể cũ hơn server, và `pg_dump` từ chối dump server mới hơn nó. Thiếu wrapper thì
+  API vẫn lên bình thường, rồi lần build PDF đầu tiên báo "không có LaTeX engine",
+  backup báo "không có pg_dump" — trên đúng cái máy mà gõ tay ở terminal thì chạy.
+- **Backup chạy cả lúc đăng nhập**, vì launchd chỉ chạy bù lịch bị lỡ khi máy *ngủ*,
+  không chạy bù khi máy *tắt*. Tắt máy qua đêm thì slot 03:00 không bao giờ tới.
+  `backup.keep_last` (14) chặn việc khởi động nhiều lần đẻ ra đống file. Crawl thì
+  **không** chạy bù — bật máy lúc 9h là chờ tới 18:30, hoặc bấm crawl ở trang Runs.
+- **Crawl có watchdog 45 phút trong `run.sh`** (plist không có key timeout, macOS
+  không có `timeout`). launchd không bao giờ chạy bản thứ hai của một job còn đang
+  chạy, nên một crawl treo trong Chromium sẽ nuốt **mọi** slot sau tới khi reboot,
+  trong lúc `launchctl list` vẫn hiện PID như đang làm việc.
+- **Đừng chạy dev server ở :8000** khi agent đang cài — dùng port khác, hoặc
+  `./deploy/macos/install.sh --uninstall` trước. `healthcheck.sh` so PID đang giữ
+  port với PID của agent và **fail** nếu khác: không thì `/health` của server dev
+  trả 200, script báo xanh, còn dashboard qua tailnet đang nói chuyện với server
+  `--reload` (hai task queue).
+- **`PYTHONUNBUFFERED=1`** trong `run.sh`: thiếu nó thì crawl chạy 10 phút mà
+  `crawl.log` vẫn trống, không phân biệt được với treo.
+- **`deploy/macos/update.sh` không `git reset --hard`** như bản VPS: trên Mac, thư
+  mục deploy cũng là thư mục đang code, reset là mất việc chưa commit. Tự `git pull`.
+
+## A. Laptop Windows (cách cũ, không còn chạy)
 
 ```powershell
 # 1. Tailscale (một lần)
