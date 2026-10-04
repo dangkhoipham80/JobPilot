@@ -124,6 +124,11 @@ trả tiền API. `llm/claude_cli.py` gọi `claude -p` (print mode), cùng mode
   tailor Opus bịa "SQL, NoSQL" → guardrail chặn → lượt 2 qua transcript sửa đúng.
 - **`cost_usd = 0.0`, không phải `None`.** Giá *biết* là 0 (gói đã trả); `None` nghĩa là "không
   biết giá". `total_cost_usd` của CLI là giá *nếu đi API*, không phải thứ ai đã trả — đừng ghi nó.
+- **Cảnh báo ra dashboard là key, không phải câu.** `llm.warning_items(task)` trả `{policy,
+  provider, task, url, checked_on}`; frontend dịch theo `policy` (`POLICY_TEXT` trong
+  `Models.tsx`), `warnings()` (CLI) dựng câu tiếng Anh từ **cùng** items. Thêm một `DATA_POLICY`
+  mới mà quên thêm chữ ở `i18n/dict/models.ts` thì UI hiện câu tiếng Anh ở đúng vị trí — dự
+  phòng, không im lặng. Câu trích điều khoản của Google giữ nguyên tiếng Anh trong bản VI.
 - **Data policy khác `claude`.** Gói nằm dưới **consumer terms**: train hay không theo setting
   "Help improve Claude" của tài khoản ⇒ `PolicyNote.depends_on_account`, cảnh báo nhưng không in
   như chắc chắn.

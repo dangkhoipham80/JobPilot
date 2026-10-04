@@ -914,8 +914,20 @@ export interface LlmStats {
   /** Secrets whose .env value is overridden by a different environment variable. */
   shadowed_env: string[];
   configured: Record<string, string>;
+  /** English sentences — the CLI's rendering; the page's fallback only. */
   warnings: Record<string, string[]>;
+  /** The same warnings as data, worded in the UI language by the page. */
+  warning_items?: Record<string, WarningItem[]>;
   blockers: Record<string, string>;
+}
+
+/** One data-use warning. `policy` is a backend DATA_POLICY key; "" = no note on record. */
+export interface WarningItem {
+  policy: string;
+  provider: string;
+  task: string;
+  url: string;
+  checked_on: string;
 }
 
 export interface JobInput {

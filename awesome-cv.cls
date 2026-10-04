@@ -485,7 +485,12 @@
           \ifbool{isstart}{\setbool{isstart}{false}}{\acvHeaderSocialSep}%
           \@extrainfo%
         }%
-    } \\[\acvHeaderAfterSocialSkip]%
+    } \ifhmode\\[\acvHeaderAfterSocialSkip]\fi%
+    % JobPilot: end the social line only if something was printed on it. With
+    % no contact field at all (the empty CV a fresh install starts from) this
+    % used to be a bare \\ in vertical mode — "There's no line here to end" —
+    % so the first build a new user tried failed. With any field set we are in
+    % horizontal mode and this is the original line, unchanged.
     \ifthenelse{\isundefined{\@quote}}%
       {}%
       {\headerquotestyle{\@quote\\}\vspace{\acvHeaderAfterQuoteSkip}}%

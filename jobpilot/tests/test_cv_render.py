@@ -343,3 +343,38 @@ def test_tex_snapshot_covers_every_rendered_file():
     snapshot = render_tex_snapshot(sample_document())
     for path in render_document(sample_document()):
         assert f"% ===== {path} =====" in snapshot
+
+
+def test_awesome_cv_header_survives_a_cv_with_no_contact_fields():
+    """The empty CV a fresh install starts from has no mobile/email/links, and
+    `\\makecvheader` used to end that empty social line with a bare `\\\\` in
+    vertical mode: "There's no line here to end", so the very first build a new
+    user tried failed. The vendored class now ends the line only in horizontal
+    mode. CI has no LaTeX engine, so this pins the text of the fix; it was
+    verified with tectonic (empty and name-only CVs build, and CVs with contact
+    fields produce byte-identical PDFs to before)."""
+    from pathlib import Path
+
+    cls = (Path(__file__).resolve().parents[2] / "awesome-cv.cls").read_text(encoding="utf-8")
+    assert "\\ifhmode\\\\[\\acvHeaderAfterSocialSkip]\\fi" in cls
+    assert "} \\\\[\\acvHeaderAfterSocialSkip]" not in cls
+
+
+def test_an_empty_position_is_not_emitted_as_an_empty_macro():
+    """`\\position{}` defines `\\@position`, so the class prints it and ends the
+    line with a bare `\\\\` — the same "no line here to end" as the social line,
+    two lines up. `Header.position` defaults to "", and deleting the skeleton's
+    placeholder or importing a CV without one reaches it. Emitted only when set,
+    the class's own `\\isundefined{\\@position}` branch handles the rest."""
+    from jobpilot.cv.skeleton import empty_document
+
+    doc = empty_document()
+    for blank in ("", "   "):
+        doc.header.position = blank
+        doc.header.address = blank
+        files = render_document(doc)
+        assert not any("\\position{" in text for text in files.values()), repr(blank)
+        assert not any("\\address{" in text for text in files.values()), repr(blank)
+
+    doc.header.position = "Backend Engineer"
+    assert any("\\position{Backend Engineer}" in text for text in render_document(doc).values())

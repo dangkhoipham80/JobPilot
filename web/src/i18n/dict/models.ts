@@ -6,8 +6,9 @@ import { ns } from "../ns";
  * Provider and model identifiers (`claude`, `openai`, `gemini`,
  * `claude-opus-4-8`) never appear here: they are ids the CLI prints and the
  * config file stores, so translating them would break the only way to line the
- * page up with `jobpilot llm stats`. Same for `blockers`/`warnings`, which the
- * backend composes — see `jobpilot/llm/CLAUDE.md`.
+ * page up with `jobpilot llm stats`. `blockers` are still composed by the
+ * backend in English; data-use warnings arrive as `warning_items` (which policy,
+ * which task) and are worded here — see `jobpilot/llm/CLAUDE.md`.
  *
  * The data-handling copy (`creditNote*`, the task blurbs that say "sends your
  * whole Master CV") is deliberately blunt in both languages. This page is where
@@ -93,6 +94,21 @@ export const models = ns({
     colOk: "OK",
     tableNote:
       "“1st try” is the share of calls the guardrails accepted without a corrective round — the quality number. Rates are withheld below {count} calls and shown as a count instead. “—” under Cost means the model is not in the price table, which is not the same as free.",
+
+    /* Data-use warnings — the backend sends which policy applies
+       (`warning_items`), the wording lives here. */
+    warnPolicyClaudeCli:
+      "This runs on your Claude subscription, which is covered by Anthropic's consumer terms, not the API terms: if “Help improve Claude” is on in your claude.ai privacy settings, these conversations may be used to train models. Turn it off there to opt out.",
+    warnPolicyGeminiFree:
+      "On the unpaid tier Google uses submitted content to improve its products, and human reviewers may read it. The terms say: “Do not submit sensitive, confidential, or personal information to the Unpaid Services.”",
+    warnNoNote:
+      "No data-use note on record for this provider — read its terms before enabling it.",
+    warnSendsTailor: "This task sends your entire Master CV — name, phone number, employment history.",
+    warnSendsLetter: "This task sends your entire Master CV — name, phone number, employment history.",
+    warnSendsIntake:
+      "This task sends the job description you pasted and, when you ask for a fit check, your entire Master CV — name, phone number, employment history.",
+    warnSendsClassify: "This task sends the text of employer emails that matched one of your applications.",
+    warnChecked: "checked {date}",
   },
   vi: {
     title: "Mô hình",
@@ -168,5 +184,20 @@ export const models = ns({
     colOk: "OK",
     tableNote:
       "“Đạt vòng 1” là tỉ lệ lượt gọi được guardrail nhận ngay, không phải gọi lại để sửa — đây là con số về chất lượng. Dưới {count} lượt thì không hiện tỉ lệ mà hiện số lượt. “—” ở cột Chi phí nghĩa là model không có trong bảng giá, khác với miễn phí.",
+
+    warnPolicyClaudeCli:
+      "Việc này chạy trên gói Claude của bạn, nên theo điều khoản dành cho người dùng cá nhân (consumer terms) của Anthropic chứ không theo điều khoản API: nếu “Help improve Claude” đang bật trong phần privacy của claude.ai, các cuộc hội thoại này có thể được dùng để train model. Tắt ở đó nếu không muốn.",
+    // Google's sentence stays in English: paraphrasing a terms-of-service
+    // quote would put words in their mouth.
+    warnPolicyGeminiFree:
+      "Ở gói miễn phí, Google dùng nội dung bạn gửi để cải thiện sản phẩm, và người kiểm duyệt có thể đọc nó. Điều khoản ghi: “Do not submit sensitive, confidential, or personal information to the Unpaid Services.”",
+    warnNoNote:
+      "Chưa có ghi chú nào về cách provider này xử lý dữ liệu — đọc điều khoản của họ trước khi bật.",
+    warnSendsTailor: "Việc này gửi đi toàn bộ Master CV — tên, số điện thoại, quá trình làm việc.",
+    warnSendsLetter: "Việc này gửi đi toàn bộ Master CV — tên, số điện thoại, quá trình làm việc.",
+    warnSendsIntake:
+      "Việc này gửi đi JD bạn dán vào, và khi bạn chấm độ khớp thì gửi cả Master CV — tên, số điện thoại, quá trình làm việc.",
+    warnSendsClassify: "Việc này gửi đi nội dung các email nhà tuyển dụng khớp với một đơn ứng tuyển của bạn.",
+    warnChecked: "kiểm tra ngày {date}",
   },
 });

@@ -96,6 +96,8 @@ class PolicyNote:
 
     #: True when the provider may train on API input/output at this tier.
     trains_on_input: bool
+    #: The CLI's wording. The dashboard words the same note in
+    #: ``web/src/i18n/dict/models.ts`` — change both; a test compares the English.
     summary: str
     url: str
     #: The answer depends on a setting in the user's own account, which
@@ -158,12 +160,23 @@ DATA_POLICY: dict[str, PolicyNote] = {
 }
 
 
+def policy_key(provider: str, *, paid_tier: bool = True) -> str | None:
+    """The ``DATA_POLICY`` key that applies — ``"gemini:free"`` rather than
+    ``"gemini"`` on the unpaid tier — or ``None`` when there is no note.
+
+    It is what the dashboard translates by: the backend says *which* note, the
+    frontend owns the sentence in each language.
+    """
+    if not paid_tier and f"{provider}:free" in DATA_POLICY:
+        return f"{provider}:free"
+    return provider if provider in DATA_POLICY else None
+
+
 def policy_for(provider: str, *, paid_tier: bool = True) -> PolicyNote | None:
     """The note that applies, or ``None`` for a provider we have no note for.
 
     ``None`` is not "it's fine" — it is "nobody has read this one's terms", and
     callers render it as its own kind of warning.
     """
-    if not paid_tier and f"{provider}:free" in DATA_POLICY:
-        return DATA_POLICY[f"{provider}:free"]
-    return DATA_POLICY.get(provider)
+    key = policy_key(provider, paid_tier=paid_tier)
+    return DATA_POLICY[key] if key else None

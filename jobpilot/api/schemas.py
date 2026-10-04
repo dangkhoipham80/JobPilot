@@ -828,6 +828,17 @@ class ProviderSpendOut(BaseModel):
     models: list[str] = Field(default_factory=list)
 
 
+class WarningItemOut(BaseModel):
+    """One data-use warning as data. ``policy`` is a ``DATA_POLICY`` key, or
+    ``""`` when the provider has no note on record."""
+
+    policy: str
+    provider: str
+    task: str
+    url: str = ""
+    checked_on: str = ""
+
+
 class LlmStatsOut(BaseModel):
     """The backend comparison, plus what is currently configured to run each task."""
 
@@ -852,6 +863,10 @@ class LlmStatsOut(BaseModel):
     #: task -> sentences about what that provider may do with the input.
     #: Empty for every provider that does not train on API data.
     warnings: dict[str, list[str]] = Field(default_factory=dict)
+    #: The same warnings as keys + values (``llm.warning_items``), which the
+    #: dashboard renders in the UI language. ``warnings`` stays for the CLI and
+    #: as the fallback for a policy key the frontend has no wording for yet.
+    warning_items: dict[str, list[WarningItemOut]] = Field(default_factory=dict)
     #: task -> why it cannot run right now (missing key), '' when it can.
     blockers: dict[str, str] = Field(default_factory=dict)
 

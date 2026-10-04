@@ -48,8 +48,10 @@
 % PERSONAL INFORMATION
 %-------------------------------------------------------------------------------
 \name{\textbf{<< h.first_name|tex >>}}{\tech{<< h.last_name|tex >>}}
+<% if (h.position or "")|trim %>
 \position{<< h.position|tex >>}
-<% if h.address %>
+<% endif %>
+<% if (h.address or "")|trim %>
 \address{<< h.address|tex >>}
 <% endif %>
 <% if h.mobile %>

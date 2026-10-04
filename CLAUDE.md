@@ -243,10 +243,12 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   nút im lặng), và `/invite @jobpilot` vào channel. Lỗi hay gặp: channel **riêng tư** mà bot chưa
   được mời trả `channel_not_found`, không phải `not_in_channel` — hai lỗi đó phân biệt public/private.
 - **i18n mới phủ frontend.** Chuỗi do **backend soạn** vẫn ra tiếng Anh giữa trang tiếng Việt:
-  `facet.note` (Market), `split.note` (Dashboard), `llm.blocker()`/`warnings()` (Models), các
+  `facet.note` (Market), `split.note` (Dashboard), `llm.blocker()` (Models), các
   `*_hint` (Applications), `description` của template (CV Studio). **Đừng vá ở frontend** —
   dịch chúng nghĩa là pattern-match chính câu tiếng Anh của mình, mong manh và sai chỗ. Muốn
   phủ hết thì backend phải trả **key + số** (hoặc nhận tham số ngôn ngữ), là một phase riêng.
+  **Mẫu đã có**: cảnh báo data-use ở Models đi qua `llm.warning_items()` (policy + task) và
+  được dịch ở `i18n/dict/models.ts`; `warnings()` tiếng Anh dựng từ **cùng** items cho CLI.
 - **`edit_guard._NUMBER_WORDS` chỉ có tiếng Anh** và `_WORD_RE` là `[a-zA-Z]+`, nên số bịa viết
   bằng chữ tiếng Việt ("mười hai", "gấp đôi") lọt qua — chữ **số** thì vẫn bị bắt, và provenance
   (`textnorm.quote_appears_in`) xử lý tiếng Việt đúng + fail-closed. Vì lỗ này mà ba chip gợi ý

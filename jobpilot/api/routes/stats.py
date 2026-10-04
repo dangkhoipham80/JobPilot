@@ -189,5 +189,6 @@ def llm_stats(
         shadowed_env=shadowed_secrets(),
         configured={t: cfg.for_task(t) for t in tasks},
         warnings={t: llm.warnings(t) for t in tasks},
+        warning_items={t: llm.warning_items(t) for t in tasks},
         blockers={t: llm.blocker(t) for t in tasks},
     )
