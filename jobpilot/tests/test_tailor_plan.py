@@ -34,7 +34,7 @@ def test_vocabulary_covers_tech_stacks_and_bullets(master):
     vocab = vocabulary(master)
     for word in ("java", "spring", "jacoco", "grafana", "leetcode", "fastapi"):
         assert word in vocab
-    assert "kafka" in vocab  # from the Slide AI tech stack
+    assert "kafka" in vocab  # from the Lumen tech stack
 
 
 def test_vocabulary_splits_compound_tokens(master):

@@ -68,7 +68,7 @@ the summary, so most of your work is deciding what to promote and what to hide.
   technologies the job asks for at the front.
 - `changes`: one short line per edit, each naming the requirement that motivated
   it. This is what the human reads before approving, so make it specific:
-  "Slide AI moved to first project" beats "reordered projects".
+  "Lumen moved to first project" beats "reordered projects".
 
 Leave a list empty when you would not change that thing. An empty plan is a
 valid answer for a job that already matches the CV as written.

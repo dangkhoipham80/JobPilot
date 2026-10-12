@@ -75,10 +75,10 @@ def _usable(term: str) -> bool:
 def _role_terms(title: str) -> list[str]:
     """Pull the job title out of an entry heading.
 
-    Headings are written either way round — ``"FPT Software, Junior Software
+    Headings are written either way round — ``"Example Software, Junior Software
     Engineer - Backend"`` or ``"Backend Engineer @ ACME"`` — so rather than
     assuming which side the company is on, this keeps the segment that contains
-    an actual job noun. "FPT Software" has none; "Software Engineer" does.
+    an actual job noun. "Example Software" has none; "Software Engineer" does.
 
     Seniority is dropped: a "Junior" in a search query matches the word in the
     posting body, not the level of the job.

@@ -503,7 +503,7 @@ def test_suggest_keywords_reads_stack_and_role_not_prose():
                 title="Work Experience",
                 entries=[
                     Entry(
-                        title="FPT Software, Junior Software Engineer - Backend",
+                        title="Example Software, Junior Software Engineer - Backend",
                         items=["Did a thing that mentions Nonsense."],
                         tech_stack=["Java", "Spring Boot"],
                     )

@@ -16,9 +16,9 @@ from jobpilot.cv.sample import sample_document
 
 def _doc():
     doc = sample_document()
-    doc.header.first_name = "Khoi"
-    doc.header.last_name = "Pham"
-    doc.header.email = "khoi@example.com"
+    doc.header.first_name = "Minh"
+    doc.header.last_name = "Tran"
+    doc.header.email = "minh@example.com"
     doc.header.mobile = "+84 912 345 678"
     return doc
 
@@ -85,7 +85,7 @@ def test_missing_name_is_an_error_but_split_across_lines_is_fine():
     doc = _doc()
     assert "name_missing" in _codes(check_text("Anonymous CV\n" + doc.header.email * 40, doc))
     # A two-line header is normal and must not be flagged.
-    text = _good_text(doc).replace("Khoi Pham", "Khoi\nPham")
+    text = _good_text(doc).replace("Minh Tran", "Minh\nTran")
     assert "name_missing" not in _codes(check_text(text, doc))
 
 

@@ -49,15 +49,15 @@ sources:
   - { key: itviec,       tier: 1, enabled: true }   # MVP source (Phase 3)
   - { key: topcv,        tier: 1, enabled: true }   # server-rendered + JSON-LD
   - { key: vietnamworks, tier: 1, enabled: true }   # needs Playwright: jobs load via XHR
-  - { key: topdev,       tier: 1, enabled: false }  # no scraper yet — see CLAUDE.md
+  - { key: topdev,       tier: 1, enabled: false }  # no scraper yet — see jobpilot/crawler/CLAUDE.md
   # LinkedIn arrives through Job Alert emails in YOUR inbox, not by crawling —
   # linkedin.com/robots.txt disallows automated access to its job pages.
-  # Needs IMAP_* in .env. See CLAUDE.md "LinkedIn qua Job Alerts".
+  # Needs IMAP_* in .env. See jobpilot/crawler/CLAUDE.md "LinkedIn qua Job Alerts".
   - { key: linkedin,     tier: 1, enabled: true }
   # Tier 2 — official feeds. No browser, no anti-bot, full JD in one request,
   # and robots.txt on both allows it. These are remote/worldwide roles, so turn
   # them off if you only want Vietnam. Other remote boards were checked and
-  # rejected — see CLAUDE.md "Nguồn tier-2 đã loại" before adding one.
+  # rejected — see jobpilot/crawler/CLAUDE.md "Nguồn tier-2 đã loại" before adding one.
   - { key: weworkremotely, tier: 2, enabled: true }   # RSS, one feed per category
   - { key: arbeitnow,      tier: 2, enabled: true }   # JSON API, real ?page=
   # Tier 3 — company career pages. One adapter per ATS platform reaches every
@@ -95,8 +95,8 @@ apply:
   portal_prefill: true        # portal jobs: pre-fill then hand off to user
 
 cv:
-  master_dir: resume          # Master CV source of truth
-  out_dir: out                # tailored CVs land in out/<job_id>/
+  master_dir: resume          # legacy and unused: the Master CV lives in the cv_versions table
+  out_dir: out                # builds land in out/cv/<scope>/
   engine: auto                # auto | tectonic (the Docker engine was removed 2026-10-04)
   tectonic_bin: tectonic      # command or path; PATH, then tools/ in the repo
   theme: awesome-red          # default Awesome-CV color theme
@@ -104,7 +104,7 @@ cv:
 # --------------------------------------------------------------------------- #
 # Which model runs which job (Phase 20)
 # --------------------------------------------------------------------------- #
-# Three calls, three different levels of difficulty — so this is per task
+# Four calls, different levels of difficulty — so this is per task
 # rather than one global switch:
 #
 #   classify  read one employer email -> one of six labels + one quoted
