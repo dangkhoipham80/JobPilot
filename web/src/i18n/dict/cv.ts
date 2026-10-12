@@ -138,7 +138,7 @@ export const cv = ns({
     // a Vietnamese bullet into an English document.
     //
     // Two guardrail notes behind this. `textnorm.quote_appears_in` does handle
-    // Vietnamese correctly and fails closed. But `edit_guard._NUMBER_WORDS` is
+    // Vietnamese correctly and fails closed. But `guard._NUMBER_WORDS` is
     // English-only and its `_WORD_RE` is `[a-zA-Z]+`, which cannot match "mười
     // hai" or "gấp đôi" — so an invented figure written as a Vietnamese number
     // *word* (digits are still caught) slips that one check. Nudging users into

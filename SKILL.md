@@ -36,21 +36,29 @@ Nếu JD yêu cầu skill user **không có**: KHÔNG thêm vào CV. Thay vào �
 **Luật này được ép bằng hình dạng dữ liệu, không phải bằng lời dặn.** Plan mà model trả về
 (`tailor/schema.py:TailorPlan`) là **index-based**: nó chỉ chọn, sắp xếp và ẩn nội dung có sẵn theo
 vị trí. "Thêm một skill" không phải điều model được dặn đừng làm — đó là thứ schema không biểu
-diễn được. Chỗ duy nhất model được viết chữ tự do là `summary`, và `tailor/guard.py` kiểm nó:
+diễn được. Chỗ duy nhất model được viết chữ tự do là `summary`, và `tailor/guard.py` kiểm nó bằng ba lớp:
 
 1. **Structural** — mọi chỉ số trong plan phải trỏ vào nội dung có thật trong Master CV, không
    trùng lặp.
 2. **Lexical** — mọi token trông giống tên công nghệ trong `summary` phải đã xuất hiện ở đâu đó
    trong Master CV. Văn xuôi thường thì để yên, nên vẫn diễn đạt lại được.
+3. **Numeric** — mọi con số trong `summary` phải là con số Master CV có ghi (chữ số, và các
+   từ chỉ số như "twelve", "dozen", "doubled"). Lớp 2 không thấy được số, vì token của nó bắt
+   đầu bằng chữ cái. Cover letter được kiểm cùng cách (`apply/letter.py`).
 
 Plan vi phạm được gửi lại cho model **một** lần để sửa (`tailor/engine.py`). Sai lần hai thì
 raise, không âm thầm ra một CV chưa ai kiểm.
 
-**Rủi ro còn lại — đừng tin guard hơn mức nó làm được.** Lớp lexical chỉ nhìn token *trông như
-tên công nghệ*. **Con số và văn xuôi thường trong `summary` không được kiểm**: một summary viết
-"improved throughput by 40% and led a team of 12" đi qua guard dù Master CV không có số nào như
-vậy. Thứ chặn nó hiện chỉ là prompt và bước user đọc diff trước khi Approve. `edit_guard` (sửa
-Master bằng câu lệnh) có kiểm chữ số; tailor guard thì chưa — đây là nợ kỹ thuật, ghi ở `CLAUDE.md`.
+**Rủi ro còn lại — đừng tin guard hơn mức nó làm được.**
+
+- Lớp numeric kiểm *con số có trong CV hay không*, không kiểm *ngữ cảnh*. CV có ghi "5 members"
+  thì "5 years of experience" vẫn qua, vì số 5 có trong CV.
+- Số viết bằng chữ từ *one* tới *ten* không được kiểm (chúng là từ đệm quá phổ biến), và số viết
+  bằng chữ tiếng Việt ("mười hai", "gấp đôi") cũng không. Chữ số thì bắt được ở mọi ngôn ngữ.
+- Thâm niên **tự tính từ ngày tháng** ("1+ years") bị từ chối nếu CV không ghi con số đó. Muốn
+  summary nói vậy thì ghi nó vào Master CV.
+- Văn xuôi không có số và không có tên công nghệ ("led the migration") không lớp nào kiểm. Thứ
+  chặn nó vẫn là prompt và bước user đọc diff trước khi Approve.
 
 > Sửa **Master CV** bằng câu lệnh (CV Studio) là việc khác và dùng guardrail **ngược** lại:
 > ở đó dữ kiện mới là mục đích, nên luật là *provenance* (mọi thứ thêm vào phải trích được từ
@@ -148,8 +156,8 @@ Khi user bấm **✏️ Sửa** và nhập instruction (vd "rút gọn summary",
 - Re-build, re-diff, hiện lại. Tối đa `app.edit_max_rounds` vòng (mặc định 3), sau đó user Approve hoặc Bỏ.
 
 ## 5. Checklist trước khi trả kết quả
-- [ ] Plan qua cả hai lớp guardrail (structural + lexical).
-- [ ] `summary` không có con số hay thành tích nào Master CV không ghi — guard **không** bắt được, phải đọc.
+- [ ] Plan qua cả ba lớp guardrail (structural + lexical + numeric).
+- [ ] `summary` không có thành tích nào Master CV không ghi — câu văn xuôi không số thì guard **không** bắt được, phải đọc.
 - [ ] `match_score` và `gaps` đã có.
 - [ ] PDF build ok; số trang đã được báo.
 - [ ] Cover letter đúng công ty/vị trí.

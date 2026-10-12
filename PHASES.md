@@ -2244,3 +2244,31 @@ run; và "crawl lại y hệt" 3 cấu hình gần nhất. Luật + bẫy: `jobp
   `updated`. Bấm crawl lại → Run 178 ghi `request` **giống hệt** Run 177; `/crawl/recent` gộp hai
   lượt đó làm một. 9 từ khoá → 422; UI chặn nút + báo. Run cũ (trước tính năng) đọc ngược được.
 - Bẫy React đã tránh: guard "Crawl lại" là `useRef`, không phải state (`web/src/CLAUDE.md`).
+
+## Fix guard-numbers — con số bịa lọt qua guard của tailor và cover letter (2026-10-12)
+
+Lộ ra khi rà tài liệu để public repo: `SKILL.md` viết luật không bịa "được ép bằng hình dạng dữ
+liệu", reviewer thử thật và `check_plan` trả `ok` cho một `summary` viết "improved throughput by
+40% and led a team of 12 engineers". Lớp lexical bắt đầu mọi token bằng chữ cái nên **không bao
+giờ nhìn thấy một con số**. Docstring của `edit_guard` còn ghi lỗ này "survivable in tailoring,
+where the schema forbids writing such a sentence at all" — sai, vì `summary` là chữ tự do. Cover
+letter (300 từ văn xuôi, gửi cho nhà tuyển dụng) có đúng lỗ đó.
+
+- **Sửa:** phần kiểm con số của `edit_guard` chuyển lên `tailor/guard.py` thành `numbers_in` /
+  `master_text` / `unknown_numbers`, dùng chung cho ba nơi: edit Master, `summary` của tailor,
+  và cover letter. Một cách đếm, không fork — hai bản song song sẽ lệch nhau.
+- **Nguồn được phép:** tailor = con số Master CV có ghi. Letter = thêm số nằm trong tên job /
+  công ty / địa điểm ("Web3", "Engineer II"); `learning_note` thêm số trong requirement `MISSING`.
+- **Thử trên dữ liệu thật (chỉ đọc):** 2 plan tailor đang lưu, 1 cái bị luật mới từ chối vì
+  "1+ years" — thâm niên model **tự tính từ ngày tháng**, CV không ghi số
+  đó. Giữ luật chặt: đây đúng là suy diễn, và muốn có câu đó thì ghi vào Master. Prompt giờ nói rõ
+  điều này để khỏi tốn một vòng retry.
+- **Chạy thật:** `llm bench --task tailor --limit 2` trên `claude_cli` / Opus → 2/2 qua guardrail
+  ngay vòng đầu.
+- **Giới hạn còn lại** (ghi ở `SKILL.md §0`): luật kiểm *có mặt*, không kiểm *ngữ cảnh* (CV có
+  "5 members" thì "5 years" vẫn qua); *one..ten* viết bằng chữ và số viết bằng chữ tiếng Việt
+  không được kiểm; văn xuôi không số thì không lớp nào kiểm.
+- **Không đo được:** cover letter chưa có bench, và 3 file letter cũ trong DB không còn trên đĩa,
+  nên luật mới cho letter mới chỉ qua test, chưa qua một lượt gọi model thật.
+
+1039 test pass.

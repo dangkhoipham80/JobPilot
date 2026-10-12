@@ -11,6 +11,8 @@ from jobpilot.tailor.diff import diff_documents
 from jobpilot.tailor.guard import (
     GuardrailViolation,
     check_plan,
+    master_text,
+    numbers_in,
     unknown_terms,
     vocabulary,
 )
@@ -89,6 +91,42 @@ def test_summary_reusing_master_vocabulary_is_accepted(master):
         summary="Backend engineer building **RESTful APIs** with `Spring Boot` and `JUnit`."
     )
     assert check_plan(plan, master).ok
+
+
+def test_summary_with_an_invented_metric_is_rejected(master):
+    """The term check starts every token at a letter, so it never sees a number.
+    This summary names no technology at all and used to pass untouched."""
+    report = check_plan(
+        _plan(summary="Backend engineer who improved throughput by 40% and led a team of 12."),
+        master,
+    )
+    assert not report.ok
+    assert "40" in report.violations[0] and "12" in report.violations[0]
+    with pytest.raises(GuardrailViolation):
+        report.raise_if_bad()
+
+
+def test_summary_with_a_spelled_out_metric_is_rejected(master):
+    """ "twelve" is exactly as unbacked as "12"."""
+    report = check_plan(_plan(summary="Backend engineer who led a team of twelve."), master)
+    assert not report.ok and "twelve" in report.violations[0]
+
+
+def test_summary_may_repeat_a_number_the_cv_states(master):
+    stated = sorted(numbers_in(master_text(master)), key=len)[-1]  # a year, e.g. "2024"
+    assert check_plan(_plan(summary=f"Backend engineer since {stated}."), master).ok
+
+
+def test_summary_small_number_words_are_deliberately_not_checked(master):
+    """one..ten are ordinary English ("one of the two services"); checking them
+    would reject prose that claims no metric. Same trade-off as the edit guard."""
+    plan = _plan(summary="Backend engineer on one of the two core services of the team.")
+    assert check_plan(plan, master).ok
+
+
+def test_a_digit_inside_a_name_counts_as_a_number():
+    """ "S3" copied from the CV carries its "3" with it; "S3" from nowhere does not."""
+    assert numbers_in("stored in S3 and EC2") == {"3", "2"}
 
 
 # --------------------------------------------------------------------------- #
