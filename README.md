@@ -286,7 +286,15 @@ that only appeared against live sites, each with the test that now pins it.
 
 ## 📝 License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE) — for JobPilot's own code. Third-party material keeps its own terms:
+
+- `awesome-cv.cls` and `fontawesome.sty` come from Awesome-CV (LPPL v1.3c); both are modified
+  here.
+- The templates in `jobpilot/cv/templates/awesome_cv/` derive from Awesome-CV's example
+  templates (CC BY-SA 4.0).
+- The fonts in `fonts/` are Apache 2.0 (Roboto) and SIL OFL 1.1 (Font Awesome); the licence
+  texts sit next to them.
+- The job-board logos in `web/public/logos/` are trademarks of their owners.
 
 ## ⭐ Acknowledgments
 
