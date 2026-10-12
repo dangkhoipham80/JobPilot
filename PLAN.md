@@ -2,7 +2,9 @@
 
 > Agent tự động **crawl job lập trình** (ITviec, TopCV, VietnamWorks) → quản lý qua **Web Dashboard local** (control plane chính: dashboard, filter, funnel, duyệt/sửa CV) với **Slack** làm kênh thông báo + thao tác nhanh → **tự tailor CV (LaTeX)** cho job đã chọn → bạn duyệt/sửa → **nộp đơn theo kênh (hybrid)** → báo kết quả/lỗi.
 
-Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex`, build bằng LaTeX) thành một pipeline agentic hoàn chỉnh.
+Repo có hai lớp: bộ khung LaTeX Awesome-CV (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`) và pipeline JobPilot xây trên nó. **Repo không chứa CV nào** — Master CV là JSON có cấu trúc trong bảng `cv_versions` của Postgres.
+
+> **Đọc file này thế nào.** §1–§8 mô tả hệ thống **như đang chạy** (rà lại 2026-10-12). §9 là roadmap gốc, đã xong, giữ làm lịch sử; §9.1 là roadmap đang mở. Chi tiết từng phase và những bug chỉ lộ ra khi chạy thật nằm ở `PHASES.md`; luật theo vùng code nằm ở `CLAUDE.md` của vùng đó.
 
 ---
 
@@ -11,10 +13,11 @@ Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex
 | Chủ đề | Lựa chọn | Hệ quả kiến trúc |
 |---|---|---|
 | **Cơ chế nộp đơn** | **Hybrid theo kênh** | Job qua **email** → agent tự gửi CV+cover letter (full-auto, an toàn). Job qua **portal/LinkedIn** → agent soạn sẵn + mở trang pre-fill, **user bấm Submit cuối** (human-in-the-loop). Fail → báo Slack. |
-| **Nguồn crawl** | **ITviec + TopCV + VietnamWorks** (lõi MVP; +TopDev & mở rộng theo tier — xem §5.1.1) | Không scrape LinkedIn/Facebook (login-wall + ToS). Kiến trúc pluggable: thêm nguồn = thêm 1 scraper + 1 dòng config. |
-| **Nơi chạy** | **Local, chạy tay/lịch** | Dùng IP/session thật của user → ít bị anti-bot. Không cần proxy residential. Cron nhẹ (tùy chọn). |
+| **Nguồn crawl** | **ITviec + TopCV + VietnamWorks** (lõi) + nguồn mở rộng theo tier — xem §5.1.1 | Không scrape LinkedIn/Facebook (login-wall + ToS); LinkedIn chỉ được đọc qua email Job Alert trong hộp thư của chính user. Kiến trúc pluggable: thêm nguồn = thêm 1 scraper + 1 dòng config. |
+| **Nơi chạy** | **Mac mini ở nhà + Tailscale** (từ 2026-10-04; VPS Việt Nam là phương án B — `DEPLOY.md`) | LaunchAgent, chỉ chạy khi máy bật. IP dân dụng VN → ít bị anti-bot, không cần proxy. uvicorn bind `127.0.0.1`, ra ngoài chỉ qua tailnet. |
 | **Giao diện quản lý** | **Web Dashboard local** là chính; **Slack** phụ (thông báo + thao tác nhanh) | Web: dashboard/funnel/filter/lịch sử/duyệt-sửa CV. Slack chỉ để tiện theo dõi + bấm nhanh khi rời máy. |
 | **Database** | **PostgreSQL** (JSONB) | Entity quan hệ (jobs/applications/edits/status) + JD bán cấu trúc trong JSONB; mạnh cho query/aggregate dashboard. Thay cho SQLite ở bản đầu. |
+| **Mã nguồn** | **Repo public, MIT** (từ 2026-10-12) | Không dữ liệu cá nhân nào trong repo: CV, DB, `.env`, `config.local.yaml` đều nằm ngoài git. `main` được bảo vệ, thay đổi đi qua pull request. |
 
 **Nguyên tắc bất di bất dịch:**
 1. **Không bịa** (truthfulness): agent chỉ được *nhấn mạnh/diễn đạt lại* kinh nghiệm có thật trong Master CV; **tuyệt đối không thêm** kỹ năng/kinh nghiệm không có. Xem `SKILL.md`.
@@ -42,9 +45,9 @@ Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex
        ▼              ▼                   ▼                   ▼
  ┌───────────┐  ┌───────────┐      ┌───────────────┐   ┌────────────────────┐
  │ CRAWLERS  │  │ TAILOR    │      │ APPLY DISPATCH│   │  PostgreSQL (JSONB) │
- │ itviec/   │  │ Claude→   │      │ email:auto    │   │  jobs·applications· │
- │ topcv/    │  │ resume/tex│      │ portal:prefill│   │  edits·status·runs  │
- │ vnworks   │  │ →build CV │      │ →success/fail │   └────────────────────┘
+ │ itviec/   │  │ LLM→plan  │      │ email:auto    │   │  jobs·applications· │
+ │ topcv/    │  │ →JSON CV  │      │ portal:prefill│   │  edits·status·runs  │
+ │ vnworks…  │  │ →build PDF│      │ →success/fail │   └────────────────────┘
  └─────┬─────┘  └───────────┘      └───────────────┘
        │ Playwright+stealth → Job Normalizer (schema chung) → Postgres
        ▼
@@ -55,12 +58,12 @@ Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex
 
 ## 3. Data model
 
-### 3.1 `Job` schema (chuẩn hoá chung cho 3 site)
+### 3.1 `Job` schema (chuẩn hoá chung cho mọi nguồn)
 
 ```jsonc
 {
   "id": "itviec:2156537",            // <source>:<native_id>, dùng để dedup
-  "source": "itviec",                // itviec | topcv | vietnamworks
+  "source": "itviec",                // itviec | topcv | vietnamworks | linkedin | weworkremotely | …
   "url": "https://itviec.com/...",
   "title": "Backend Engineer (Java, Spring Boot)",
   "company": "ACME Corp",
@@ -74,20 +77,23 @@ Dự án này mở rộng CV Template LaTeX hiện có (`cv.tex` + `resume/*.tex
   "apply_target": "hr@acme.com | https://apply-url",
   "raw_html_ref": "store/raw/itviec-2156537.html",   // lưu để audit
   "crawled_at": "2026-07-09T08:00:00+07:00",
-  "match_score": 0.0                 // điền ở bước tailor
+  "match_score": 0.0                 // khớp từ khoá lúc crawl; tailor và intake có điểm riêng
 }
 ```
+
+Đây là phần lõi. `id` dài tối đa 128 ký tự (`crawler/types.py:make_job_id`). Payload về sau có thêm cờ chất lượng tin, facet phân tích (lương đã parse, skill, tỉnh/thành, onsite/hybrid/remote) và JD có cấu trúc — xem `jobpilot/crawler/CLAUDE.md`, `jobpilot/analytics/CLAUDE.md`, `jobpilot/intake/CLAUDE.md`.
 
 ### 3.2 PostgreSQL (schema `jobpilot`)
 
 Postgres + JSONB (payload JD linh hoạt) + cột quan hệ để filter/aggregate cho dashboard. Migrations bằng Alembic.
 
-- `jobs(id PK, source, payload JSONB, title, company, level, posted_at, status, match_score, crawled_at)` — cột rút ra từ payload để index/filter nhanh.
+- `jobs(id PK, source, payload JSONB, title, company, company_id FK, location, salary, level, posted_at, status, match_score, apply_channel, apply_target, crawled_at, last_seen_at, run_id FK)` — cột rút ra từ payload để index/filter nhanh.
 - `job_status` (enum): `DISCOVERED → SHORTLISTED → TAILORING → REVIEW → APPROVED → SUBMITTING → SUBMITTED | FAILED | SKIPPED`
 - `applications(id PK, job_id FK, cv_pdf_path, cover_letter_path, channel, submitted_at, result, error_msg)`
 - `edits(id PK, job_id FK, round, instruction, created_at)` — log vòng sửa CV.
 - `runs(id PK, kind, started_at, finished_at, stats JSONB, log_ref)` — mỗi lần crawl/tailor/apply để hiện lên dashboard (số job, lỗi per-site…).
-- `cv_versions(id PK, scope, job_id FK nullable, version, content JSONB, tex_snapshot, theme JSONB, author, created_at)` — version history cho CV Studio. `scope = 'master' | 'tailored'`; `content` = JSON structured của editor; `tex_snapshot` = .tex đã serialize (audit/rollback); `author = 'user' | 'agent'` (phân biệt sửa tay vs agent tailor).
+- `cv_versions(id PK, scope, job_id FK nullable, version, content JSONB, tex_snapshot, theme JSONB, meta JSONB, author, created_at)` — version history cho CV Studio. `scope = 'master' | 'tailored'`; `content` = JSON structured của editor; `tex_snapshot` = .tex đã serialize (audit/rollback); `author = 'user' | 'agent'` (phân biệt sửa tay vs agent tailor).
+- Thêm sau bản plan đầu: `application_events` (lịch sử outcome, append-only), `inbox_suggestions` (đề xuất outcome từ hộp thư, chờ user xác nhận), `companies` + `hr_contacts` (nhà tuyển dụng và liên hệ HR), `llm_calls` (mỗi lượt gọi model: chi phí, độ trễ, có qua guardrail không).
 - **Dedup**: `id = <source>:<native_id>` unique; thêm dedup xuyên nguồn theo `(company, normalized_title)`; không post lại job đã thấy trong N ngày.
 - **Index**: `status`, `source`, `posted_at`, `match_score`, GIN trên `payload` (search JD).
 
@@ -96,7 +102,7 @@ Postgres + JSONB (payload JD linh hoạt) + cột quan hệ để filter/aggrega
 ## 4. Pipeline & State machine (per job)
 
 ```
-DISCOVERED ──post Slack──▶ (user chọn) ──▶ SHORTLISTED
+DISCOVERED ──dashboard───▶ (user chọn) ──▶ SHORTLISTED
    │ (không chọn)                                │
    └──────────────────────────▶ SKIPPED         ▼
                                             TAILORING ──build fail──▶ FAILED
@@ -114,8 +120,10 @@ DISCOVERED ──post Slack──▶ (user chọn) ──▶ SHORTLISTED
                               ▼                     ▼
                           SUBMITTED             (user confirm) ──▶ SUBMITTED
                               │                     │ fail
-                              └── fail ──────────────┴──────────▶ FAILED (báo lỗi Slack)
+                              └── fail ──────────────┴──────────▶ FAILED (báo lỗi)
 ```
+
+Vòng đời **sau** `SUBMITTED` (replied / interview / offer / rejected / withdrawn / ghosted) sống ở tầng `Application`, không thêm giá trị vào `job_status` — xem §9.1.
 
 ---
 
@@ -123,10 +131,12 @@ DISCOVERED ──post Slack──▶ (user chọn) ──▶ SHORTLISTED
 
 ### 5.1 `crawler/` — thu thập job
 - **Công nghệ**: Playwright (Python) + stealth (playwright-stealth / patchright), 1 scraper/site kế thừa `BaseScraper`.
-- **Chiến lược per-site** (dựa trên nghiên cứu 2026):
-  - **ITviec** (~70% success): search rộng `"java spring boot"` → parse link từ attribute `data-search--job-selection-job-url` → fetch trang chi tiết. Bị **Cloudflare** → cần stealth + retry, session sống lâu.
-  - **TopCV** (~50%): Vue.js SPA, dùng URL search trực tiếp, chờ hydration.
-  - **VietnamWorks** (~60%): React/Next.js SPA. `search` API trả JD tóm tắt; full JD nằm trong `<script id="__NEXT_DATA__">` (de-hydration) → parse JSON đó.
+- **Chiến lược per-site** (đã chạy thật; bẫy cụ thể ở `jobpilot/crawler/CLAUDE.md`):
+  - **ITviec**: sau **Cloudflare** → Playwright. Lương phải đăng nhập mới thấy, nên `salary` là `null`.
+  - **TopCV**: render ở server + `JobPosting` của schema.org (JSON-LD). Từ khoá nằm trong *path*, không phải `?keyword=`.
+  - **VietnamWorks**: tin về qua XHR, lazy-load khoảng 9–20 thẻ mỗi trang nên phải đi từng trang.
+  - **Nguồn có feed/API chính thức** (WeWorkRemotely, Arbeitnow, Greenhouse, Lever): `FeedScraper` + `HttpFetcher`, không cần browser.
+  - **LinkedIn**: không crawl. Chỉ đọc email Job Alert trong hộp thư của user qua IMAP.
 - **Chống anti-bot & lịch sự**: đọc `robots.txt`; rate-limit (2–5s/req, jitter); user-agent thật; giới hạn N job/site/lần; cache HTML thô để tránh fetch lại; graceful fail (site nào lỗi vẫn chạy tiếp site khác).
 - **Filter**: chỉ giữ job lập trình đúng level (fresher/junior backend Java/Spring, tuỳ config), lọc keyword loại trừ.
 - **Output**: list `Job` đã normalize → `STORE`.
@@ -138,11 +148,11 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 
 | Tier | Nguồn | Crawl được? | Ưu tiên | Ghi chú |
 |---|---|---|---|---|
-| **1 — MVP (job board IT, có cấu trúc)** | **ITviec, TopDev, TopCV, VietnamWorks** | ✅ Playwright+stealth | Cao nhất | TopDev tập trung IT (rất hợp dev), TopCV volume lớn hợp fresher. Đúng đối tượng Java backend. |
-| **2 — Job board mở rộng (VN + remote)** | ✅ **WeWorkRemotely** (RSS), ✅ **Arbeitnow** (JSON, có `?page=`) — đã làm ở Phase 11. Còn lại: CareerViet, Glints, Vieclam24h, JobHopin, Wellfound | ✅ feed chính thức → không cần browser, không anti-bot, JD đầy đủ trong 1 request | Trung | Glints hợp startup junior–mid. Wellfound có trang Vietnam/HCMC. **Đã kiểm tra và LOẠI**: Remotive + Jobicy (`robots.txt` cấm `/api/`), RemoteOK (`ClaudeBot: Disallow` + `Content-Signal: ai-train=no` — giống TopDev), Himalayas (API bỏ qua mọi filter + cắt `limit` xuống 20 → trả job ngoài ngành). Chi tiết ở CLAUDE.md "Nguồn tier-2 đã loại". |
-| **3 — Career page công ty (qua ATS adapter)** | FPT Software, NashTech, KMS, TMA, VNG/Zalo, MoMo, Shopee, Grab, Tiki, Techcombank, VPBank, One Mount, Cốc Cốc, EPAM, Endava, Bosch, Renesas… | ✅ **nếu chạy ATS chuẩn** (Greenhouse/Lever/Ashby/Workable/Workday có JSON endpoint đoán được); ⚠️ nếu custom | Trung–cao | **Một `ATSAdapter` phủ nhiều công ty**: detect nền tảng → gọi API board tương ứng. "Job ngon thường lên career page trước / chỉ referral" → nguồn chất lượng cao. |
+| **1 — Lõi (job board IT, có cấu trúc)** | ✅ **ITviec, TopCV, VietnamWorks** chạy thật. **TopDev chưa làm** | ✅ Playwright | Cao nhất | TopCV volume lớn hợp fresher. TopDev: robots `Allow: /` cho `*` nhưng chặn riêng `ClaudeBot` + `Content-Signal: ai-train=no` → cần một quyết định rõ, không mặc định làm. |
+| **2 — Job board mở rộng (VN + remote)** | ✅ **WeWorkRemotely** (RSS), ✅ **Arbeitnow** (JSON, có `?page=`) — đã làm ở Phase 11. Còn lại: CareerViet, Glints, Vieclam24h, JobHopin, Wellfound | ✅ feed chính thức → không cần browser, không anti-bot, JD đầy đủ trong 1 request | Trung | Glints hợp startup junior–mid. Wellfound có trang Vietnam/HCMC. **Đã kiểm tra và LOẠI**: Remotive + Jobicy (`robots.txt` cấm `/api/`), RemoteOK (`ClaudeBot: Disallow` + `Content-Signal: ai-train=no` — giống TopDev), Himalayas (API bỏ qua mọi filter + cắt `limit` xuống 20 → trả job ngoài ngành). Chi tiết ở `jobpilot/crawler/CLAUDE.md` → "Nguồn tier-2 đã loại". |
+| **3 — Career page công ty (qua ATS adapter)** | FPT Software, NashTech, KMS, TMA, VNG/Zalo, MoMo, Shopee, Grab, Tiki, Techcombank, VPBank, One Mount, Cốc Cốc, EPAM, Endava, Bosch, Renesas… | ✅ **Greenhouse + Lever đã làm** (Phase 12, `crawler/ats.py`, board JSON API công khai). Ashby đã kiểm tra và loại (robots). Workable/Workday chưa làm; ⚠️ career page custom thì không | Trung–cao | **Một adapter phủ mọi công ty trên cùng nền tảng**: theo dõi thêm một công ty = thêm một slug trong `ats:` của config. "Job ngon thường lên career page trước / chỉ referral" → nguồn chất lượng cao. |
 | **4 — Freelance/contract** | Upwork, Toptal, Arc.dev, Turing | ⚠️ mô hình khác (contract, cần profile mạnh) | Thấp | Ngoài scope tailor-CV-nộp-đơn hiện tại; để sau nếu cần. |
-| **5 — Không crawl (manual/referral)** | **Facebook groups**, headhunter (Navigos, Adecco, Manpower, JAC, Robert Walters, HR2B…), Discord/Telegram/Zalo dev, alumni/meetup, **LinkedIn** | ❌ | — | FB groups & LinkedIn: login-wall + vi phạm ToS → **không auto-crawl**. Đây là kênh quan hệ/referral, JobPilot chỉ hỗ trợ gián tiếp (nhắc user, lưu CV tailored để gửi tay). |
+| **5 — Không crawl (manual/referral)** | **Facebook groups**, headhunter (Navigos, Adecco, Manpower, JAC, Robert Walters, HR2B…), Discord/Telegram/Zalo dev, alumni/meetup, **LinkedIn** | ❌ | — | FB groups & LinkedIn: login-wall + vi phạm ToS → **không auto-crawl** (LinkedIn chỉ vào hệ thống qua email Job Alert của chính user). Đây là kênh quan hệ/referral, JobPilot chỉ hỗ trợ gián tiếp (nhắc user, lưu CV tailored để gửi tay). |
 
 **Insight áp dụng vào hệ thống** (từ thực tế tuyển dev VN):
 - **Alert theo stack**: `config.yaml` khai báo `stacks: ["Java Spring Boot", "Backend", ...]` → crawler filter theo đó (mở rộng được: ReactJS, NodeJS, Golang, DevOps, Data Engineer, BrSE…).
@@ -150,6 +160,8 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - **Dedup xuyên nguồn**: cùng 1 job đăng nhiều site → dedup theo `(company, title normalized)` bên cạnh `id`, tránh spam Slack.
 
 ### 5.2 `slack/` — kênh phụ: thông báo + thao tác nhanh (Bolt Python, Socket Mode)
+> **Trạng thái:** đã làm ở Phase 7. Slack là **client thuần của REST API** (`slack/client.py`) — backend không biết gì về Slack. Các bullet dưới là thiết kế ban đầu; hành vi thật và cách cấu hình xem `PHASES.md` (Phase 7) và mục Slack trong `CLAUDE.md`.
+>
 > Slack **không** phải nơi quản lý chính (đó là Web Dashboard §5.6). Slack để **tiện theo dõi khi rời máy** và bấm nhanh các quyết định quan trọng. Cả Slack và Web cùng điều khiển **một** state trong Postgres (thao tác ở đâu cũng đồng bộ; dashboard cập nhật realtime qua WebSocket).
 - **Thông báo**: crawl xong ("🔥 12 job mới, 3 job <48h"), CV tailor xong chờ duyệt, đã nộp / lỗi nộp.
 - **Post batch**: mỗi job = 1 Block Kit **Card** (title, company, salary, top skills, match hint, link) + nút **`Chọn`** (checkbox/button). 1 message tổng có nút **`Tailor các job đã chọn`** + link "Mở Dashboard".
@@ -159,21 +171,22 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - **Kỹ thuật**: `@app.action("select_job_*")`, `@app.action("approve_*")`, `@app.action("edit_*")`, `@app.view("edit_modal")`. Mỗi nút mang `value = job_id`. `ack()` trước, update message sau.
 
 ### 5.3 `tailor/` — bộ não tailor CV (xem `SKILL.md`)
-- **Input**: `Job.description_md` + **Master CV** (`resume/*.tex` hiện tại là nguồn sự thật).
-- **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) rewrite có kiểm soát các section (`summary`, `skill`, thứ tự/nhấn mạnh `experience`/`project`) → (4) sinh **cover letter** → (5) build PDF.
-- **Guardrail**: không bịa; mọi thay đổi phải map về dữ kiện có thật. Output kèm **diff giải thích** để user duyệt.
-- **Build**: tạo bản sao `resume/` theo job (thư mục `out/<job_id>/`), render biến, gọi engine LaTeX (tectonic — engine Docker đã gỡ 2026-10-04), lấy `cv.pdf`.
+- **Input**: `Job.description_md` + **Master CV** (`CvDocument` JSON trong `cv_versions`, scope `master` — nguồn sự thật).
+- **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) model trả một **plan index-based** (`TailorPlan`): viết lại `summary`, sắp xếp/ẩn section, entry, bullet có sẵn → (4) sinh **cover letter** → (5) build PDF.
+- **Guardrail**: không bịa — ép bằng schema (plan chỉ trỏ tới nội dung có sẵn) + hai lớp kiểm structural và lexical (`tailor/guard.py`), một lần retry có phản hồi. Output kèm **diff giải thích** để user duyệt.
+- **Build**: áp plan lên Master (deterministic) → một row `cv_versions` mới (`author='agent'`) → render `.tex` qua Jinja2 → tectonic → `out/cv/<scope>/cv.pdf`. Master không bị đổi.
 - **ATS**: chèn keyword từ JD một cách tự nhiên vào phần có thật; giữ format sạch để ATS đọc được.
 
 ### 5.4 `apply/` — dispatcher nộp đơn (hybrid)
-- **`email`**: build email (subject/body chuẩn hoá theo template + cover letter) đính kèm `cv.pdf` → gửi qua **Gmail API / SMTP** (dùng email user đã cấu hình). Full-auto sau khi Approve.
-- **`portal`**: mở Playwright (non-headless), điều hướng tới `apply_target`, pre-fill field có thể (tên, email, upload CV) → **dừng lại**, ping Slack "đã pre-fill, bạn kiểm tra & bấm Submit". Không tự submit.
-- **`external/LinkedIn`**: chỉ gom link + CV đã tailor về Slack, user tự nộp.
-- **Error handling**: mọi exception → `FAILED` + message Slack có nguyên nhân + fallback link nộp tay + đường dẫn file CV.
+- **`email`**: build email (subject/body chuẩn hoá theo template + cover letter) đính kèm `cv.pdf` → gửi qua **SMTP** (app password của Gmail dùng được) hoặc Gmail API — `apply.email.method`. Full-auto sau khi Approve, sau **3 chốt**: `enabled` (tắt thì không gửi gì), `dry_run` (dựng và ghi lại thư nhưng không gửi), `test_recipient` (gửi về địa chỉ thử thay vì nhà tuyển dụng). Ba chốt này không sửa được qua HTTP.
+- **`portal`**: mở Playwright (non-headless), điều hướng tới `apply_target`, pre-fill field có thể (tên, email, upload CV) → **dừng lại**, báo trên dashboard (và Slack nếu bật) "đã pre-fill, bạn kiểm tra & bấm Submit". Không tự submit.
+- **`external/LinkedIn`**: chỉ gom link + CV đã tailor, user tự nộp rồi `confirm-submit`.
+- **Error handling**: mọi exception → `FAILED` kèm nguyên nhân + fallback link nộp tay + đường dẫn file CV.
+- **Sau khi nộp**: nhắc follow-up (`followup.py`, không tự gửi), ghi outcome (`outcome.py`), đọc thư trả lời để **đề xuất** outcome (`inbox.py`) — xem `jobpilot/apply/CLAUDE.md`.
 
 ### 5.5 `orchestrator/` — điều phối (chạy trong API backend)
 - State machine per job (bảng ở §4). Là service bên trong **API Backend (FastAPI)**; kích hoạt qua REST (từ Web/Slack) hoặc CLI/cron.
-- Tác vụ dài (crawl, tailor, build PDF, apply) chạy nền qua **job queue** (asyncio task / RQ / APScheduler), phát tiến độ realtime qua **WebSocket** cho dashboard và message cho Slack.
+- Tác vụ dài (crawl, tailor, build PDF, apply) chạy nền qua **`TaskQueue`** — một ThreadPoolExecutor **1 worker trong tiến trình** (`orchestrator.py`); endpoint trả `202` kèm task id, tiến độ phát realtime qua **WebSocket**. Vì hàng đợi nằm trong tiến trình nên service phải chạy `--workers 1`.
 - Idempotent: đọc/ghi trạng thái từ **Postgres**; chạy lại không hỏng.
 
 ### 5.6 `web/` — Web Dashboard (control plane chính)
@@ -188,13 +201,22 @@ Backend **FastAPI** (REST + WebSocket) + Frontend **React (Vite + TypeScript) + 
 - **📮 Applications (Kanban)**: cột theo status (`SHORTLISTED → … → SUBMITTED/FAILED`), kéo-thả hoặc bấm hành động; xem lỗi nộp + link nộp tay + file CV.
 - **⚙️ Settings**: `stacks` alert, bật/tắt nguồn theo tier, ngưỡng `match_score`, cấu hình email apply, số vòng edit tối đa `K`, lịch cron.
 - **🕹️ Runs/Logs**: lịch sử lần crawl/tailor/apply, thống kê per-site (success rate), log lỗi.
+- **🏢 Companies** *(thêm sau)*: nhà tuyển dụng và liên hệ HR; email HR có thể thành nơi nhận đơn của một tin.
+- **📈 Market** *(thêm sau)*: thị trường nhìn từ corpus đã crawl — skill, lương, thành phố, cấp bậc.
+- **🧠 Models** *(thêm sau)*: chọn provider + model theo từng việc; chi phí, độ trễ, tỉ lệ qua guardrail lần đầu.
+- **💾 Backup** *(thêm sau)*: các bản backup DB đang có, chạy một bản, lệnh khôi phục.
+- **📖 Guide** *(thêm sau)*: cả pipeline khớp với nhau thế nào.
+
+Dashboard **song ngữ Việt/Anh**, mặc định tiếng Việt (`web/src/i18n/`).
 
 #### 5.6.1 🎨 CV Studio — editor + live preview + templates
+
+> **Trạng thái:** đã có structured editor, raw LaTeX mode, PDF preview, version history + diff hai version bất kỳ, sửa Master bằng câu lệnh, và picker cho **2 template** (`awesome_cv`, `plain`). **Chưa có**: HTML live preview và theme gallery — phần mô tả hai thứ đó bên dưới vẫn là thiết kế.
 
 Layout 2 cột: **trái = editor**, **phải = preview** (như Overleaf nhưng thân thiện hơn).
 
 **Editor — dual mode:**
-- **Structured mode (mặc định)**: form theo section (Summary textarea, Skills tag-input kéo-thả thứ tự, Experience/Project card có bullet list thêm/xoá/kéo, Education, Honors). Bật/tắt section, kéo đổi thứ tự section. Dữ liệu là **JSON structured** (nguồn sự thật của editor) → serialize ra `resume/*.tex` qua template engine (Jinja2), giữ đúng macro Awesome-CV (`\tech{}`, `\cvsimpleentry`…). User không cần biết LaTeX.
+- **Structured mode (mặc định)**: form theo section (Summary textarea, Skills tag-input kéo-thả thứ tự, Experience/Project card có bullet list thêm/xoá/kéo, Education, Honors). Bật/tắt section, kéo đổi thứ tự section. Dữ liệu là **JSON structured** (nguồn sự thật của editor) → serialize ra `.tex` qua template engine (Jinja2), giữ đúng macro Awesome-CV (`\tech{}`, `\cvsimpleentry`…). User không cần biết LaTeX.
 - **Raw LaTeX mode (nâng cao)**: Monaco editor sửa thẳng `.tex` (syntax highlight). Chuyển structured→raw một chiều có cảnh báo (raw edit thì mất khả năng round-trip về form).
 
 **Preview — dual mode (giải quyết độ trễ compile LaTeX):**
@@ -213,21 +235,22 @@ Layout 2 cột: **trái = editor**, **phải = preview** (như Overleaf nhưng t
 
 **API (phác thảo):** `GET /jobs`, `POST /jobs/{id}/shortlist`, `POST /jobs/{id}/tailor`, `GET /jobs/{id}/cv` (PDF), `POST /jobs/{id}/edit`, `POST /jobs/{id}/approve`, `POST /jobs/{id}/apply`, `POST /crawl`, `GET /stats`, `WS /ws` (tiến độ realtime); **CV Studio:** `GET/PUT /cv/{scope}` (scope = `master` | job_id; JSON structured), `POST /cv/{scope}/compile` (→ PDF), `GET /cv/{scope}/versions`, `POST /cv/{scope}/rollback/{ver}`, `GET /cv/templates`.
 
-**Auth**: local single-user (token đơn giản trong `.env`) — vì chạy local, không public.
+Mọi route REST/WS thật nằm dưới prefix **`/api`**; danh sách trên là phác thảo ban đầu.
+
+**Auth**: single-user, token trong `.env`. Token **không** phải lớp chặn người ngoài — Vite nướng nó vào bundle nên ai mở được trang là đọc được; tầng mạng (loopback + Tailscale) mới là auth. Xem `jobpilot/api/CLAUDE.md`.
 
 ---
 
-## 6. Cải thiện Master CV hiện tại (workstream song song)
+## 6. Master CV
 
-Rà soát nhanh `resume/*.tex` — các cải thiện đề xuất (làm ở Phase 1, không bịa nội dung):
-- **Summary**: thêm 1 dòng định lượng impact; đồng bộ giọng văn với JD backend.
-- **Skills**: đang comment nhiều dòng (Backend Frameworks, Frontend, Tools). Cân nhắc bật lại có chọn lọc để ATS bắt keyword (Spring Boot, FastAPI, Git, Docker...).
-- **Experience/Project**: dùng cấu trúc **action verb + tech + kết quả định lượng** (đã khá tốt); chuẩn hoá thì động từ (past tense), thêm metric nơi có thật.
-- **Honors**: "300+ LeetCode" ok; cân nhắc gom cùng chứng chỉ nếu có.
-- **Master vs tailored**: giữ `resume/` làm **Master CV** (đầy đủ nhất); bản tailored sinh ra ở `out/<job_id>/`, không ghi đè Master.
-- **Nhất quán ngày tháng**: tốt nghiệp Apr 2026; đảm bảo mọi mốc thống nhất.
+Master CV **không nằm trong repo**. Nó là một `CvDocument` (JSON có cấu trúc) trong bảng `cv_versions`, scope `master`, ra/vào qua API (`GET/PUT /cv/{scope}`) và CV Studio.
 
-> Chi tiết rewrite rule nằm ở `SKILL.md`.
+- Database mới: `ensure_master()` tạo một CV **rỗng** (`cv/skeleton.py`); user tự điền trong CV Studio hoặc `jobpilot cv import <file>.local.json`.
+- `cv/sample.py` là CV **hư cấu**, chỉ dùng cho test và demo. App không bao giờ seed từ đó.
+- Bản tailored là row `cv_versions` riêng theo job và build ra `out/cv/<scope>/`. Master không bao giờ bị ghi đè.
+- Text trong `CvDocument` không chứa LaTeX thô, chỉ một tập con markdown (`**bold**`, `` `tech` ``, `~tech~`, `[label](url)`); phần còn lại được escape ở `cv/latex.py`.
+
+> Bản plan đầu có một workstream "cải thiện Master CV" làm trên các file `resume/*.tex` trong repo. Các file đó đã rời repo ngày 2026-07-27, khi dữ liệu cá nhân chuyển hẳn vào database. Quy tắc viết lại CV nằm ở `SKILL.md`.
 
 ---
 
@@ -242,40 +265,52 @@ Rà soát nhanh `resume/*.tex` — các cải thiện đề xuất (làm ở Pha
 | Charts | Recharts (theo skill `dataviz`) | Funnel, biểu đồ nguồn/ngày, KPI — palette nhất quán light/dark. |
 | Store | **PostgreSQL** (JSONB) + Alembic | Quan hệ cho funnel/filter + JSONB cho JD; migrations. |
 | Slack | slack-bolt (Socket Mode) | Kênh **phụ**: thông báo + thao tác nhanh. Không cần public URL. |
-| LLM | **Claude API** mặc định; openai / gemini chọn được theo từng việc (Phase 20b) | Tailor CV + cover letter + đọc thư NTD. |
+| LLM | **Claude** mặc định; openai / gemini chọn được theo từng việc (Phase 20b); `claude_cli` = Claude qua gói Pro/Max của user | 4 việc: `intake` (đọc JD dán vào + chấm độ khớp), `tailor`, `letter`, `classify` (đọc thư NTD). |
 | CV build | `tectonic` (duy nhất; Docker `csmith/awesome-cv-builder` đã gỡ 2026-10-04) | Binary tĩnh ~10 MB, không daemon, x86-64 + ARM64. |
 | Email | Gmail API hoặc SMTP | Kênh apply full-auto. |
 | Config | `.env` + `config.yaml` | Secrets tách khỏi code. |
-| Chạy local | `docker-compose` (Postgres) + `make dev` | 1 lệnh dựng Postgres + API + web. |
+| Chạy | LaunchAgent trên Mac mini (`deploy/macos/`); dev: `make dev` + `make web` | `make dev` bật Postgres (docker-compose hoặc `brew services`) + API; dashboard cần terminal riêng. |
 
 ---
 
-## 8. Cấu trúc thư mục (đề xuất)
+## 8. Cấu trúc thư mục
 
 ```
 JobPilot/
-├── PLAN.md  SKILL.md  CLAUDE.md          # docs (file này)
-├── cv.tex  awesome-cv.cls  fonts/  resume/  # Master CV (giữ nguyên)
-├── docker-compose.yml  Makefile  pyproject.toml  .env.example  .gitignore
-├── jobpilot/                                   # Python backend
-│   ├── config.yaml  config.py  cli.py
-│   ├── api/      main.py  routes/  ws.py  deps.py     # FastAPI (REST + WebSocket)
-│   ├── crawler/  base.py itviec.py topcv.py vietnamworks.py normalize.py
-│   ├── store/    db.py  models.py  migrations/  raw/  # SQLAlchemy + Alembic (Postgres)
-│   ├── slack/    app.py  blocks.py  handlers.py        # kênh phụ
-│   ├── tailor/   tailor.py  prompts.py  build.py  cover_letter.py
-│   ├── apply/    dispatcher.py  email_apply.py  portal_apply.py
-│   ├── orchestrator.py   cli.py
+├── README.md  README.vi.md  CONTRIBUTING.md  CONTRIBUTING.vi.md  LICENSE
+├── PLAN.md  SKILL.md  PHASES.md  DEPLOY.md  CLAUDE.md
+├── awesome-cv.cls  fontawesome.sty  fonts/        # khung LaTeX (không có CV nào)
+├── docker-compose.yml  Makefile  pyproject.toml  alembic.ini  .env.example
+├── deploy/        macos/ (đang dùng) · windows/ · systemd unit + timer cho VPS
+├── jobpilot/                                      # Python backend
+│   ├── config.yaml  config.py  cli.py  orchestrator.py  backup.py
+│   ├── api/        main.py  routes/  ws.py  deps.py  security.py  static.py  paging.py
+│   ├── crawler/    base.py  feed.py  ats.py  một module mỗi nguồn  pipeline.py  persist.py
+│   │               quality.py  salary.py  skills.py  robots.py  ratelimit.py
+│   ├── cv/         schema.py  render.py  latex.py  compile.py  store.py  ats.py  templates/
+│   ├── tailor/     schema.py  prompt.py  engine.py  guard.py  apply.py  build.py  diff.py
+│   │               edit.py  edit_guard.py  service.py
+│   ├── intake/     đọc JD dán vào + chấm độ khớp
+│   ├── companies/  nhà tuyển dụng + liên hệ HR
+│   ├── apply/      dispatcher.py  email.py  portal.py  letter.py  letter_pdf.py
+│   │               followup.py  outcome.py  inbox.py
+│   ├── llm/        registry.py  một client mỗi provider  schema.py  pricing.py  stats.py  bench.py
+│   ├── analytics/  market.py  outcomes.py
+│   ├── store/      db.py  models.py  migrations/   # SQLAlchemy + Alembic
+│   ├── slack/      app.py  blocks.py  client.py  events.py   # kênh phụ
 │   └── tests/
-├── web/                                        # React frontend (Vite + TS)
-│   └── src/  pages/ (Dashboard, Jobs, JobDetail, CvReview, Applications, Settings, Runs)
-│            components/  api/  hooks/
-└── out/<job_id>/  cv.tex  cv.pdf  cover_letter.pdf  meta.json   # bản tailored
+├── web/                                           # React frontend (Vite + TS)
+│   └── src/  pages/  components/  hooks/  lib/  i18n/
+└── out/cv/<scope>/   cv.tex  cv.pdf  …            # bản build (gitignore)
 ```
+
+Mỗi thư mục con có luật riêng thì có `CLAUDE.md` riêng — bảng liệt kê ở `CLAUDE.md` gốc.
 
 ---
 
 ## 9. Roadmap / Milestones
+
+> **Đã xong (Phase 0 → 17).** Các dòng dưới là kế hoạch tại thời điểm viết, giữ làm lịch sử. Chỗ thực tế đi khác thì `PHASES.md` là bản đúng — vd TopDev chưa làm, và Master CV không còn import từ `resume/*.tex` mà sống trong database.
 
 - **Phase 0 — Docs & setup** *(file này)*: PLAN, SKILL, CLAUDE + scaffolding, `.env.example`, config schema, `docker-compose` (Postgres).
 - **Phase 1 — CV foundation**: cải thiện Master CV (§6); wrapper build PDF từ Python + verify engine LaTeX chạy được.
@@ -293,6 +328,8 @@ JobPilot/
 - **Phase 15 — Follow-up**: `apply/followup.py` + migration 0005. Nhịp nhắc hữu hạn (5 ngày làm việc → +7 → dừng), **không tự gửi**, dry run không được nhắc.
 - **Phase 14 — Quality signals**: `crawler/quality.py` giải thích `match_score` bằng chính danh sách `stacks` và gắn cờ `no_jd`/`thin_jd`/`stale`/`undated` (chú thích, không lọc). `cli backfill` cho job cũ.
 - **Phase 13 — ATS readability**: `cv/ats.py` đọc lại PDF như một applicant tracking system và báo đúng những gì parser không lấy lại được (không chấm điểm). Ưu tiên `pdfminer.six`; `pypdf` fallback tự khai báo không tin được về khoảng trắng.
+- **Phase 16 — Diff hai version CV bất kỳ** trong CV Studio, dùng chung `tailor/diff.py` với CV Review.
+- **Phase 17 — Cover letter PDF**: `apply/letter_pdf.py` + migration 0006; text vẫn là bản chính, PDF là file đính kèm.
 - **Phase 12 — ATS adapter (tier 3)**: `crawler/ats.py` — Greenhouse + Lever qua board JSON API công khai; "một trang = một công ty"; thêm công ty = 1 từ trong `ats:` của config. `rank_hits` xếp hạng theo số từ khoá khớp để `limit` không bị tiêu vào job xa đề.
 
 **Định nghĩa "xong" cho MVP demo (theo yêu cầu user)**: crawl ~10 job từ 3 site → hiện trên **Web Dashboard** (+ thông báo Slack) → user chọn → tailor → **review PDF+diff** (duyệt/sửa) → email/portal apply → báo lỗi nếu fail. Slack đồng bộ cùng state.
@@ -327,6 +364,8 @@ theo độ hấp dẫn: phase sau cần dữ liệu do phase trước sinh ra.
 | **24** | **Interview prep + STAR story bank** — bộ chuẩn bị theo từng job, STAR map từ kinh nghiệm **thật** (guardrail như tailor), tích luỹ thành story bank dùng lại. | Ghi event `interview` là có nút sinh bộ chuẩn bị; mọi câu chuyện đều truy được về một mục có thật trong Master CV. |
 | **25** | **Upskill** — gom gap của mọi job đã tailor: yêu cầu nào lặp lại mà mình thiếu → xếp hạng theo tần suất × mức độ gần. | Một danh sách ngắn "học cái này trước" dựa hoàn toàn trên job thật đã gặp, không phải lời khuyên chung chung. |
 
+**Tình trạng (2026-10-12):** ô 18, 19, 20 ✅ đã xong; ô 21–25 chưa làm. `PHASES.md` đã mượn số 20/20b/20c và 21 cho việc khác (model backend, trang `/market`) — bảng đối chiếu nằm ở `CLAUDE.md`. Phase mới thì tham chiếu theo ô của bảng trên.
+
 ### Quyết định đã chốt — backend cho tailor (Phase 20b)
 
 Phase 20 để ngỏ bốn hướng cho tailor local (model to hơn / đơn giản hoá schema / tách hai
@@ -340,6 +379,7 @@ gemini**, mặc định `claude`, chọn **theo từng việc**. Kèm theo:
 
 - **Không chặn tier nào, nhưng cảnh báo rõ.** Chỉ Gemini free tier train trên input; Anthropic,
   OpenAI và Gemini trả tiền thì không. `llm.gemini_paid_tier` + `llm.warnings()`.
+- **Về sau thêm** provider `claude_cli` (2026-10-04): cùng các model Claude nhưng chạy qua CLI `claude` trên gói Pro/Max của user, chỉ dùng cá nhân. Và việc LLM thứ tư, `intake`. Danh sách chuẩn ở `llm.TASKS`.
 - **Đo, đừng đoán.** Bảng `llm_calls` ghi mọi round; `GET /stats/llm`, `jobpilot llm stats`,
   `jobpilot llm bench` biến phép đo thủ công của Phase 20 thành một lệnh.
 
@@ -367,22 +407,22 @@ hay bị từ chối. Thêm value vào Postgres enum còn kéo theo migration `A
 | Anti-bot (Cloudflare ITviec, hydration TopCV/VNW) | Cao | Playwright stealth, retry, rate-limit, chạy local IP thật, graceful per-site fail. |
 | Site đổi DOM/API | Trung | Scraper tách riêng + test snapshot; cảnh báo khi 0 job. |
 | CV bịa nội dung | Cao | Guardrail truthfulness (SKILL.md), diff bắt buộc user duyệt. |
-| ToS/ban (LinkedIn) | Cao | **Không** scrape/auto-apply LinkedIn. Chỉ 3 site VN + human-in-the-loop. |
-| Auto-send email sai người | Trung | Preview email trên Slack trước lần đầu; whitelist/kênh bật rõ ràng. |
-| Secrets rò rỉ | Cao | `.env` (gitignore), không log token, không commit DB dump/`out/`. |
+| ToS/ban (LinkedIn) | Cao | **Không** scrape/auto-apply LinkedIn. Chỉ crawl nguồn mà robots cho phép + human-in-the-loop. |
+| Auto-send email sai người | Trung | 3 chốt `enabled` / `dry_run` / `test_recipient`; mặc định `enabled: false` và `dry_run: true`, và không chốt nào mở được qua HTTP. |
+| Secrets / dữ liệu cá nhân rò rỉ | Cao | Repo **public**: `.env`, `*.local.yaml`, `*.local.json`, `out/` đều gitignore; không log token, không commit DB dump; CV thật không bao giờ vào git. |
 | CAPTCHA khi apply portal | Trung | Không tự vượt CAPTCHA; chuyển sang human-in-the-loop. |
 | Web/API lộ ra ngoài | Cao | uvicorn bind `127.0.0.1`; ra ngoài **chỉ** qua `tailscale serve` (private mesh, không phải public). **Token KHÔNG phải lớp chặn** — Vite nướng nó vào bundle nên ai mở được trang là đọc được; tầng mạng mới là auth. Không `funnel`, không bind `0.0.0.0`, không expose port Postgres. Xem `DEPLOY.md §0`. |
-| Máy chạy 24/7 | Trung | Chuyển từ laptop sang **VPS VN** (2026-08-17): laptop mang đi là JobPilot offline. VPS đặt ở VN để crawl không bị Cloudflare challenge như IP datacenter nước ngoài. |
+| Máy chạy | Trung | **Mac mini ở nhà** (2026-10-04), cố ý chỉ chạy khi máy bật; IP dân dụng VN nên crawl ít bị Cloudflare challenge. VPS ở VN là phương án B (`DEPLOY.md`). |
 | Lệch state giữa Web ↔ Slack | Trung | **1 nguồn sự thật = Postgres**; mọi action đi qua API; đẩy update realtime (WS + Slack message update). |
 
 ---
 
 ## 11. Câu hỏi mở (chốt dần khi triển khai)
 
-1. Email apply gửi từ **Gmail API** (OAuth) hay **SMTP app-password**? (Gmail API sạch hơn, có sẵn MCP.)
-2. Bộ lọc job: cứng theo config (level, skill, location) hay để Claude tự chấm điểm match?
+1. ~~Email apply gửi từ Gmail API hay SMTP app-password?~~ → **SMTP mặc định** (`apply.email.method: smtp`, dùng được app password của Gmail); `gmail` là lựa chọn còn lại.
+2. ~~Bộ lọc job: cứng theo config hay để model chấm?~~ → **Cả hai, tách tầng**: `stacks` trong config + điểm khớp từ khoá lúc crawl (`crawler/quality.py`); model chấm độ khớp theo từng tin qua intake. Chấm hàng loạt bằng LLM là ô 21 của §9.1, chưa làm.
 3. Ngưỡng `match_score` tối thiểu để post lên Slack?
-4. Cover letter: 1 template cố định hay Claude sinh tự do mỗi job?
+4. ~~Cover letter: template cố định hay model sinh mỗi job?~~ → **Model sinh theo từng job** (việc `letter`), render ra PDF bằng template `cover_letter.tex.j2`.
 5. ~~Có cần lưu lịch sử ứng tuyển (đã nộp công ty nào) để tránh nộp trùng?~~ → **Có.** Bảng
    `applications` đã chặn nộp trùng từ Phase 6; Phase 18 (§9.1) mở rộng thành lịch sử đầy đủ
    *sau* khi nộp (`application_events`), vì tránh nộp trùng chỉ là một nửa giá trị của việc

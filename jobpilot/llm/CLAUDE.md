@@ -14,7 +14,7 @@
   chặn một plan sai lọt vào PDF, nên nó **không được** có bản sao theo backend — trước 20b thì
   `letter.py` đã có đúng hai bản gần giống nhau. Giờ bất biến đó do *không còn gì để fork* giữ,
   không phải do một test giữ.
-- **Ba provider không nhận cùng một JSON Schema.** `llm/schema.py`: `flatten_schema` (Gemini —
+- **Ba provider API (claude/openai/gemini) không nhận cùng một JSON Schema.** `llm/schema.py`: `flatten_schema` (Gemini —
   docs chỉ liệt kê subset, cảnh báo schema lồng sâu có thể bị từ chối), `strictify` (OpenAI
   strict — mọi object `additionalProperties:false`, **mọi** field trong `required`). Bẫy ở
   `strictify`: "mọi field required" **không** có nghĩa bỏ field optional — optional được nới
