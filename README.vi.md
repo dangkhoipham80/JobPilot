@@ -49,7 +49,7 @@ Ba luật mà code được xây quanh:
 
 ### Dashboard
 
-Mười một trang, tất cả ở `localhost:5173`:
+Mười một trang, ở `localhost:5173` khi dev (hoặc ở `:8000`, do API phục vụ, sau khi đã build `web/`):
 
 | Trang | Dùng để làm gì |
 |---|---|

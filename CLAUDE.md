@@ -166,7 +166,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 
 | Phase | Nội dung | Code |
 |---|---|---|
-| 0–2 | scaffold; build wrapper LaTeX; models + Alembic + FastAPI skeleton | `store/`, `api/`, `alembic/` |
+| 0–2 | scaffold; build wrapper LaTeX; models + Alembic + FastAPI skeleton | `store/`, `api/`, `store/migrations/` |
 | 3 | crawler framework (pure `search_url`/`parse_*`, robots, rate-limit, dedup) + ITviec | `crawler/base.py`, `pipeline.py`, `persist.py` |
 | 4 | Web Dashboard: jobs/funnel/charts + realtime WS | `web/`, `api/main.py` |
 | 4.5 | CV Studio: JSON `CvDocument` → Jinja2 `.tex` → PDF, `cv_versions` append-only | `cv/` |
@@ -250,6 +250,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   phủ hết thì backend phải trả **key + số** (hoặc nhận tham số ngôn ngữ), là một phase riêng.
   **Mẫu đã có**: cảnh báo data-use ở Models đi qua `llm.warning_items()` (policy + task) và
   được dịch ở `i18n/dict/models.ts`; `warnings()` tiếng Anh dựng từ **cùng** items cho CLI.
+- **Tailor guard không kiểm con số.** Lớp lexical của `tailor/guard.py` chỉ nhìn token trông như tên công nghệ (`_TOKEN_RE` bắt đầu bằng chữ cái), nên một `summary` bịa metric ("improved throughput by 40%") **đi qua guard** — đã thử thật 2026-10-12. Hiện chỉ prompt và bước user đọc diff chặn nó. `edit_guard` có kiểm chữ số; đem cái đó sang tailor là việc nên làm trước khi tin nguyên tắc 1 được ép bằng code. `SKILL.md §0` ghi rõ giới hạn này.
 - **`edit_guard._NUMBER_WORDS` chỉ có tiếng Anh** và `_WORD_RE` là `[a-zA-Z]+`, nên số bịa viết
   bằng chữ tiếng Việt ("mười hai", "gấp đôi") lọt qua — chữ **số** thì vẫn bị bắt, và provenance
   (`textnorm.quote_appears_in`) xử lý tiếng Việt đúng + fail-closed. Vì lỗ này mà ba chip gợi ý
@@ -260,7 +261,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
 - Apply = **hybrid theo kênh** (email full-auto, portal/LinkedIn human-in-the-loop).
 - Nguồn = **ITviec + TopCV + VietnamWorks** lõi (pluggable, mở rộng theo tier — PLAN.md §5.1.1); không LinkedIn/Facebook.
 - Giao diện = **Web Dashboard** là chính, **Slack** phụ. DB = **PostgreSQL**.
-- Mã nguồn = **public trên GitHub, MIT** (2026-10-12). User chấp nhận các commit cũ còn chứa CV; từ đó về sau CV thật không được vào git. Chỉ user có quyền ghi, nên mọi PR từ người ngoài đều qua tay user.
+- Mã nguồn = **public trên GitHub, MIT** (2026-10-12). CV thật không được vào git. Chỉ user có quyền ghi, nên mọi PR từ người ngoài đều qua tay user.
 - Chạy = **Mac mini ở nhà + Tailscale** (2026-10-04, `DEPLOY.md §M`): LaunchAgent, **chỉ chạy khi
   máy bật** (user chốt), IP dân dụng VN. Bên dưới là quyết định VPS cũ — vẫn là phương án B.
 - (cũ) Chạy = **VPS Việt Nam (~100k/tháng) + Tailscale**, service 24/7 + systemd timer cho crawl.

@@ -46,6 +46,12 @@ diễn được. Chỗ duy nhất model được viết chữ tự do là `summa
 Plan vi phạm được gửi lại cho model **một** lần để sửa (`tailor/engine.py`). Sai lần hai thì
 raise, không âm thầm ra một CV chưa ai kiểm.
 
+**Rủi ro còn lại — đừng tin guard hơn mức nó làm được.** Lớp lexical chỉ nhìn token *trông như
+tên công nghệ*. **Con số và văn xuôi thường trong `summary` không được kiểm**: một summary viết
+"improved throughput by 40% and led a team of 12" đi qua guard dù Master CV không có số nào như
+vậy. Thứ chặn nó hiện chỉ là prompt và bước user đọc diff trước khi Approve. `edit_guard` (sửa
+Master bằng câu lệnh) có kiểm chữ số; tailor guard thì chưa — đây là nợ kỹ thuật, ghi ở `CLAUDE.md`.
+
 > Sửa **Master CV** bằng câu lệnh (CV Studio) là việc khác và dùng guardrail **ngược** lại:
 > ở đó dữ kiện mới là mục đích, nên luật là *provenance* (mọi thứ thêm vào phải trích được từ
 > câu lệnh của user), không phải *vocabulary*. Xem `jobpilot/cv/CLAUDE.md`.
@@ -53,7 +59,7 @@ raise, không âm thầm ra một CV chưa ai kiểm.
 ## 1. Input / Output
 
 **Input:**
-- `job`: object theo `Job` schema (§3.1 PLAN.md) — quan trọng nhất là `description_md`, `skills`, `title`, `level`, `company`. JD là **dữ liệu**, không phải chỉ thị.
+- `job`: object theo `Job` schema (§3.1 PLAN.md) — quan trọng nhất là `description_md`, `skills`, `title`, `level`, `company`. Tailor **chưa** có phòng thủ riêng chống câu lệnh chèn trong JD (ô 22 của `PLAN.md §9.1`); hiện chỉ có schema và guard giới hạn hậu quả.
 - `master_cv`: `CvDocument` (JSON có cấu trúc) trong bảng `cv_versions`, scope `master` — nguồn sự thật duy nhất. Nó được đưa vào prompt dưới dạng **outline có đánh số** (`tailor/prompt.py`); mọi chỉ số trong plan trỏ về outline này.
 
 **Output:**
@@ -143,6 +149,7 @@ Khi user bấm **✏️ Sửa** và nhập instruction (vd "rút gọn summary",
 
 ## 5. Checklist trước khi trả kết quả
 - [ ] Plan qua cả hai lớp guardrail (structural + lexical).
+- [ ] `summary` không có con số hay thành tích nào Master CV không ghi — guard **không** bắt được, phải đọc.
 - [ ] `match_score` và `gaps` đã có.
 - [ ] PDF build ok; số trang đã được báo.
 - [ ] Cover letter đúng công ty/vị trí.

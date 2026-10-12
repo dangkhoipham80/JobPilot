@@ -113,7 +113,7 @@ Ba cái bẫy đã trả giá, đừng gỡ ra:
   *task* trong UI chứ không ẩn cửa sổ.
 
 Backup nằm ở `%USERPROFILE%\JobPilotBackups`. **Dữ liệu giờ chỉ nằm trên một cái
-laptop**, nên phải verify restore ít nhất một lần — xem §9.
+laptop**, nên phải verify restore ít nhất một lần — xem §6.
 
 ---
 

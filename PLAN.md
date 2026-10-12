@@ -4,7 +4,7 @@
 
 Repo có hai lớp: bộ khung LaTeX Awesome-CV (`awesome-cv.cls`, `fontawesome.sty`, `fonts/`) và pipeline JobPilot xây trên nó. **Repo không chứa CV nào** — Master CV là JSON có cấu trúc trong bảng `cv_versions` của Postgres.
 
-> **Đọc file này thế nào.** §1–§8 mô tả hệ thống **như đang chạy** (rà lại 2026-10-12). §9 là roadmap gốc, đã xong, giữ làm lịch sử; §9.1 là roadmap đang mở. Chi tiết từng phase và những bug chỉ lộ ra khi chạy thật nằm ở `PHASES.md`; luật theo vùng code nằm ở `CLAUDE.md` của vùng đó.
+> **Đọc file này thế nào.** §1–§8 mô tả hệ thống **như đang chạy** (rà lại 2026-10-12), trừ những khối có ghi **Trạng thái** ở đầu — ở đó phần bên dưới còn là thiết kế và khối trạng thái nói rõ cái gì chưa build. §9 là roadmap gốc, đã xong, giữ làm lịch sử; §9.1 là roadmap đang mở. Chi tiết từng phase và những bug chỉ lộ ra khi chạy thật nằm ở `PHASES.md`; luật theo vùng code nằm ở `CLAUDE.md` của vùng đó.
 
 ---
 
@@ -77,7 +77,7 @@ Repo có hai lớp: bộ khung LaTeX Awesome-CV (`awesome-cv.cls`, `fontawesome.
   "apply_target": "hr@acme.com | https://apply-url",
   "raw_html_ref": "store/raw/itviec-2156537.html",   // lưu để audit
   "crawled_at": "2026-07-09T08:00:00+07:00",
-  "match_score": 0.0                 // khớp từ khoá lúc crawl; tailor và intake có điểm riêng
+  "match_score": 0.0                 // khớp từ khoá lúc crawl; tailor xong thì ghi đè bằng điểm của plan
 }
 ```
 
@@ -87,9 +87,9 @@ Repo có hai lớp: bộ khung LaTeX Awesome-CV (`awesome-cv.cls`, `fontawesome.
 
 Postgres + JSONB (payload JD linh hoạt) + cột quan hệ để filter/aggregate cho dashboard. Migrations bằng Alembic.
 
-- `jobs(id PK, source, payload JSONB, title, company, company_id FK, location, salary, level, posted_at, status, match_score, apply_channel, apply_target, crawled_at, last_seen_at, run_id FK)` — cột rút ra từ payload để index/filter nhanh.
+- `jobs(id PK, source, url, payload JSONB, title, company, company_id FK, location, salary, level, posted_at, status, match_score, apply_channel, apply_target, crawled_at, last_seen_at, run_id FK)` — cột rút ra từ payload để index/filter nhanh.
 - `job_status` (enum): `DISCOVERED → SHORTLISTED → TAILORING → REVIEW → APPROVED → SUBMITTING → SUBMITTED | FAILED | SKIPPED`
-- `applications(id PK, job_id FK, cv_pdf_path, cover_letter_path, channel, submitted_at, result, error_msg)`
+- `applications(id PK, job_id FK, cv_pdf_path, cover_letter_path, cover_letter_pdf_path, channel, submitted_at, result, error_msg, meta JSONB, created_at, next_followup_at, followup_stage, outcome_stage)`
 - `edits(id PK, job_id FK, round, instruction, created_at)` — log vòng sửa CV.
 - `runs(id PK, kind, started_at, finished_at, stats JSONB, log_ref)` — mỗi lần crawl/tailor/apply để hiện lên dashboard (số job, lỗi per-site…).
 - `cv_versions(id PK, scope, job_id FK nullable, version, content JSONB, tex_snapshot, theme JSONB, meta JSONB, author, created_at)` — version history cho CV Studio. `scope = 'master' | 'tailored'`; `content` = JSON structured của editor; `tex_snapshot` = .tex đã serialize (audit/rollback); `author = 'user' | 'agent'` (phân biệt sửa tay vs agent tailor).
@@ -132,7 +132,7 @@ Vòng đời **sau** `SUBMITTED` (replied / interview / offer / rejected / withd
 ### 5.1 `crawler/` — thu thập job
 - **Công nghệ**: Playwright (Python) + stealth (playwright-stealth / patchright), 1 scraper/site kế thừa `BaseScraper`.
 - **Chiến lược per-site** (đã chạy thật; bẫy cụ thể ở `jobpilot/crawler/CLAUDE.md`):
-  - **ITviec**: sau **Cloudflare** → Playwright. Lương phải đăng nhập mới thấy, nên `salary` là `null`.
+  - **ITviec**: sau **Cloudflare** → Playwright. Lương thường phải đăng nhập mới thấy, nên `salary` thường là `null`.
   - **TopCV**: render ở server + `JobPosting` của schema.org (JSON-LD). Từ khoá nằm trong *path*, không phải `?keyword=`.
   - **VietnamWorks**: tin về qua XHR, lazy-load khoảng 9–20 thẻ mỗi trang nên phải đi từng trang.
   - **Nguồn có feed/API chính thức** (WeWorkRemotely, Arbeitnow, Greenhouse, Lever): `FeedScraper` + `HttpFetcher`, không cần browser.
@@ -175,10 +175,10 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 - **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) model trả một **plan index-based** (`TailorPlan`): viết lại `summary`, sắp xếp/ẩn section, entry, bullet có sẵn → (4) sinh **cover letter** → (5) build PDF.
 - **Guardrail**: không bịa — ép bằng schema (plan chỉ trỏ tới nội dung có sẵn) + hai lớp kiểm structural và lexical (`tailor/guard.py`), một lần retry có phản hồi. Output kèm **diff giải thích** để user duyệt.
 - **Build**: áp plan lên Master (deterministic) → một row `cv_versions` mới (`author='agent'`) → render `.tex` qua Jinja2 → tectonic → `out/cv/<scope>/cv.pdf`. Master không bị đổi.
-- **ATS**: chèn keyword từ JD một cách tự nhiên vào phần có thật; giữ format sạch để ATS đọc được.
+- **ATS**: plan chỉ viết được chữ ở `summary`, nên keyword của JD vào CV bằng cách viết lại summary và đưa phần liên quan lên trước; giữ format sạch để ATS đọc được (`cv/ats.py` đọc lại PDF để kiểm).
 
 ### 5.4 `apply/` — dispatcher nộp đơn (hybrid)
-- **`email`**: build email (subject/body chuẩn hoá theo template + cover letter) đính kèm `cv.pdf` → gửi qua **SMTP** (app password của Gmail dùng được) hoặc Gmail API — `apply.email.method`. Full-auto sau khi Approve, sau **3 chốt**: `enabled` (tắt thì không gửi gì), `dry_run` (dựng và ghi lại thư nhưng không gửi), `test_recipient` (gửi về địa chỉ thử thay vì nhà tuyển dụng). Ba chốt này không sửa được qua HTTP.
+- **`email`**: build email (subject/body chuẩn hoá theo template + cover letter) đính kèm `cv.pdf` → gửi qua **SMTP** (app password của Gmail dùng được) — đường duy nhất đã implement; `apply.email.method: gmail` có trong config nhưng chưa có gì đọc nó. Full-auto sau khi Approve, sau **3 chốt**: `enabled` (tắt thì không gửi gì), `dry_run` (dựng và ghi lại thư nhưng không gửi), `test_recipient` (gửi về địa chỉ thử thay vì nhà tuyển dụng). Ba chốt này không sửa được qua HTTP.
 - **`portal`**: mở Playwright (non-headless), điều hướng tới `apply_target`, pre-fill field có thể (tên, email, upload CV) → **dừng lại**, báo trên dashboard (và Slack nếu bật) "đã pre-fill, bạn kiểm tra & bấm Submit". Không tự submit.
 - **`external/LinkedIn`**: chỉ gom link + CV đã tailor, user tự nộp rồi `confirm-submit`.
 - **Error handling**: mọi exception → `FAILED` kèm nguyên nhân + fallback link nộp tay + đường dẫn file CV.
@@ -191,6 +191,8 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 
 ### 5.6 `web/` — Web Dashboard (control plane chính)
 Backend **FastAPI** (REST + WebSocket) + Frontend **React (Vite + TypeScript) + TailwindCSS + shadcn/ui** (UI/UX gọn, hiện đại). FastAPI phục vụ luôn `web/dist` **cùng origin**, nên chỉ có **một** địa chỉ để đưa vào Tailscale; mọi route REST/WS nằm dưới **`/api`** (trang `/jobs`, `/cv`, `/settings` là route của client-side router, trùng path với API nếu không có prefix). uvicorn bind `127.0.0.1`; truy cập từ xa qua `tailscale serve` — xem `DEPLOY.md`.
+
+> **Trạng thái:** mọi trang dưới đây đã có. Những chi tiết **chưa build** so với mô tả: trang Jobs lọc theo search / source / level / status / độ mới / lượt crawl (chưa lọc theo stack, lương, location; chưa chọn nhiều job cùng lúc); Applications không kéo-thả; Settings không có lịch cron (lịch chạy nằm ở LaunchAgent / systemd timer).
 
 **Các trang:**
 - **📊 Dashboard**: KPI cards (crawled / shortlisted / tailored / applied / success / fail), **funnel** theo status, biểu đồ job theo nguồn & theo ngày, tỉ lệ nộp thành công, cờ 🔥 job <48h. (Theo chuẩn dataviz: palette nhất quán light/dark.)
@@ -211,7 +213,7 @@ Dashboard **song ngữ Việt/Anh**, mặc định tiếng Việt (`web/src/i18n
 
 #### 5.6.1 🎨 CV Studio — editor + live preview + templates
 
-> **Trạng thái:** đã có structured editor, raw LaTeX mode, PDF preview, version history + diff hai version bất kỳ, sửa Master bằng câu lệnh, và picker cho **2 template** (`awesome_cv`, `plain`). **Chưa có**: HTML live preview và theme gallery — phần mô tả hai thứ đó bên dưới vẫn là thiết kế.
+> **Trạng thái:** đã có structured editor, raw LaTeX mode, PDF preview, version history + diff hai version bất kỳ, sửa Master bằng câu lệnh, và picker cho **2 template** (`awesome_cv`, `plain`). **Chưa có** so với mô tả bên dưới: HTML live preview; theme gallery, photo on/off, header align; Monaco (raw mode dùng textarea, có chủ ý); PDF.js và auto-compile debounce (PDF hiện trong `<iframe>`, bấm mới build); kéo-thả (đổi thứ tự bằng nút lên/xuống); undo/redo, autosave, `Ctrl+S`; nút "re-base tailored từ Master mới". Các bullet nhắc những thứ đó vẫn là thiết kế.
 
 Layout 2 cột: **trái = editor**, **phải = preview** (như Overleaf nhưng thân thiện hơn).
 
@@ -250,7 +252,7 @@ Master CV **không nằm trong repo**. Nó là một `CvDocument` (JSON có cấ
 - Bản tailored là row `cv_versions` riêng theo job và build ra `out/cv/<scope>/`. Master không bao giờ bị ghi đè.
 - Text trong `CvDocument` không chứa LaTeX thô, chỉ một tập con markdown (`**bold**`, `` `tech` ``, `~tech~`, `[label](url)`); phần còn lại được escape ở `cv/latex.py`.
 
-> Bản plan đầu có một workstream "cải thiện Master CV" làm trên các file `resume/*.tex` trong repo. Các file đó đã rời repo ngày 2026-07-27, khi dữ liệu cá nhân chuyển hẳn vào database. Quy tắc viết lại CV nằm ở `SKILL.md`.
+> Bản plan đầu có một workstream "cải thiện Master CV" làm trên các file `resume/*.tex` trong repo. Các file đó đã rời repo khi dữ liệu cá nhân chuyển hẳn vào database. Quy tắc viết lại CV nằm ở `SKILL.md`.
 
 ---
 
@@ -259,7 +261,7 @@ Master CV **không nằm trong repo**. Nó là một `CvDocument` (JSON có cấ
 | Layer | Lựa chọn | Lý do |
 |---|---|---|
 | Ngôn ngữ | **Python 3.11+** | Hệ sinh thái crawl (Playwright), Slack Bolt, LaTeX tooling. |
-| Crawl | Playwright + playwright-stealth | Các site đều SPA, cần headless browser + chống anti-bot. |
+| Crawl | Playwright cho site cần browser; `HttpFetcher` cho feed/API | ITviec, TopCV, VietnamWorks đi qua Playwright; nguồn có feed hoặc API chính thức thì không cần browser. |
 | Web backend/API | **FastAPI** (REST + WebSocket) | Cùng Python với crawler/tailor; async; realtime cho dashboard. Chứa orchestrator. |
 | Web frontend | **React (Vite + TS) + TailwindCSS + shadcn/ui** | UI/UX dashboard gọn, hiện đại; component sẵn cho bảng/kanban/form. |
 | Charts | Recharts (theo skill `dataviz`) | Funnel, biểu đồ nguồn/ngày, KPI — palette nhất quán light/dark. |
@@ -267,7 +269,7 @@ Master CV **không nằm trong repo**. Nó là một `CvDocument` (JSON có cấ
 | Slack | slack-bolt (Socket Mode) | Kênh **phụ**: thông báo + thao tác nhanh. Không cần public URL. |
 | LLM | **Claude** mặc định; openai / gemini chọn được theo từng việc (Phase 20b); `claude_cli` = Claude qua gói Pro/Max của user | 4 việc: `intake` (đọc JD dán vào + chấm độ khớp), `tailor`, `letter`, `classify` (đọc thư NTD). |
 | CV build | `tectonic` (duy nhất; Docker `csmith/awesome-cv-builder` đã gỡ 2026-10-04) | Binary tĩnh ~10 MB, không daemon, x86-64 + ARM64. |
-| Email | Gmail API hoặc SMTP | Kênh apply full-auto. |
+| Email | SMTP (`smtplib`; app password của Gmail dùng được) | Kênh apply full-auto. Gmail API chưa làm. |
 | Config | `.env` + `config.yaml` | Secrets tách khỏi code. |
 | Chạy | LaunchAgent trên Mac mini (`deploy/macos/`); dev: `make dev` + `make web` | `make dev` bật Postgres (docker-compose hoặc `brew services`) + API; dashboard cần terminal riêng. |
 
@@ -419,7 +421,7 @@ hay bị từ chối. Thêm value vào Postgres enum còn kéo theo migration `A
 
 ## 11. Câu hỏi mở (chốt dần khi triển khai)
 
-1. ~~Email apply gửi từ Gmail API hay SMTP app-password?~~ → **SMTP mặc định** (`apply.email.method: smtp`, dùng được app password của Gmail); `gmail` là lựa chọn còn lại.
+1. ~~Email apply gửi từ Gmail API hay SMTP app-password?~~ → **SMTP**, và đó là đường duy nhất đã implement (dùng được app password của Gmail). Gmail API chưa làm; `apply.email.method: gmail` có trong config nhưng chưa có gì đọc nó.
 2. ~~Bộ lọc job: cứng theo config hay để model chấm?~~ → **Cả hai, tách tầng**: `stacks` trong config + điểm khớp từ khoá lúc crawl (`crawler/quality.py`); model chấm độ khớp theo từng tin qua intake. Chấm hàng loạt bằng LLM là ô 21 của §9.1, chưa làm.
 3. Ngưỡng `match_score` tối thiểu để post lên Slack?
 4. ~~Cover letter: template cố định hay model sinh mỗi job?~~ → **Model sinh theo từng job** (việc `letter`), render ra PDF bằng template `cover_letter.tex.j2`.
