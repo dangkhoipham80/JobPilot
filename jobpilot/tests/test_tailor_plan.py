@@ -71,6 +71,14 @@ def test_unknown_terms_ignores_sentence_initial_capitals(master):
     assert unknown_terms("Passionate about clean code.", vocabulary(master)) == []
 
 
+def test_unknown_terms_does_not_read_a_month_as_a_technology(master):
+    """Capitalised mid-sentence, so the heuristic took "December" for a product.
+    The CV says "Dec. 2024"; a real letter saying "since December 2024" was
+    rejected twice for it."""
+    vocab = vocabulary(master)
+    assert unknown_terms("I joined in December and have shipped every Friday since.", vocab) == []
+
+
 def test_unknown_terms_catches_internal_caps_anywhere(master):
     """Internal capitals mark a product name even at the start of a sentence."""
     assert unknown_terms("RabbitMQ is used daily.", vocabulary(master)) == ["RabbitMQ"]
@@ -122,6 +130,38 @@ def test_summary_small_number_words_are_deliberately_not_checked(master):
     would reject prose that claims no metric. Same trade-off as the edit guard."""
     plan = _plan(summary="Backend engineer on one of the two core services of the team.")
     assert check_plan(plan, master).ok
+
+
+def test_a_small_number_word_before_a_unit_is_a_claim(master):
+    """ "over one year" is how a model rewrites "1+ years" once the digit is
+    rejected. Before a unit of time or scale, one..ten are not filler."""
+    assert numbers_in("over one year", "ten years", "five times", "three-fold") == {
+        "1", "10", "5", "3",
+    }  # fmt: skip
+    report = check_plan(_plan(summary="Backend engineer with over one year of experience."), master)
+    assert not report.ok and "1" in report.violations[0]
+
+
+def test_a_number_word_and_its_digit_back_each_other():
+    assert numbers_in("two years") == numbers_in("2 years") == {"2"}
+
+
+def test_the_headline_and_quote_count_as_stated_but_the_phone_does_not(master):
+    master.header.position = "Backend Engineer, 7 years"
+    master.header.mobile = "(+84) 900 111 6543"
+    stated = numbers_in(master_text(master))
+    assert "7" in stated and "6543" not in stated
+
+
+def test_the_retry_names_the_rule_that_actually_broke(master):
+    """A number violation used to get the remedy about technologies, because
+    both messages start with "summary"."""
+    from jobpilot.tailor.prompt import retry_prompt
+
+    report = check_plan(_plan(summary="Backend engineer who cut latency by 40%."), master)
+    text = retry_prompt(report.violations)
+    assert "every figure must be one the Master CV outline states" in text
+    assert "name only technologies" not in text
 
 
 def test_a_digit_inside_a_name_counts_as_a_number():

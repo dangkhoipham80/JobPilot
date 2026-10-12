@@ -204,7 +204,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | public | **Repo public + MIT** (2026-10-12): `LICENSE` + license của phần vendor, `README.vi.md`, `CONTRIBUTING(.vi).md`, `CODEOWNERS`; `main` được bảo vệ, CI của PR từ fork chờ duyệt | `LICENSE`, `CONTRIBUTING.md`, `.github/CODEOWNERS` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1039 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
+1045 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
@@ -250,7 +250,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   phủ hết thì backend phải trả **key + số** (hoặc nhận tham số ngôn ngữ), là một phase riêng.
   **Mẫu đã có**: cảnh báo data-use ở Models đi qua `llm.warning_items()` (policy + task) và
   được dịch ở `i18n/dict/models.ts`; `warnings()` tiếng Anh dựng từ **cùng** items cho CLI.
-- **Guard con số kiểm *có mặt*, không kiểm *ngữ cảnh*.** Từ 2026-10-12 `summary` của tailor và cover letter phải qua `guard.unknown_numbers` (trước đó một summary bịa "improved throughput by 40%" đi qua guard). Luật là "con số này có trong Master CV không", nên CV ghi "5 members" thì "5 years" vẫn qua; và câu văn xuôi không số, không tên công nghệ thì không lớp nào kiểm. Bước user đọc diff vẫn là chốt cuối. Giới hạn đầy đủ ở `SKILL.md §0`.
+- **Guard con số kiểm *có mặt*, không kiểm *ngữ cảnh*.** Từ 2026-10-12 `summary` của tailor và cover letter phải qua `guard.unknown_numbers` (letter: nguồn số = Master CV + tên công ty, **không** gồm tên job hay địa chỉ) (trước đó một summary bịa "improved throughput by 40%" đi qua guard). Luật là "con số này có trong Master CV không", nên CV ghi "5 members" thì "5 years" vẫn qua; và câu văn xuôi không số, không tên công nghệ thì không lớp nào kiểm. Bước user đọc diff vẫn là chốt cuối. Giới hạn đầy đủ ở `SKILL.md §0`.
 - **`guard._NUMBER_WORDS` chỉ có tiếng Anh** và `_WORD_RE` là `[a-zA-Z]+`, nên số bịa viết
   bằng chữ tiếng Việt ("mười hai", "gấp đôi") lọt qua — chữ **số** thì vẫn bị bắt, và provenance
   (`textnorm.quote_appears_in`) xử lý tiếng Việt đúng + fail-closed. Vì lỗ này mà ba chip gợi ý

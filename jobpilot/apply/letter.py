@@ -159,8 +159,14 @@ def check_letter(
     # Numbers get the same treatment as names, and need their own check: the
     # term check only sees tokens that start with a letter, so "cut latency by
     # 40%" passed it untouched. A figure is allowed if the CV states it, or if
-    # it is part of how the job names itself ("Engineer II", "Web3").
-    claim_numbers = numbers_in(master_text(master), job.title, job.company, job.location)
+    # it is part of the employer's name ("Studio 6677").
+    #
+    # Deliberately NOT the job's title or location. A title like "Java Developer
+    # (5+ years)" would license "with 5+ years of experience", and an address
+    # like "12 Ton Dan" would license "a team of 12" — the same hole, reopened
+    # on the one path where nobody reads the text before it is sent. The cost is
+    # that repeating "Java 17 Developer" from a title takes a retry.
+    claim_numbers = numbers_in(master_text(master), job.company)
 
     for i, para in enumerate(letter.paragraphs):
         invented = unknown_terms(para, claim_vocab)
@@ -256,6 +262,15 @@ def letter_prompt(job: Job, plan: TailorPlan | None) -> str:
         if strengths:
             parts += ["", "REQUIREMENTS THE CV SUPPORTS (use these as your evidence):"]
             parts += [f"  - {r.text} — {r.evidence or 'see CV'}" for r in strengths]
+            # The requirement text is the employer's wording. "3+ years of Java"
+            # marked HAVE is an invitation to write "3+ years", which the CV may
+            # never say — and that is a rejected letter.
+            parts += [
+                "",
+                "Any number in the requirements above is the employer's wording, not a "
+                "fact about the candidate. Do not repeat a figure — years, team sizes, "
+                "percentages — unless the CV itself states it.",
+            ]
         gaps = plan.gaps()
         if gaps:
             parts += ["", "REQUIREMENTS THE CANDIDATE DOES NOT HAVE:"]

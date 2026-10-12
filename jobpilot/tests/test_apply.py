@@ -205,13 +205,30 @@ def test_letter_with_an_invented_metric_is_rejected(db):
 
 
 def test_letter_may_repeat_a_number_from_the_job_itself(db):
-    """ "Web3" and "Engineer II" are how the job names itself, not a claim."""
+    """The employer's own name is a fact about the job, digits included."""
     master = cv_store.get_document(db, "master")
     job = _job(db, company="Studio 6677")
     letter = LETTER.model_copy(
         update={"paragraphs": ["I would like to join Studio 6677 as a backend engineer."]}
     )
     assert check_letter(letter, master, job).ok
+
+
+def test_a_number_in_the_job_title_or_address_licenses_nothing(db):
+    """Titles carry requirements ("5+ years") and locations carry street
+    numbers. Neither is a fact about the candidate, and this is the path where
+    nobody reads the letter before it is sent."""
+    master = cv_store.get_document(db, "master")
+    titled = _job(db, title="Java Developer (5+ years) - up to 7000")
+    claim = LETTER.model_copy(
+        update={"paragraphs": ["I bring 5+ years of Java and served 7000 daily users."]}
+    )
+    report = check_letter(claim, master, titled)
+    assert not report.ok and "7000" in report.violations[0]
+
+    located = _job(db, id="itviec:2", location="61 Ton Dan, District 4")
+    team = LETTER.model_copy(update={"paragraphs": ["I led a team of 61 engineers."]})
+    assert not check_letter(team, master, located).ok
 
 
 def test_learning_note_may_repeat_a_number_from_a_gap(db):

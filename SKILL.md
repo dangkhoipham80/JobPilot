@@ -42,9 +42,16 @@ diễn được. Chỗ duy nhất model được viết chữ tự do là `summa
    trùng lặp.
 2. **Lexical** — mọi token trông giống tên công nghệ trong `summary` phải đã xuất hiện ở đâu đó
    trong Master CV. Văn xuôi thường thì để yên, nên vẫn diễn đạt lại được.
-3. **Numeric** — mọi con số trong `summary` phải là con số Master CV có ghi (chữ số, và các
-   từ chỉ số như "twelve", "dozen", "doubled"). Lớp 2 không thấy được số, vì token của nó bắt
-   đầu bằng chữ cái. Cover letter được kiểm cùng cách (`apply/letter.py`).
+3. **Numeric** — mọi con số trong `summary` phải là con số Master CV có ghi (chữ số, các từ chỉ
+   số như "twelve", "dozen", "doubled", và *one..ten* khi đứng trước đơn vị: "one year",
+   "five times"). Lớp 2 không thấy được số, vì token của nó bắt đầu bằng chữ cái. "CV có ghi"
+   gồm các section, ngày tháng, và dòng chức danh + quote ở header; **không** gồm số điện thoại
+   hay địa chỉ.
+
+Cover letter được kiểm cùng cách (`apply/letter.py`). Nguồn số được phép của nó là Master CV
+cộng **tên công ty** ("Studio 6677"); `learning_note` được thêm số nằm trong requirement
+`MISSING`. Tên job và địa chỉ **không** cấp phép cho con số nào: title kiểu "(5+ years)" hay địa
+chỉ "12 Tôn Đản" không phải dữ kiện về ứng viên, và thư đi email thì không ai đọc trước khi gửi.
 
 Plan vi phạm được gửi lại cho model **một** lần để sửa (`tailor/engine.py`). Sai lần hai thì
 raise, không âm thầm ra một CV chưa ai kiểm.
@@ -53,8 +60,11 @@ raise, không âm thầm ra một CV chưa ai kiểm.
 
 - Lớp numeric kiểm *con số có trong CV hay không*, không kiểm *ngữ cảnh*. CV có ghi "5 members"
   thì "5 years of experience" vẫn qua, vì số 5 có trong CV.
-- Số viết bằng chữ từ *one* tới *ten* không được kiểm (chúng là từ đệm quá phổ biến), và số viết
-  bằng chữ tiếng Việt ("mười hai", "gấp đôi") cũng không. Chữ số thì bắt được ở mọi ngôn ngữ.
+- *one..ten* viết bằng chữ chỉ được kiểm khi đứng ngay trước một đơn vị (years, months, weeks,
+  decades, percent, times, -fold); ngoài ra chúng là từ đệm ("one of the two services") và được
+  bỏ qua. Số viết bằng chữ tiếng Việt ("mười hai", "gấp đôi") không được kiểm. Chữ số thì bắt
+  được ở mọi ngôn ngữ.
+- So khớp theo dãy chữ số: CV ghi "12,000" mà text viết "12000" thì bị từ chối. Viết đúng như CV.
 - Thâm niên **tự tính từ ngày tháng** ("1+ years") bị từ chối nếu CV không ghi con số đó. Muốn
   summary nói vậy thì ghi nó vào Master CV.
 - Văn xuôi không có số và không có tên công nghệ ("led the migration") không lớp nào kiểm. Thứ

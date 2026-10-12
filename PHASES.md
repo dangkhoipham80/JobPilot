@@ -2257,8 +2257,18 @@ letter (300 từ văn xuôi, gửi cho nhà tuyển dụng) có đúng lỗ đó
 - **Sửa:** phần kiểm con số của `edit_guard` chuyển lên `tailor/guard.py` thành `numbers_in` /
   `master_text` / `unknown_numbers`, dùng chung cho ba nơi: edit Master, `summary` của tailor,
   và cover letter. Một cách đếm, không fork — hai bản song song sẽ lệch nhau.
-- **Nguồn được phép:** tailor = con số Master CV có ghi. Letter = thêm số nằm trong tên job /
-  công ty / địa điểm ("Web3", "Engineer II"); `learning_note` thêm số trong requirement `MISSING`.
+- **Nguồn được phép:** tailor = con số Master CV có ghi (section, ngày tháng, chức danh + quote
+  ở header). Letter = thêm số trong **tên công ty**; `learning_note` thêm số trong requirement
+  `MISSING`.
+- **Review gate bắt một lỗ trong chính bản sửa:** bản đầu cho letter dùng cả số trong `job.title`
+  và `job.location`. Title "Java Developer (5+ years)" ⇒ thư viết "5+ years" qua guard; địa chỉ
+  "12 Ton Dan" ⇒ "a team of 12" qua guard. Và đường email là nơi không ai đọc thư trước khi gửi.
+  Lý do mình ghi trong comment còn sai cả hai ví dụ: "Engineer II" không có chữ số nào, còn "Web3"
+  vẫn bị lớp lexical chặn. **Một ngoại lệ thêm vào guard thì phải thử bằng input ác ý trước.**
+- Cùng lượt review: retry của tailor nhắc luật *công nghệ* cho vi phạm *con số* (cả hai câu đều
+  bắt đầu bằng "summary") ⇒ tách key `_REMEDIES`; prompt của letter đưa nguyên "3+ years of Java"
+  làm bằng chứng ⇒ thêm câu nói số trong requirement là lời nhà tuyển dụng; và "over one year" là
+  cách model viết lại "1+ years" sau khi bị chặn ⇒ *one..ten* trước đơn vị giờ được tính là số.
 - **Thử trên dữ liệu thật (chỉ đọc):** 2 plan tailor đang lưu, 1 cái bị luật mới từ chối vì
   "1+ years" — thâm niên model **tự tính từ ngày tháng**, CV không ghi số
   đó. Giữ luật chặt: đây đúng là suy diễn, và muốn có câu đó thì ghi vào Master. Prompt giờ nói rõ
@@ -2268,7 +2278,13 @@ letter (300 từ văn xuôi, gửi cho nhà tuyển dụng) có đúng lỗ đó
 - **Giới hạn còn lại** (ghi ở `SKILL.md §0`): luật kiểm *có mặt*, không kiểm *ngữ cảnh* (CV có
   "5 members" thì "5 years" vẫn qua); *one..ten* viết bằng chữ và số viết bằng chữ tiếng Việt
   không được kiểm; văn xuôi không số thì không lớp nào kiểm.
-- **Không đo được:** cover letter chưa có bench, và 3 file letter cũ trong DB không còn trên đĩa,
-  nên luật mới cho letter mới chỉ qua test, chưa qua một lượt gọi model thật.
+- **Letter chạy thật** (4 lượt sinh thư trên 2 job có plan, `claude_cli` / Opus, không lưu gì
+  ngoài `llm_calls`): luật con số **không từ chối lượt nào**; mọi con số trong thư cuối đều là số
+  CV có ghi. Thứ từ chối lại là lớp lexical **cũ**: một thư bị chặn hai lần vì chữ **"December"**
+  — viết hoa giữa câu nên heuristic coi là tên sản phẩm, trong khi CV ghi "Dec. 2024". Lỗi có từ
+  trước, và trên đường email nó làm hỏng cả đơn. Thêm tháng + thứ vào `_ALLOWED_TERMS`; chạy lại:
+  một thư qua vòng đầu, một thư qua sau một retry (vì nhắc Kotlin — đúng việc của guard).
+- **Vẫn chưa có bench cho letter.** 4 lượt trên là chạy tay; `llm_calls` không ghi *lý do* một
+  vòng bị từ chối, nên muốn biết luật nào chặn phải bọc `check_letter` như lần này.
 
-1039 test pass.
+1045 test pass.

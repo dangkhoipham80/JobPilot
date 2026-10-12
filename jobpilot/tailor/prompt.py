@@ -235,9 +235,15 @@ _REMEDIES: tuple[tuple[str, str], ...] = (
         "in `sections` instead.",
     ),
     (
-        "summary",
+        "technologies absent",
         "For `summary`: name only technologies that already appear in the Master CV "
         "outline above. If the job asks for something the CV lacks, leave it out.",
+    ),
+    (
+        "number(s)",
+        "For `summary`: every figure must be one the Master CV outline states. Do not "
+        "work out a length of experience from the dates, and do not swap the digit "
+        "for a word (\"over one year\"). Rewrite the sentence without the figure.",
     ),
     (
         "index",
