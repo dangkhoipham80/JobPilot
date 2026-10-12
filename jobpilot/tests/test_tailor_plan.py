@@ -76,7 +76,17 @@ def test_unknown_terms_does_not_read_a_month_as_a_technology(master):
     The CV says "Dec. 2024"; a real letter saying "since December 2024" was
     rejected twice for it."""
     vocab = vocabulary(master)
-    assert unknown_terms("I joined in December and have shipped every Friday since.", vocab) == []
+    assert unknown_terms("I joined in December and moved teams in Mar. the year after.", vocab) == []
+
+
+def test_unknown_terms_still_reads_a_weekday_as_a_possible_product(master):
+    """ "Monday" is monday.com on a CV; weekdays stay out of the allow-list."""
+    vocab = vocabulary(master)
+    assert unknown_terms("Comfortable with Trello and Monday, less so with Sun tooling.", vocab) == [
+        "Trello",
+        "Monday",
+        "Sun",
+    ]
 
 
 def test_unknown_terms_catches_internal_caps_anywhere(master):

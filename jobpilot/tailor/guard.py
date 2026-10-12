@@ -46,11 +46,15 @@ class GuardrailViolation(ValueError):
 # Kept deliberately small: a false positive costs one retry, a false negative
 # would let a fabricated skill onto the CV.
 #
-# Months and weekdays are here because they are capitalised mid-sentence, which
-# is the heuristic's whole definition of "looks like a product". A CV writes its
-# dates as "Dec. 2024"; a letter writes "since December 2024", and on real data
-# that one word rejected a letter twice and failed the application. The year
-# beside it is still held to the number check.
+# Months are here because they are capitalised mid-sentence, which is the
+# heuristic's whole definition of "looks like a product". A CV writes its dates
+# as "Dec. 2024"; a letter writes "since December 2024", and on real data that
+# one word rejected a letter twice and failed the application. The year beside
+# it is still held to the number check; the month itself is now checked by
+# nothing, so "since March 2024" passes too (a limit listed in SKILL.md §0).
+#
+# Weekdays are deliberately NOT here: "Monday" is a product people put on CVs
+# (monday.com), and a letter rarely needs one.
 _ALLOWED_TERMS = frozenset("""
     i i'm my me english vietnamese vietnam a an the and or but for with without to from
     in on at by of as is are was were be been being have has had do does did will would
@@ -66,7 +70,6 @@ _ALLOWED_TERMS = frozenset("""
     computer science bachelor university graduate graduating fresher junior senior
     january february march april may june july august september october november december
     jan feb mar apr jun jul aug sep sept oct nov dec
-    monday tuesday wednesday thursday friday saturday sunday
     """.split())
 
 # A token is "technology-looking" if it has an internal capital (PostgreSQL, JaCoCo),

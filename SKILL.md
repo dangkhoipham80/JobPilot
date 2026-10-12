@@ -64,6 +64,9 @@ raise, không âm thầm ra một CV chưa ai kiểm.
   decades, percent, times, -fold); ngoài ra chúng là từ đệm ("one of the two services") và được
   bỏ qua. Số viết bằng chữ tiếng Việt ("mười hai", "gấp đôi") không được kiểm. Chữ số thì bắt
   được ở mọi ngôn ngữ.
+- **Tên tháng không lớp nào kiểm.** Chúng được coi là từ thường để "since December 2024" không bị
+  đọc thành tên công nghệ, nên CV ghi "Dec. 2019" mà summary viết "since March 2019" vẫn qua —
+  năm thì được kiểm, tháng thì không.
 - So khớp theo dãy chữ số: CV ghi "12,000" mà text viết "12000" thì bị từ chối. Viết đúng như CV.
 - Thâm niên **tự tính từ ngày tháng** ("1+ years") bị từ chối nếu CV không ghi con số đó. Muốn
   summary nói vậy thì ghi nó vào Master CV.

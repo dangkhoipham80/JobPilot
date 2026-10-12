@@ -2276,15 +2276,17 @@ letter (300 từ văn xuôi, gửi cho nhà tuyển dụng) có đúng lỗ đó
 - **Chạy thật:** `llm bench --task tailor --limit 2` trên `claude_cli` / Opus → 2/2 qua guardrail
   ngay vòng đầu.
 - **Giới hạn còn lại** (ghi ở `SKILL.md §0`): luật kiểm *có mặt*, không kiểm *ngữ cảnh* (CV có
-  "5 members" thì "5 years" vẫn qua); *one..ten* viết bằng chữ và số viết bằng chữ tiếng Việt
-  không được kiểm; văn xuôi không số thì không lớp nào kiểm.
+  "5 members" thì "5 years" vẫn qua); *one..ten* viết bằng chữ chỉ được kiểm khi đứng trước đơn
+  vị; số viết bằng chữ tiếng Việt và **tên tháng** không được kiểm; văn xuôi không số thì không
+  lớp nào kiểm.
 - **Letter chạy thật** (4 lượt sinh thư trên 2 job có plan, `claude_cli` / Opus, không lưu gì
   ngoài `llm_calls`): luật con số **không từ chối lượt nào**; mọi con số trong thư cuối đều là số
   CV có ghi. Thứ từ chối lại là lớp lexical **cũ**: một thư bị chặn hai lần vì chữ **"December"**
   — viết hoa giữa câu nên heuristic coi là tên sản phẩm, trong khi CV ghi "Dec. 2024". Lỗi có từ
-  trước, và trên đường email nó làm hỏng cả đơn. Thêm tháng + thứ vào `_ALLOWED_TERMS`; chạy lại:
+  trước, và trên đường email nó làm hỏng cả đơn. Thêm **tháng** vào `_ALLOWED_TERMS` (thứ thì
+  không: review chỉ ra "Monday" là monday.com, một sản phẩm có thật trên CV); chạy lại:
   một thư qua vòng đầu, một thư qua sau một retry (vì nhắc Kotlin — đúng việc của guard).
 - **Vẫn chưa có bench cho letter.** 4 lượt trên là chạy tay; `llm_calls` không ghi *lý do* một
   vòng bị từ chối, nên muốn biết luật nào chặn phải bọc `check_letter` như lần này.
 
-1045 test pass.
+1046 test pass.
