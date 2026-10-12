@@ -33,12 +33,13 @@ Bạn cần Python 3.11+, Node 20, PostgreSQL và
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[all,dev]'
-playwright install chromium          # chỉ cần cho scraper ITviec / VietnamWorks
+playwright install chromium          # chỉ cần cho scraper ITviec / TopCV / VietnamWorks
 
 cp .env.example .env                 # đặt DATABASE_URL và JOBPILOT_API_TOKEN
 python -c "from jobpilot.api.security import generate_token; print(generate_token())"
 psql -U postgres -c "CREATE DATABASE jobpilot;"
 alembic upgrade head
+(cd web && npm ci)                   # dependency của dashboard
 
 make api                             # backend ở :8000
 make web                             # dashboard ở :5173, mở terminal thứ hai
@@ -57,7 +58,7 @@ Chạy đúng những gì CI chạy:
 ```bash
 ruff check jobpilot                                   # ruff được ghim version trong extra dev
 pytest jobpilot/tests -q
-cd web && npx tsc --noEmit && npm run build
+cd web && npm ci && npx tsc --noEmit && npm run build
 ```
 
 - Test chạy trên fixture SQLite nên không cần Postgres. CI đặt `JOBPILOT_API_TOKEN` là một giá trị

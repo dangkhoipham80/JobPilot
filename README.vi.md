@@ -60,7 +60,7 @@ Mười một trang, tất cả ở `localhost:5173`:
 | **Companies** | Nhà tuyển dụng và liên hệ HR; email HR có thể trở thành nơi nhận đơn của một tin |
 | **Runs** | Bắt đầu một lượt crawl, xem hàng đợi, đọc lịch sử chạy |
 | **Market** | Corpus đã crawl trông ra sao — skill, lương, thành phố, cấp bậc |
-| **Models** | Chọn provider và model theo từng việc; chi phí, độ trễ và tỉ lệ qua guardrail lần đầu |
+| **Models** | Chọn provider và model theo từng việc; chi phí, độ trễ và tỉ lệ qua guardrail lần đầu theo từng backend |
 | **Backup** | Backup database: đang có những bản nào, chạy một bản ngay, và lệnh khôi phục |
 | **Settings** | Nguồn, phạm vi crawl, các chốt khi nộp — ghi vào một file overlay đã gitignore |
 | **Guide** | Cả pipeline khớp với nhau thế nào |
@@ -75,7 +75,7 @@ Danh sách được phân trang ở server, kích thước trang do bạn chọn
 ```bash
 # 1. cài đặt (các extra là tuỳ chọn; `all` lấy hết)
 pip install -e '.[all]'
-playwright install chromium          # chỉ cần cho ITviec / VietnamWorks
+playwright install chromium          # chỉ cần cho ITviec / TopCV / VietnamWorks
 
 # 2. trỏ tới một database và đặt API token local
 cp .env.example .env                 # DATABASE_URL + JOBPILOT_API_TOKEN, cộng key của
@@ -87,6 +87,10 @@ alembic upgrade head
 uvicorn jobpilot.api.main:app --reload    # API + WebSocket ở :8000
 cd web && npm install && npm run dev      # dashboard ở :5173
 ```
+
+Thay token `changeme` trước bước 3: backend từ chối khởi động nếu token là giá trị mẫu hoặc ngắn
+hơn 20 ký tự. Đặt cùng giá trị đó trong `web/.env.local` dưới tên `VITE_API_TOKEN` (xem
+`web/.env.example`), nếu không dashboard sẽ nhận 401.
 
 `make dev` bật Postgres và API; dashboard cần một terminal riêng (`make web`), vì
 `uvicorn --reload` chặn terminal và Makefile chạy các bước theo thứ tự.
@@ -139,8 +143,11 @@ llm:
 ```
 
 Thêm một backend là thêm một mục trong `llm/registry.PROVIDERS` cùng một module client — không
-phải sửa một `Literal` ở bốn chỗ. Ba provider không nhận cùng một JSON Schema, nên `llm/schema.py`
+phải sửa một `Literal` ở bốn chỗ. Các provider gọi qua API không nhận cùng một JSON Schema, nên `llm/schema.py`
 chuyển đổi cho từng bên (tập con của Gemini, strict mode của OpenAI).
+
+Provider thứ tư, `claude_cli`, chạy cùng các model Claude qua CLI `claude` trên máy, tính vào gói
+Claude của bạn thay vì tính tiền theo token. Nó chỉ dành cho việc dùng cá nhân trên máy của bạn.
 
 **Đo, đừng đoán.** Mọi lượt gọi — kể cả lượt bị guardrail chống bịa từ chối và lượt lỗi — đều ghi
 một dòng vào `llm_calls`. Đọc bằng `jobpilot llm stats` hoặc trang Models: chi phí, độ trễ, và tần
@@ -278,11 +285,14 @@ jobpilot/
   tailor/     schema plan theo index · guardrail chống bịa · engine gọi model · diff
   apply/      cover letter · email (3 chốt) · chuyển giao cho portal · dispatcher
               followup.py (nhắc) · outcome.py (chuyện gì đã xảy ra) · inbox.py (đọc thư trả lời)
+  intake/     đọc JD dán vào · chấm độ khớp với CV
+  companies/  nhà tuyển dụng và liên hệ HR · gộp tên nhà tuyển dụng
   llm/        registry provider · engine theo từng việc · adapter schema · đo chi phí & chất lượng
   analytics/  facet thị trường, mỗi cái kèm nó đã thấy bao nhiêu phần của corpus
   store/      model SQLAlchemy + migration Alembic
   slack/      kênh phụ, tuỳ chọn; là client thuần của REST API
   orchestrator.py   hàng đợi task đứng sau các endpoint trả 202 kèm task id
+  backup.py         backup database + CV, đứng sau CLI, timer và trang Backup
 web/          dashboard React + Vite + TS + Tailwind
 ```
 

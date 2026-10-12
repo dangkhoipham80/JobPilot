@@ -32,12 +32,13 @@ You need Python 3.11+, Node 20, PostgreSQL and
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[all,dev]'
-playwright install chromium          # only for the ITviec / VietnamWorks scrapers
+playwright install chromium          # only for the ITviec / TopCV / VietnamWorks scrapers
 
 cp .env.example .env                 # set DATABASE_URL and JOBPILOT_API_TOKEN
 python -c "from jobpilot.api.security import generate_token; print(generate_token())"
 psql -U postgres -c "CREATE DATABASE jobpilot;"
 alembic upgrade head
+(cd web && npm ci)                   # dashboard dependencies
 
 make api                             # backend on :8000
 make web                             # dashboard on :5173, in a second terminal
@@ -56,7 +57,7 @@ Run what CI runs:
 ```bash
 ruff check jobpilot                                   # ruff is pinned in the dev extra
 pytest jobpilot/tests -q
-cd web && npx tsc --noEmit && npm run build
+cd web && npm ci && npx tsc --noEmit && npm run build
 ```
 
 - The tests run on a SQLite fixture, so they need no Postgres. CI sets `JOBPILOT_API_TOKEN` to a
