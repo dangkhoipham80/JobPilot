@@ -130,6 +130,8 @@ make dev
 - **Ngôn ngữ code/comment**: English. Docs cho user (PLAN/SKILL/PHASES) có thể tiếng Việt.
   **Mọi thứ đẩy lên GitHub thì English**: commit message, PR title, PR description, issue.
   Ranh giới là *ai đọc*: `PHASES.md` là nhật ký cho mình, PR là thứ public.
+  `README.md` ↔ `README.vi.md` và `CONTRIBUTING.md` ↔ `CONTRIBUTING.vi.md` là **cặp song ngữ**:
+  sửa một bên thì sửa luôn bên kia trong cùng commit, không thì hai bản lệch nhau.
 - **Python**: 3.11+, type hints, `ruff`/`black` nếu có. Mỗi scraper kế thừa `crawler/base.py:BaseScraper`.
 - **LaTeX**: giữ cú pháp Awesome-CV; dùng macro có sẵn `\tech{}`, `\techfe{}`, `\cvsimpleentry`, `\cvitems`. Đổi màu chủ đạo trong CV Studio (`theme.color`), không sửa `.tex` tay.
 - **Job schema**: mọi scraper phải normalize về `Job` schema chung (PLAN.md §3.1) để dedup theo `id = "<source>:<native_id>"`.
