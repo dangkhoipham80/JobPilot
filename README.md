@@ -1,5 +1,7 @@
 # 🤖 JobPilot — CV autopilot, on your own machine
 
+**English** · [Tiếng Việt](README.vi.md)
+
 > Crawl developer jobs → review them on a local dashboard → tailor your CV to one → approve the diff → apply → track what comes back.
 > Built on the [Awesome-CV](https://github.com/posquit0/Awesome-CV) LaTeX template, which is also usable on its own.
 
@@ -15,7 +17,7 @@ This repo has two layers:
 2. **JobPilot** — a FastAPI + React + PostgreSQL pipeline that crawls jobs, tailors your CV per job
    with an LLM, dispatches applications and tracks what came back. Architecture in
    [`PLAN.md`](PLAN.md), CV-tailoring rules in [`SKILL.md`](SKILL.md), contributor guide in
-   [`CLAUDE.md`](CLAUDE.md).
+   [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 > **No CV lives in this repo.** Your name, email, history and every tailored version live in the
 > `cv_versions` table of your local Postgres. A fresh database seeds an *empty* CV that you fill in
@@ -47,7 +49,7 @@ Three rules the code is built around:
 
 ### The dashboard
 
-Nine pages, all at `localhost:5173`:
+Eleven pages, all at `localhost:5173`:
 
 | Page | What it's for |
 |---|---|
@@ -55,9 +57,11 @@ Nine pages, all at `localhost:5173`:
 | **Jobs** | Everything crawled, filterable; shortlist or skip from the row |
 | **CV Studio** | Structured editor for the Master CV, version history, diff any two versions |
 | **Applications** | Board of what was dispatched, per stage; follow-up reminders and inbox suggestions |
+| **Companies** | Employers and their HR contacts; an HR email can become a job's apply target |
 | **Runs** | Start a crawl, watch the queue, read the run history |
 | **Market** | What the crawled corpus looks like — skills, pay, cities, seniority |
 | **Models** | Pick a provider and model per task; cost, latency and first-try rate per backend |
+| **Backup** | Database backups: what exists, run one now, and the restore command |
 | **Settings** | Sources, crawl scope, apply gates — written to a gitignored overlay |
 | **Guide** | How the pipeline fits together |
 
@@ -107,7 +111,7 @@ python -m jobpilot.cli confirm-submit <job_id>        # you submitted a portal/e
 python -m jobpilot.cli llm providers                  # what runs what, which keys are missing
 python -m jobpilot.cli llm stats                      # cost, first-try rate, latency per backend
 python -m jobpilot.cli llm bench --task classify      # score a backend on known answers
-pytest jobpilot/tests                                 # 690 tests
+pytest jobpilot/tests
 ```
 
 Keep the query short. It becomes a search term at each site, and an over-specific one
@@ -118,7 +122,7 @@ Keep the query short. It becomes a search term at each site, and an over-specifi
 ## 🧠 Models
 
 Nothing is hard-wired to one vendor. Provider and model are chosen **per task** —
-`tailor`, `letter`, `classify` — in `jobpilot/config.yaml` or from the **Models** page, which writes
+`tailor`, `letter`, `classify`, `intake` — in `jobpilot/config.yaml` or from the **Models** page, which writes
 to the gitignored overlay:
 
 ```yaml
@@ -127,6 +131,7 @@ llm:
   tailor: ""                # "" = use `provider`
   letter: ""
   classify: ""              # e.g. openai — the cheap, easy call
+  intake: ""                # reading a pasted JD and scoring it against the CV
   models:
     claude: claude-opus-4-8
     openai: gpt-4.1
@@ -190,8 +195,9 @@ ats:
 Then enable `greenhouse` / `lever` in Settings. Each board is one request per crawl, so a long list
 is a slow crawl.
 
-**Sources deliberately not added.** Several were evaluated and rejected — read `CLAUDE.md` →
-*"Nguồn tier-2 đã loại"* before adding one, so the checks aren't repeated:
+**Sources deliberately not added.** Several were evaluated and rejected — read
+[`jobpilot/crawler/CLAUDE.md`](jobpilot/crawler/CLAUDE.md) → *"Nguồn tier-2 đã loại"* (in Vietnamese)
+before adding one, so the checks aren't repeated:
 
 - **Remotive**, **Jobicy** — `robots.txt` disallows `/api/`, which is the only useful endpoint.
 - **RemoteOK**, **TopDev** — `Content-Signal: ai-train=no, use=reference` plus a `ClaudeBot` block.
@@ -281,8 +287,9 @@ web/          React + Vite + TS + Tailwind dashboard
 
 ## 🤝 Contributing
 
-Read [`CLAUDE.md`](CLAUDE.md) first — it holds the conventions and, more usefully, the list of bugs
-that only appeared against live sites, each with the test that now pins it.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs and the rules a change has
+to keep. The conventions themselves live in [`CLAUDE.md`](CLAUDE.md) and in a `CLAUDE.md` per code
+area — written in Vietnamese — along with the bugs that only appeared against live sites.
 
 ## 📝 License
 
