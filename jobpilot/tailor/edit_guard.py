@@ -26,86 +26,39 @@ Master CV must be traceable to a verified quote.*
 
 ``guard.unknown_terms`` only sees technology-*looking* tokens, and ``_TOKEN_RE``
 requires a token to start with a letter — so "increased throughput by 40%" and
-"led a team of 12 engineers" contain nothing it can see. That is survivable in
-tailoring, where the schema forbids writing such a sentence at all, but here the
-model does write prose, and an invented metric is the single most damaging thing
-it could put on a CV. Digits are therefore checked directly, against the same
-two sources — and so are the number words a model could use to say "12" without
-writing a digit (``_NUMBER_WORDS``), since "twelve" is exactly as unbacked as
-"12" if neither source ever said it.
+"led a team of 12 engineers" contain nothing it can see. Here the model writes
+prose, and an invented metric is the single most damaging thing it could put on
+a CV. Digits are therefore checked directly, against the same two sources — and
+so are the number words a model could use to say "12" without writing a digit,
+since "twelve" is exactly as unbacked as "12" if neither source ever said it.
+
+The primitives are ``guard.numbers_in`` / ``guard.master_text``: the tailor
+summary and the cover letter write prose too and are held to the same count.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from jobpilot.cv.schema import (
-    BulletsSection,
     CvDocument,
     EducationSection,
-    ExperienceSection,
     ParagraphSection,
-    ProjectsSection,
 )
 from jobpilot.tailor.edit import NA, MasterEditPlan
-from jobpilot.tailor.guard import GuardrailViolation, PlanReport, terms_in, unknown_terms, vocabulary
+from jobpilot.tailor.guard import (
+    GuardrailViolation,
+    PlanReport,
+    master_text,
+    numbers_in,
+    terms_in,
+    unknown_terms,
+    vocabulary,
+)
 from jobpilot.textnorm import quote_appears_in
 
 #: Ops that put a *new* claim on the CV and therefore must cite the instruction.
 ADDITIVE_OPS = frozenset({"add_bullet", "add_entry"})
-
-#: Maximal runs of digits. Decimal points and separators are deliberately not
-#: joined: "3.7" yields {"3", "7"}, so a rewrite claiming 3.7 when the CV says
-#: 3.5 is caught on the "7".
-_DIGITS = re.compile(r"\d+")
-
-#: Number words worth checking like digits. Deliberately excludes one..ten and
-#: "quarter"/"couple": those double as ordinary English filler ("one of the",
-#: "a couple of things") and would false-positive on prose that isn't claiming
-#: a metric at all. What's left still catches "led a team of twelve" or
-#: "cut costs by half" written out instead of numerals — the exact way a model
-#: could dodge ``_digits`` while still inventing a figure.
-_NUMBER_WORDS = frozenset(
-    {
-        "eleven",
-        "twelve",
-        "thirteen",
-        "fourteen",
-        "fifteen",
-        "sixteen",
-        "seventeen",
-        "eighteen",
-        "nineteen",
-        "twenty",
-        "thirty",
-        "forty",
-        "fifty",
-        "sixty",
-        "seventy",
-        "eighty",
-        "ninety",
-        "dozen",
-        "dozens",
-        "hundred",
-        "hundreds",
-        "thousand",
-        "thousands",
-        "million",
-        "millions",
-        "billion",
-        "billions",
-        "half",
-        "halved",
-        "double",
-        "doubled",
-        "triple",
-        "tripled",
-        "quadruple",
-        "quadrupled",
-    }
-)
-_WORD_RE = re.compile(r"[a-zA-Z]+")
 
 __all__ = ["check_edit_plan", "GuardrailViolation", "PlanReport"]
 
@@ -119,33 +72,6 @@ class _Sources:
     instruction: str
     instruction_vocab: set[str]
     instruction_digits: set[str]
-
-
-def _digits(text: str) -> set[str]:
-    return set(_DIGITS.findall(text or "")) | _number_words(text)
-
-
-def _number_words(text: str) -> set[str]:
-    return {w.lower() for w in _WORD_RE.findall(text or "") if w.lower() in _NUMBER_WORDS}
-
-
-def _master_text(doc: CvDocument) -> str:
-    """Everything the master says, as one blob — for digit provenance."""
-    parts: list[str] = []
-    for s in doc.sections:
-        parts.append(s.title)
-        if isinstance(s, ParagraphSection):
-            parts.append(s.text)
-        elif isinstance(s, BulletsSection):
-            for it in s.items:
-                parts += [it.label or "", it.text, it.date or ""]
-        elif isinstance(s, EducationSection):
-            for e in s.entries:
-                parts += [e.degree, e.institution, e.location, e.date, *e.items]
-        elif isinstance(s, (ExperienceSection, ProjectsSection)):
-            for e in s.entries:
-                parts += [e.title, e.date, e.role or "", *e.items, *e.tech_stack]
-    return " ".join(parts)
 
 
 def _check_text(label: str, text: str, op, src: _Sources, out: list[str]) -> None:
@@ -176,7 +102,7 @@ def _check_text(label: str, text: str, op, src: _Sources, out: list[str]) -> Non
             "nor in the quoted instruction — remove it or quote the user saying it"
         )
 
-    new_numbers = sorted(_digits(text) - allowed_digits)
+    new_numbers = sorted(numbers_in(text) - allowed_digits)
     if new_numbers:
         out.append(
             f"{label}: introduces the number(s) {', '.join(new_numbers)} that the user "
@@ -194,10 +120,10 @@ def check_edit_plan(plan: MasterEditPlan, master: CvDocument, instruction: str) 
     by_key = _section_index(master)
     src = _Sources(
         master_vocab=vocabulary(master),
-        master_digits=_digits(_master_text(master)),
+        master_digits=numbers_in(master_text(master)),
         instruction=instruction,
         instruction_vocab=terms_in(instruction),
-        instruction_digits=_digits(instruction),
+        instruction_digits=numbers_in(instruction),
     )
 
     for n, (kind, op) in enumerate(plan.labelled()):

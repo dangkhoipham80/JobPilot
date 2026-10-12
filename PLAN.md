@@ -173,7 +173,7 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 ### 5.3 `tailor/` — bộ não tailor CV (xem `SKILL.md`)
 - **Input**: `Job.description_md` + **Master CV** (`CvDocument` JSON trong `cv_versions`, scope `master` — nguồn sự thật).
 - **Bước**: (1) trích requirement từ JD → (2) gap analysis vs Master CV → (3) model trả một **plan index-based** (`TailorPlan`): viết lại `summary`, sắp xếp/ẩn section, entry, bullet có sẵn → (4) sinh **cover letter** → (5) build PDF.
-- **Guardrail**: không bịa — ép bằng schema (plan chỉ trỏ tới nội dung có sẵn) + hai lớp kiểm structural và lexical (`tailor/guard.py`), một lần retry có phản hồi. Output kèm **diff giải thích** để user duyệt.
+- **Guardrail**: không bịa — ép bằng schema (plan chỉ trỏ tới nội dung có sẵn) + ba lớp kiểm structural, lexical và numeric (`tailor/guard.py`), một lần retry có phản hồi. Output kèm **diff giải thích** để user duyệt.
 - **Build**: áp plan lên Master (deterministic) → một row `cv_versions` mới (`author='agent'`) → render `.tex` qua Jinja2 → tectonic → `out/cv/<scope>/cv.pdf`. Master không bị đổi.
 - **ATS**: plan chỉ viết được chữ ở `summary`, nên keyword của JD vào CV bằng cách viết lại summary và đưa phần liên quan lên trước; giữ format sạch để ATS đọc được (`cv/ats.py` đọc lại PDF để kiểm).
 

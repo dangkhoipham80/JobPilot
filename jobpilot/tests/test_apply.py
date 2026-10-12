@@ -192,6 +192,63 @@ def test_learning_note_cannot_invent_a_gap_that_is_not_one(db):
     assert not check_letter(letter, master, job, plan).ok
 
 
+def test_letter_with_an_invented_metric_is_rejected(db):
+    """No technology is named, so the term check has nothing to object to."""
+    master = cv_store.get_document(db, "master")
+    job = _job(db)
+    bad = LETTER.model_copy(
+        update={"paragraphs": ["I cut response times by 47% for 12000 daily users."]}
+    )
+    report = check_letter(bad, master, job)
+    assert not report.ok
+    assert "47" in report.violations[0] and "12000" in report.violations[0]
+
+
+def test_letter_may_repeat_a_number_from_the_job_itself(db):
+    """The employer's own name is a fact about the job, digits included."""
+    master = cv_store.get_document(db, "master")
+    job = _job(db, company="Studio 6677")
+    letter = LETTER.model_copy(
+        update={"paragraphs": ["I would like to join Studio 6677 as a backend engineer."]}
+    )
+    assert check_letter(letter, master, job).ok
+
+
+def test_a_number_in_the_job_title_or_address_licenses_nothing(db):
+    """Titles carry requirements ("5+ years") and locations carry street
+    numbers. Neither is a fact about the candidate, and this is the path where
+    nobody reads the letter before it is sent."""
+    master = cv_store.get_document(db, "master")
+    titled = _job(db, title="Java Developer (5+ years) - up to 7000")
+    claim = LETTER.model_copy(
+        update={"paragraphs": ["I bring 5+ years of Java and served 7000 daily users."]}
+    )
+    report = check_letter(claim, master, titled)
+    assert not report.ok and "7000" in report.violations[0]
+
+    located = _job(db, id="itviec:2", location="61 Ton Dan, District 4")
+    team = LETTER.model_copy(update={"paragraphs": ["I led a team of 61 engineers."]})
+    assert not check_letter(team, master, located).ok
+
+
+def test_learning_note_may_repeat_a_number_from_a_gap(db):
+    master = cv_store.get_document(db, "master")
+    job = _job(db)
+    plan = TailorPlan(
+        match_score=0.6,
+        requirements=[Requirement(text="Java 21", kind="nice_to_have", status="MISSING")],
+    )
+    note = LETTER.model_copy(
+        update={"learning_note": "I have not shipped on Java 21 yet and would like to."}
+    )
+    assert check_letter(note, master, job, plan).ok
+
+    claimed = LETTER.model_copy(
+        update={"paragraphs": [*LETTER.paragraphs, "I have shipped on Java 21 for years."]}
+    )
+    assert not check_letter(claimed, master, job, plan).ok
+
+
 def test_overlong_letter_is_rejected(db):
     master = cv_store.get_document(db, "master")
     job = _job(db)

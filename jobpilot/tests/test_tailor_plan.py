@@ -11,6 +11,8 @@ from jobpilot.tailor.diff import diff_documents
 from jobpilot.tailor.guard import (
     GuardrailViolation,
     check_plan,
+    master_text,
+    numbers_in,
     unknown_terms,
     vocabulary,
 )
@@ -69,6 +71,24 @@ def test_unknown_terms_ignores_sentence_initial_capitals(master):
     assert unknown_terms("Passionate about clean code.", vocabulary(master)) == []
 
 
+def test_unknown_terms_does_not_read_a_month_as_a_technology(master):
+    """Capitalised mid-sentence, so the heuristic took "December" for a product.
+    The CV says "Dec. 2024"; a real letter saying "since December 2024" was
+    rejected twice for it."""
+    vocab = vocabulary(master)
+    assert unknown_terms("I joined in December and moved teams in Mar. the year after.", vocab) == []
+
+
+def test_unknown_terms_still_reads_a_weekday_as_a_possible_product(master):
+    """ "Monday" is monday.com on a CV; weekdays stay out of the allow-list."""
+    vocab = vocabulary(master)
+    assert unknown_terms("Comfortable with Trello and Monday, less so with Sun tooling.", vocab) == [
+        "Trello",
+        "Monday",
+        "Sun",
+    ]
+
+
 def test_unknown_terms_catches_internal_caps_anywhere(master):
     """Internal capitals mark a product name even at the start of a sentence."""
     assert unknown_terms("RabbitMQ is used daily.", vocabulary(master)) == ["RabbitMQ"]
@@ -89,6 +109,74 @@ def test_summary_reusing_master_vocabulary_is_accepted(master):
         summary="Backend engineer building **RESTful APIs** with `Spring Boot` and `JUnit`."
     )
     assert check_plan(plan, master).ok
+
+
+def test_summary_with_an_invented_metric_is_rejected(master):
+    """The term check starts every token at a letter, so it never sees a number.
+    This summary names no technology at all and used to pass untouched."""
+    report = check_plan(
+        _plan(summary="Backend engineer who improved throughput by 40% and led a team of 12."),
+        master,
+    )
+    assert not report.ok
+    assert "40" in report.violations[0] and "12" in report.violations[0]
+    with pytest.raises(GuardrailViolation):
+        report.raise_if_bad()
+
+
+def test_summary_with_a_spelled_out_metric_is_rejected(master):
+    """ "twelve" is exactly as unbacked as "12"."""
+    report = check_plan(_plan(summary="Backend engineer who led a team of twelve."), master)
+    assert not report.ok and "twelve" in report.violations[0]
+
+
+def test_summary_may_repeat_a_number_the_cv_states(master):
+    stated = sorted(numbers_in(master_text(master)), key=len)[-1]  # a year, e.g. "2024"
+    assert check_plan(_plan(summary=f"Backend engineer since {stated}."), master).ok
+
+
+def test_summary_small_number_words_are_deliberately_not_checked(master):
+    """one..ten are ordinary English ("one of the two services"); checking them
+    would reject prose that claims no metric. Same trade-off as the edit guard."""
+    plan = _plan(summary="Backend engineer on one of the two core services of the team.")
+    assert check_plan(plan, master).ok
+
+
+def test_a_small_number_word_before_a_unit_is_a_claim(master):
+    """ "over one year" is how a model rewrites "1+ years" once the digit is
+    rejected. Before a unit of time or scale, one..ten are not filler."""
+    assert numbers_in("over one year", "ten years", "five times", "three-fold") == {
+        "1", "10", "5", "3",
+    }  # fmt: skip
+    report = check_plan(_plan(summary="Backend engineer with over one year of experience."), master)
+    assert not report.ok and "1" in report.violations[0]
+
+
+def test_a_number_word_and_its_digit_back_each_other():
+    assert numbers_in("two years") == numbers_in("2 years") == {"2"}
+
+
+def test_the_headline_and_quote_count_as_stated_but_the_phone_does_not(master):
+    master.header.position = "Backend Engineer, 7 years"
+    master.header.mobile = "(+84) 900 111 6543"
+    stated = numbers_in(master_text(master))
+    assert "7" in stated and "6543" not in stated
+
+
+def test_the_retry_names_the_rule_that_actually_broke(master):
+    """A number violation used to get the remedy about technologies, because
+    both messages start with "summary"."""
+    from jobpilot.tailor.prompt import retry_prompt
+
+    report = check_plan(_plan(summary="Backend engineer who cut latency by 40%."), master)
+    text = retry_prompt(report.violations)
+    assert "every figure must be one the Master CV outline states" in text
+    assert "name only technologies" not in text
+
+
+def test_a_digit_inside_a_name_counts_as_a_number():
+    """ "S3" copied from the CV carries its "3" with it; "S3" from nowhere does not."""
+    assert numbers_in("stored in S3 and EC2") == {"3", "2"}
 
 
 # --------------------------------------------------------------------------- #

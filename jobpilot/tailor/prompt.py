@@ -50,7 +50,9 @@ the summary, so most of your work is deciding what to promote and what to hide.
 - `match_score`: (HAVE + 0.5 x PARTIAL) / total, counting must_have twice.
 - `summary`: rewrite the Summary in 2-3 sentences aimed at this role, using the
   job's vocabulary **only where the CV already supports it**. Every technology
-  you name must appear somewhere in the Master CV. Keep it one paragraph.
+  you name must appear somewhere in the Master CV, and so must every number:
+  a figure the CV does not state — including a length of experience you worked
+  out from its dates — is rejected. Keep it one paragraph.
 - `section_order`: either leave it **empty** to keep the current order, or list
   **every** section key exactly once, most relevant to this job first. A partial
   list is rejected: a section left out of the order would silently disappear,
@@ -233,9 +235,15 @@ _REMEDIES: tuple[tuple[str, str], ...] = (
         "in `sections` instead.",
     ),
     (
-        "summary",
+        "technologies absent",
         "For `summary`: name only technologies that already appear in the Master CV "
         "outline above. If the job asks for something the CV lacks, leave it out.",
+    ),
+    (
+        "number(s)",
+        "For `summary`: every figure must be one the Master CV outline states. Do not "
+        "work out a length of experience from the dates, and do not swap the digit "
+        "for a word (\"over one year\"). Rewrite the sentence without the figure.",
     ),
     (
         "index",

@@ -1,6 +1,6 @@
 """Truthfulness guardrails for a tailor plan (SKILL.md §0).
 
-Two layers:
+Three layers:
 
 1. **Structural** — every index in the plan must point at real Master CV content,
    with no duplicates. Because the plan can only reorder and drop, a structurally
@@ -9,6 +9,14 @@ Two layers:
    token in it must already appear somewhere in the Master CV. Ordinary prose is
    left alone, so rewording stays possible while "also experienced with Kafka"
    does not.
+3. **Numeric** — every number in the summary must be a number the Master CV
+   states. Layer 2 cannot see one: its tokens start with a letter, so "improved
+   throughput by 40%" contains nothing it checks. The summary is prose the model
+   writes, and an invented metric is the most damaging thing it could put there.
+
+The number primitives (:func:`numbers_in`, :func:`master_text`,
+:func:`unknown_numbers`) live here so that the tailor plan, the cover letter and
+the Master-CV edit guard all count numbers the same way.
 
 Violations are returned rather than raised so the engine can feed them back to
 the model for one corrective retry.
@@ -37,6 +45,16 @@ class GuardrailViolation(ValueError):
 # Words that look like a technology to the heuristic below but are ordinary English.
 # Kept deliberately small: a false positive costs one retry, a false negative
 # would let a fabricated skill onto the CV.
+#
+# Months are here because they are capitalised mid-sentence, which is the
+# heuristic's whole definition of "looks like a product". A CV writes its dates
+# as "Dec. 2024"; a letter writes "since December 2024", and on real data that
+# one word rejected a letter twice and failed the application. The year beside
+# it is still held to the number check; the month itself is now checked by
+# nothing, so "since March 2024" passes too (a limit listed in SKILL.md §0).
+#
+# Weekdays are deliberately NOT here: "Monday" is a product people put on CVs
+# (monday.com), and a letter rarely needs one.
 _ALLOWED_TERMS = frozenset("""
     i i'm my me english vietnamese vietnam a an the and or but for with without to from
     in on at by of as is are was were be been being have has had do does did will would
@@ -50,6 +68,8 @@ _ALLOWED_TERMS = frozenset("""
     developed developing maintain maintained maintaining implement implemented
     design designed designing scalable reliable reliability quality performance
     computer science bachelor university graduate graduating fresher junior senior
+    january february march april may june july august september october november december
+    jan feb mar apr jun jul aug sep sept oct nov dec
     """.split())
 
 # A token is "technology-looking" if it has an internal capital (PostgreSQL, JaCoCo),
@@ -81,6 +101,49 @@ _HAS_TECH_PUNCT = re.compile(r"[0-9+#]")
 _QUALIFIERS = frozenset(
     "apache google amazon aws microsoft azure oracle cloudera elastic "
     "jetbrains atlassian hashicorp".split()
+)
+
+
+#: Maximal runs of digits. Decimal points and separators are deliberately not
+#: joined: "3.7" yields {"3", "7"}, so a text claiming 3.7 when the CV says 3.5
+#: is caught on the "7". A digit inside a name counts too ("S3" yields "3"),
+#: which is what lets a name copied from the CV carry its own digits through.
+_DIGITS = re.compile(r"\d+")
+
+#: Number words worth checking like digits. Deliberately excludes one..ten and
+#: "quarter"/"couple": those double as ordinary English filler ("one of the",
+#: "a couple of things") and would false-positive on prose that isn't claiming
+#: a metric at all (``_SMALL_WITH_UNIT`` below picks up the cases where they
+#: are). What's left still catches "led a team of twelve" or
+#: "cut costs by half" written out instead of numerals — the exact way a model
+#: could dodge the digit check while still inventing a figure.
+#:
+#: English only. A figure spelled out in Vietnamese ("mười hai", "gấp đôi") is
+#: not seen; numerals are, in any language.
+_NUMBER_WORDS = frozenset(
+    """
+    eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen
+    twenty thirty forty fifty sixty seventy eighty ninety
+    dozen dozens hundred hundreds thousand thousands million millions billion billions
+    half halved double doubled triple tripled quadruple quadrupled
+    """.split()
+)
+_WORD_RE = re.compile(r"[a-zA-Z]+")
+
+#: one..ten are left out of ``_NUMBER_WORDS`` because they are ordinary filler
+#: ("one of the two services"). Followed by a unit of time or scale they are not
+#: filler, they are a claim — and "over one year of experience" is exactly how a
+#: model rewrites "1+ years" once the digit has been rejected. Counted as the
+#: digit they spell, so "two years" is backed by a CV that says "2 years".
+_SMALL_NUMBERS = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+}  # fmt: skip
+_SMALL_WITH_UNIT = re.compile(
+    r"\b(" + "|".join(_SMALL_NUMBERS) + r")\b(?:\s*\+|\s+plus)?[\s-]+"
+    r"(?:years?|yrs?|months?|weeks?|decades?|percent|times)\b"
+    r"|\b(" + "|".join(_SMALL_NUMBERS) + r")-?fold\b",
+    re.IGNORECASE,
 )
 
 
@@ -164,6 +227,48 @@ def vocabulary(doc: CvDocument) -> set[str]:
             # summary saying "CI" or "Node" isn't flagged.
             vocab.update(p for p in re.split(r"[._-]", lowered) if p)
     return vocab
+
+
+def master_text(doc: CvDocument) -> str:
+    """Everything the Master CV's sections say, dates included, as one blob.
+
+    This is the source for number provenance, so unlike :func:`vocabulary` it
+    includes the date fields: "2024" in a summary is a fact the CV states. The
+    header contributes its headline and quote — free text the user wrote — but
+    not the phone number or address, whose digits are not facts about the work.
+    """
+    parts: list[str] = [doc.header.position, doc.header.quote or ""]
+    for s in doc.sections:
+        parts.append(s.title)
+        if isinstance(s, ParagraphSection):
+            parts.append(s.text)
+        elif isinstance(s, BulletsSection):
+            for it in s.items:
+                parts += [it.label or "", it.text, it.date or ""]
+        elif isinstance(s, EducationSection):
+            for e in s.entries:
+                parts += [e.degree, e.institution, e.location, e.date, *e.items]
+        elif isinstance(s, (ExperienceSection, ProjectsSection)):
+            for e in s.entries:
+                parts += [e.title, e.date, e.role or "", *e.items, *e.tech_stack]
+    return " ".join(parts)
+
+
+def numbers_in(*values: str | None) -> set[str]:
+    """Every figure ``values`` state: digit runs, plus spelled-out number words."""
+    out: set[str] = set()
+    for value in values:
+        text = value or ""
+        out.update(_DIGITS.findall(text))
+        out.update(w.lower() for w in _WORD_RE.findall(text) if w.lower() in _NUMBER_WORDS)
+        for m in _SMALL_WITH_UNIT.finditer(text):
+            out.add(_SMALL_NUMBERS[(m.group(1) or m.group(2)).lower()])
+    return out
+
+
+def unknown_numbers(text: str, allowed: set[str]) -> list[str]:
+    """Figures in ``text`` that none of the allowed sources ever state."""
+    return sorted(numbers_in(text) - allowed)
 
 
 def _is_tech_looking(token: str, at_sentence_start: bool) -> bool:
@@ -267,6 +372,14 @@ def check_plan(plan: TailorPlan, master: CvDocument) -> PlanReport:
                 "summary mentions technologies absent from the Master CV: "
                 + ", ".join(invented)
                 + " — remove them (SKILL.md §0: never claim a skill the CV cannot back up)"
+            )
+        figures = unknown_numbers(plan.summary, numbers_in(master_text(master)))
+        if figures:
+            out.append(
+                "summary states the number(s) "
+                + ", ".join(figures)
+                + ", which the Master CV never states — remove them (SKILL.md §0: never "
+                "claim a metric the CV cannot back up)"
             )
 
     for req in plan.requirements:
