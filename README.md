@@ -49,7 +49,7 @@ Three rules the code is built around:
 
 ### The dashboard
 
-Eleven pages, all at `localhost:5173`:
+Eleven pages, at `localhost:5173` in development (or at `:8000`, served by the API, once `web/` is built):
 
 | Page | What it's for |
 |---|---|

@@ -38,7 +38,7 @@ Claude đọc lại file trong thư mục đó. Session dài đụng nhiều vù
 
 1. **Truthfulness**: khi tailor CV, KHÔNG bịa skill/kinh nghiệm/metric. Chỉ nhấn mạnh/diễn đạt lại dữ kiện có thật. Chi tiết: `SKILL.md §0`.
 2. **Human-in-the-loop**: mọi hành động gửi ra ngoài cần user Approve, trừ kênh **email** đã bật rõ. **Không** auto-apply LinkedIn. **Không** scrape LinkedIn.
-3. **Không commit thông tin cá nhân**: Master CV sống trong bảng `cv_versions` của Postgres, ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
+3. **Không commit thông tin cá nhân** (repo **public**): Master CV sống trong bảng `cv_versions` của Postgres, ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
 4. **Không ghi đè Master CV**: bản tailored sinh ra ở `out/cv/<scope>/`, Master trong DB giữ nguyên.
 5. **Tôn trọng ToS/robots.txt/rate-limit** khi crawl. Site nào fail thì log + chạy tiếp, không retry vô hạn.
 6. **Secrets**: mọi token (Slack, Claude API, email) đặt trong `.env` (đã gitignore). Không log, không commit token, không commit `jobpilot.db`.
@@ -55,13 +55,14 @@ Triển khai theo phase trong `PLAN.md §9`. **Mỗi phase là một vòng khép
    Nó review **độc lập** trên `git diff` thật, không chỉ đọc summary, và **không tự sửa code,
    không tự push** — chỉ ra verdict, quyền quyết định vẫn ở user.
    ✅ **APPROVE** → sang bước 4. ❌ **CHANGES REQUESTED** → sửa theo finding, quay lại bước 2.
-4. **Push git** — commit (Conventional Commits) + push. Chỉ push **sau khi review approve và user đồng ý**.
+4. **Push git** — commit (Conventional Commits) + push nhánh + mở **pull request** vào `main`. Chỉ push **sau khi review approve và user đồng ý**. `main` được bảo vệ: không push thẳng được, PR chỉ merge khi check `backend` + `frontend` xanh.
 5. **Tiếp phase sau.**
 
 Ràng buộc:
 - **Không tự merge/nhảy phase** khi chưa có approve.
 - Mỗi phase = 1 (hoặc vài) commit gọn, message rõ; kết thúc phase mới push.
-- Branch làm việc: `feat/jobpilot` (giữ `main` sạch), trừ khi user yêu cầu khác.
+- Branch làm việc: **nhánh riêng từ `main`** cho mỗi việc (`feat/…`, `fix/…`, `docs/…`, `chore/…`), vào `main` qua PR. Không commit lên `main`.
+- **Repo public (2026-10-12).** Mọi thứ push lên — commit, nhánh, nội dung PR, log Actions — ai cũng đọc được. Soát nguyên tắc 3 và 6 **trước** khi commit, không phải trước khi push.
 - Sau mỗi phase: ghi chi tiết vào `PHASES.md`, thêm 1 dòng vào bảng "Trạng thái hiện
   tại" bên dưới, cập nhật "Nợ kỹ thuật" nếu có gì đổi.
 - **Luật mới thuộc về một vùng code thì viết vào `CLAUDE.md` của vùng đó**, không viết vào
@@ -144,7 +145,7 @@ make dev
 
 ## Trạng thái hiện tại
 
-Roadmap `PLAN.md §9` **đã xong** (Phase 0 → 15); roadmap mở rộng **§9.1 (Phase 18 → 25)** đang
+Roadmap `PLAN.md §9` **đã xong** (Phase 0 → 17); roadmap mở rộng **§9.1 (Phase 18 → 25)** đang
 chạy. Nhật ký chi tiết từng phase nằm ở **`PHASES.md`**: đọc phần tương ứng trước khi đụng vào
 một vùng code lần đầu. Mục "Nợ kỹ thuật" bên dưới là phần **còn đang áp dụng**.
 
@@ -155,7 +156,7 @@ cho việc khác với thứ `PLAN.md §9.1` cấp cho các ô đó. Đối chi�
 | Ô §9.1 | Việc | Tình trạng |
 |---|---|---|
 | 18, 19 | outcome tracking, inbox sync | ✅ xong |
-| **20** | **Analytics thật** — reply/interview rate theo **nguồn·kênh·level**, time-to-first-reply, tin đăng lại | 🔨 đang làm |
+| **20** | **Analytics thật** — reply/interview rate theo **nguồn·kênh·level**, time-to-first-reply, tin đăng lại | ✅ xong (`analytics/outcomes.py`) |
 | **21** | **LLM ranking 2 tầng + dealbreaker** | ❌ **chưa ai làm** — đừng nhầm với `/market` |
 | 22–25 | drafter–reviewer, cắt CV 2 trang, interview prep, upskill | ❌ chưa |
 
@@ -165,10 +166,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 
 | Phase | Nội dung | Code |
 |---|---|---|
-| 0–2 | scaffold; build wrapper Docker LaTeX; models + Alembic + FastAPI skeleton | `store/`, `api/`, `alembic/` |
+| 0–2 | scaffold; build wrapper LaTeX; models + Alembic + FastAPI skeleton | `store/`, `api/`, `store/migrations/` |
 | 3 | crawler framework (pure `search_url`/`parse_*`, robots, rate-limit, dedup) + ITviec | `crawler/base.py`, `pipeline.py`, `persist.py` |
 | 4 | Web Dashboard: jobs/funnel/charts + realtime WS | `web/`, `api/main.py` |
-| 4.5 | CV Studio: JSON `CvDocument` → Jinja2 `.tex` → Docker PDF, `cv_versions` append-only | `cv/` |
+| 4.5 | CV Studio: JSON `CvDocument` → Jinja2 `.tex` → PDF, `cv_versions` append-only | `cv/` |
 | 5 | Tailor engine **index-based** + guardrail chống bịa (structural + lexical) + CV Review | `tailor/` |
 | 6 | Apply dispatcher (email 3 gate / portal / external) + Applications board | `apply/` |
 | 7 | Slack — **client thuần của REST API**, backend không biết gì về Slack | `slack/` |
@@ -192,7 +193,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | cv-A | Template thứ hai **`plain`** (ATS-first, bỏ `.cls`) + picker trong Studio; template tự khai `template.json` | `cv/templates/plain/`, `cv/render.py`, `web/src/components/cv/TemplatePicker.tsx` |
 | cv-B | Sửa **Master CV** bằng câu lệnh tự nhiên trong CV Studio, guardrail provenance (`source_quote` bắt buộc cho op thêm mới) dùng chung normaliser với inbox sync | `tailor/edit.py`, `tailor/edit_guard.py`, `web/src/components/cv/InstructionBox.tsx` |
 | salary | Parser lương: sàn không còn bị báo thành cả hai đầu; hàng rào **"số chỉ là tiền khi được viết như tiền"** (`_LEAD`/`_TRAIL`) áp cho cả 4 nhánh match | `crawler/salary.py`, `analytics/CLAUDE.md` |
-| cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** mặc định, Docker thành đường lui (`cv.engine`); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
+| cv-C | Build PDF bỏ phụ thuộc Docker: engine **tectonic** (Docker lúc đó còn là đường lui, gỡ hẳn 2026-10-04); sửa 2 file vendor để tectonic compile được `awesome_cv` | `tailor/build.py`, `fontawesome.sty`, `awesome-cv.cls` |
 | i18n | Dashboard **song ngữ Việt/Anh, mặc định Tiếng Việt** — 18 namespace / 796 key, `vi` type theo `keyof en` nên thiếu chuỗi là lỗi `tsc`; ngày giờ + nhãn + trạng thái qua `useFormat()`/`useLabels()`/`useStatuses()` | `web/src/i18n/`, `web/src/i18n/CLAUDE.md` |
 | intake | **Dán JD vào → AI đọc + chấm độ khớp.** Task LLM thứ 4 (`intake`); `POST /jobs/intake` điền form (không lưu), `POST /jobs/{id}/fit` chấm CV vs tin (advisory, không đụng CV). Job thêm tay giờ có quality + facet + `match_score` như job crawl | `jobpilot/intake/`, `api/routes/intake.py`, `web/src/components/FitCard.tsx` |
 | companies | **Nhà tuyển dụng thành bảng** + `hr_contacts` (migration 0011), `jobs.company_id`, trang `/companies`; email HR **được mời** làm `apply_target` **và đổi luôn `apply_channel` sang email** — cả hai cột **sống qua lượt crawl sau** (`apply_target_source`) | `jobpilot/companies/`, `api/routes/companies.py`, `web/src/pages/Companies.tsx` |
@@ -200,11 +201,12 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | deploy-mac | **Mac mini** thay laptop Windows: 3 LaunchAgent qua `run.sh` (PATH launchd), chạy khi máy bật, DB dựng mới | `deploy/macos/`, `DEPLOY.md §M` |
 | crawl-fix | id > 128 ký tự làm đỏ cả crawl → `make_job_id()` + savepoint mỗi job/site, row hỏng = `rejected` | `crawler/types.py`, `persist.py`, `pipeline.py` |
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
+| public | **Repo public + MIT** (2026-10-12): `LICENSE` + license của phần vendor, `README.vi.md`, `CONTRIBUTING(.vi).md`, `CODEOWNERS`; `main` được bảo vệ, CI của PR từ fork chờ duyệt | `LICENSE`, `CONTRIBUTING.md`, `.github/CODEOWNERS` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1018 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 9 trang web,
+1031 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
-`GET /stats/llm` + `llm bench`. **Cả ba provider đã gọi thật thành công** cho cả schema phẳng
+`GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
 6 model, tailor 2/2 qua guardrail vòng đầu. Trang `/models` đổi model từ UI ghi xuống
 `config.local.yaml` và CLI chạy đúng backend mới. UI song ngữ đã đi thật qua Deck/Jobs/CV Studio/
@@ -248,6 +250,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
   phủ hết thì backend phải trả **key + số** (hoặc nhận tham số ngôn ngữ), là một phase riêng.
   **Mẫu đã có**: cảnh báo data-use ở Models đi qua `llm.warning_items()` (policy + task) và
   được dịch ở `i18n/dict/models.ts`; `warnings()` tiếng Anh dựng từ **cùng** items cho CLI.
+- **Tailor guard không kiểm con số.** Lớp lexical của `tailor/guard.py` chỉ nhìn token trông như tên công nghệ (`_TOKEN_RE` bắt đầu bằng chữ cái), nên một `summary` bịa metric ("improved throughput by 40%") **đi qua guard** — đã thử thật 2026-10-12. Hiện chỉ prompt và bước user đọc diff chặn nó. `edit_guard` có kiểm chữ số; đem cái đó sang tailor là việc nên làm trước khi tin nguyên tắc 1 được ép bằng code. `SKILL.md §0` ghi rõ giới hạn này.
 - **`edit_guard._NUMBER_WORDS` chỉ có tiếng Anh** và `_WORD_RE` là `[a-zA-Z]+`, nên số bịa viết
   bằng chữ tiếng Việt ("mười hai", "gấp đôi") lọt qua — chữ **số** thì vẫn bị bắt, và provenance
   (`textnorm.quote_appears_in`) xử lý tiếng Việt đúng + fail-closed. Vì lỗ này mà ba chip gợi ý
@@ -258,6 +261,7 @@ Guide/Market/Settings ở cả VI lẫn EN trên 180 job thật, 0 console error
 - Apply = **hybrid theo kênh** (email full-auto, portal/LinkedIn human-in-the-loop).
 - Nguồn = **ITviec + TopCV + VietnamWorks** lõi (pluggable, mở rộng theo tier — PLAN.md §5.1.1); không LinkedIn/Facebook.
 - Giao diện = **Web Dashboard** là chính, **Slack** phụ. DB = **PostgreSQL**.
+- Mã nguồn = **public trên GitHub, MIT** (2026-10-12). CV thật không được vào git. Chỉ user có quyền ghi, nên mọi PR từ người ngoài đều qua tay user.
 - Chạy = **Mac mini ở nhà + Tailscale** (2026-10-04, `DEPLOY.md §M`): LaunchAgent, **chỉ chạy khi
   máy bật** (user chốt), IP dân dụng VN. Bên dưới là quyết định VPS cũ — vẫn là phương án B.
 - (cũ) Chạy = **VPS Việt Nam (~100k/tháng) + Tailscale**, service 24/7 + systemd timer cho crawl.

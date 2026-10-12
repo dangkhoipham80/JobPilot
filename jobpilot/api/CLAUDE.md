@@ -2,7 +2,7 @@
 
 > Nạp **on-demand** khi Claude đọc file trong thư mục này. Luật chung của repo ở `CLAUDE.md` gốc.
 > Phần frontend của phân trang (`usePaging`, `useClampPage`) ở `web/src/CLAUDE.md`.
-> Cách deploy lên VPS ở `DEPLOY.md`.
+> Cách deploy (Mac mini đang dùng, VPS là phương án B) ở `DEPLOY.md`.
 
 ### Same-origin + prefix `/api` — đọc trước khi thêm route
 

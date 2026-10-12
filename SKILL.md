@@ -1,16 +1,17 @@
 ---
 name: tailor-cv
 description: >
-  Tailor Master CV (Awesome-CV LaTeX) tới một Job Description cụ thể — trích
-  requirement, gap-analysis, rewrite có kiểm soát các section, sinh cover letter,
+  Tailor Master CV tới một Job Description cụ thể — trích requirement,
+  gap-analysis, sắp xếp lại CV bằng một plan theo chỉ số, sinh cover letter,
   build PDF. Dùng khi cần điều chỉnh CV cho một job đã chọn. Nguyên tắc số 1:
   KHÔNG BỊA — chỉ nhấn mạnh/diễn đạt lại dữ kiện có thật trong Master CV.
 ---
 
 # SKILL: tailor-cv
 
-Đây là spec cho engine tailor CV của JobPilot (xem `PLAN.md`). Nó vừa là tài liệu
-thiết kế, vừa là "system prompt sống" cho Claude khi tailor.
+Đây là spec cho engine tailor CV của JobPilot (xem `PLAN.md`). Code tương ứng nằm ở
+`jobpilot/tailor/`; số mục (§0–§5) được docstring trong code trỏ tới, nên **giữ nguyên số mục**
+khi sửa file này.
 
 ## 0. Nguyên tắc tối thượng — Truthfulness
 
@@ -18,10 +19,10 @@ thiết kế, vừa là "system prompt sống" cho Claude khi tailor.
 > không tồn tại trong Master CV.**
 
 Được phép:
-- ✅ **Nhấn mạnh** kinh nghiệm/skill có thật khớp JD (đưa lên trước, in đậm/`\tech{}`).
-- ✅ **Diễn đạt lại** bằng từ khoá của JD *nếu* nội dung tương đương đã có (vd JD viết "RESTful microservices" mà CV có "RESTful APIs + microservices" → ok gộp).
-- ✅ **Ẩn/rút gọn** phần ít liên quan để CV gọn 1 trang.
-- ✅ **Sắp xếp lại** thứ tự project/experience theo độ liên quan.
+- ✅ **Nhấn mạnh** kinh nghiệm/skill có thật khớp JD bằng cách đưa nó lên trước.
+- ✅ **Diễn đạt lại** phần summary bằng từ khoá của JD *nếu* nội dung tương đương đã có (vd JD viết "RESTful microservices" mà CV có "RESTful APIs + microservices" → ok gộp).
+- ✅ **Ẩn** section, entry hoặc bullet ít liên quan để CV gọn 1 trang.
+- ✅ **Sắp xếp lại** thứ tự section/project/experience/bullet theo độ liên quan.
 
 Bị cấm:
 - ❌ Thêm skill chưa từng xuất hiện (vd JD cần Kafka mà CV không có → **không** thêm).
@@ -32,52 +33,81 @@ Bị cấm:
 Nếu JD yêu cầu skill user **không có**: KHÔNG thêm vào CV. Thay vào đó đánh dấu trong
 **gap report** để user tự quyết (học thêm / bỏ qua job / ghi chú trong cover letter là "sẵn sàng học").
 
+**Luật này được ép bằng hình dạng dữ liệu, không phải bằng lời dặn.** Plan mà model trả về
+(`tailor/schema.py:TailorPlan`) là **index-based**: nó chỉ chọn, sắp xếp và ẩn nội dung có sẵn theo
+vị trí. "Thêm một skill" không phải điều model được dặn đừng làm — đó là thứ schema không biểu
+diễn được. Chỗ duy nhất model được viết chữ tự do là `summary`, và `tailor/guard.py` kiểm nó:
+
+1. **Structural** — mọi chỉ số trong plan phải trỏ vào nội dung có thật trong Master CV, không
+   trùng lặp.
+2. **Lexical** — mọi token trông giống tên công nghệ trong `summary` phải đã xuất hiện ở đâu đó
+   trong Master CV. Văn xuôi thường thì để yên, nên vẫn diễn đạt lại được.
+
+Plan vi phạm được gửi lại cho model **một** lần để sửa (`tailor/engine.py`). Sai lần hai thì
+raise, không âm thầm ra một CV chưa ai kiểm.
+
+**Rủi ro còn lại — đừng tin guard hơn mức nó làm được.** Lớp lexical chỉ nhìn token *trông như
+tên công nghệ*. **Con số và văn xuôi thường trong `summary` không được kiểm**: một summary viết
+"improved throughput by 40% and led a team of 12" đi qua guard dù Master CV không có số nào như
+vậy. Thứ chặn nó hiện chỉ là prompt và bước user đọc diff trước khi Approve. `edit_guard` (sửa
+Master bằng câu lệnh) có kiểm chữ số; tailor guard thì chưa — đây là nợ kỹ thuật, ghi ở `CLAUDE.md`.
+
+> Sửa **Master CV** bằng câu lệnh (CV Studio) là việc khác và dùng guardrail **ngược** lại:
+> ở đó dữ kiện mới là mục đích, nên luật là *provenance* (mọi thứ thêm vào phải trích được từ
+> câu lệnh của user), không phải *vocabulary*. Xem `jobpilot/cv/CLAUDE.md`.
+
 ## 1. Input / Output
 
 **Input:**
-- `job`: object theo `Job` schema (§3.1 PLAN.md) — quan trọng nhất là `description_md`, `skills`, `title`, `level`, `company`.
-- `master_cv`: nội dung `resume/*.tex` (nguồn sự thật duy nhất).
+- `job`: object theo `Job` schema (§3.1 PLAN.md) — quan trọng nhất là `description_md`, `skills`, `title`, `level`, `company`. Tailor **chưa** có phòng thủ riêng chống câu lệnh chèn trong JD (ô 22 của `PLAN.md §9.1`); hiện chỉ có schema và guard giới hạn hậu quả.
+- `master_cv`: `CvDocument` (JSON có cấu trúc) trong bảng `cv_versions`, scope `master` — nguồn sự thật duy nhất. Nó được đưa vào prompt dưới dạng **outline có đánh số** (`tailor/prompt.py`); mọi chỉ số trong plan trỏ về outline này.
 
-**Output** (ghi vào `out/<job_id>/` + DB):
-- **CV structured JSON** (format chung với CV Studio — PLAN.md §5.6.1): đây là output chính của agent. Serialize ra `resume/*.tex` qua Jinja2 (bản sao, KHÔNG ghi đè Master). Nhờ chung format, bản agent-tailor và bản user-edit trong Studio đi chung pipeline diff/version/preview; lưu vào `cv_versions` với `author='agent'`.
-- `cv.pdf` đã build.
-- `cover_letter.tex` + `.pdf`.
-- `meta.json`: `{ match_score, changes[], gaps[], keywords_added[] }` — dùng để render **diff** trên Web/Slack.
+**Output:**
+- **`TailorPlan`** — `match_score`, `requirements[]`, `summary`, `section_order`, `sections[]`, `entries[]`, `changes[]`.
+- **CV tailored** — `tailor/apply.py` áp plan lên Master một cách **deterministic** (cùng master + cùng plan ⇒ cùng document; Master không bị đổi). Kết quả là một row `cv_versions` mới, scope theo job, `author='agent'`, plan nằm trong `meta` — CV, lý do và diff là một bản ghi bất biến. Chạy lại thì thêm version mới, không ghi đè.
+- `cv.pdf` — render JSON → `.tex` qua Jinja2 → tectonic, ra `out/cv/<scope>/`.
+- Cover letter — text (bản chính) + PDF đính kèm.
 
 ## 2. Quy trình 5 bước
 
 ### Bước 1 — Trích requirement từ JD
-Phân tách `description_md` thành:
+Mỗi requirement có `text` (đúng như JD viết) và `kind`:
 - `must_have`: skill/kinh nghiệm bắt buộc.
 - `nice_to_have`: ưu tiên.
-- `soft/culture`: teamwork, agile, ngôn ngữ...
-- `keywords`: danh sách từ khoá ATS (Java, Spring Boot, PostgreSQL, CI/CD...).
+- `soft`: teamwork, agile, ngôn ngữ...
 
 ### Bước 2 — Gap analysis vs Master CV
-Với mỗi requirement, phân loại:
-- `HAVE` — có trong Master CV (ghi rõ nằm ở section nào).
-- `PARTIAL` — có liên quan gần (diễn đạt lại được).
+Với mỗi requirement, gán `status` kèm `evidence`:
+- `HAVE` — có trong Master CV (ghi rõ nằm ở đâu).
+- `PARTIAL` — có liên quan gần.
 - `MISSING` — không có (→ vào gap report, **không** đưa vào CV).
 
-Tính `match_score` = trọng số(HAVE + 0.5·PARTIAL) / tổng requirement (must_have nặng hơn nice_to_have).
+`match_score` = (HAVE + 0.5·PARTIAL) / tổng requirement, `must_have` tính gấp đôi; kẹp trong 0..1.
 
-### Bước 3 — Rewrite có kiểm soát (per section)
+> Đây là `match_score` của **tailor**. Job còn có điểm từ lúc crawl (khớp từ khoá,
+> `crawler/quality.py`) và điểm fit của intake — ba loại khác nhau, xem `jobpilot/intake/CLAUDE.md`.
 
-Chỉ sửa các file `resume/*.tex`, giữ nguyên cú pháp Awesome-CV. Macro có sẵn:
-`\tech{}` (đỏ đậm — highlight tech chính), `\techfe{}` (skyblue — frontend), `\cvsimpleentry`, `\cvitems`.
+### Bước 3 — Sắp xếp lại có kiểm soát
 
-| Section | Được làm gì |
+Model không sửa `.tex` và không viết lại bullet. Nó điền các trường của plan:
+
+| Trường của plan | Được làm gì |
 |---|---|
-| `summary.tex` | Viết lại 2–3 câu hướng vào role của JD, dùng keyword có thật. Giữ ngắn gọn, giọng backend. |
-| `skill.tex` | Bật/sắp xếp lại các dòng có thật để keyword must-have lên đầu. Bật lại dòng đang comment **nếu** skill đó user thật sự có. Không thêm skill mới. |
-| `experience.tex` | Giữ nguyên facts. Có thể `\tech{}` hoá đúng tech JD cần; đưa bullet liên quan lên trước. |
-| `project.tex` | Sắp xếp project liên quan nhất lên đầu; highlight tech khớp JD. Không đổi vai trò/nội dung. |
-| `education.tex` / `honors.tex` | Hầu như giữ nguyên; chỉ đổi thứ tự nếu cần. |
+| `summary` | Chữ tự do duy nhất: 2–3 câu hướng vào role của JD, chỉ dùng công nghệ đã có trong Master CV. |
+| `section_order` | Thứ tự các section. |
+| `sections[].enabled` | `false` để ẩn một section ít liên quan cho CV vừa 1 trang. |
+| `sections[].entry_order` / `item_order` | Thứ tự (và tập con) entry hoặc item trong section — đưa cái liên quan nhất lên đầu. |
+| `entries[].bullet_order` | Thứ tự (và tập con) bullet của một entry. |
+| `entries[].tech_stack_order` | Thứ tự tech stack của một entry, để tech JD cần đứng trước. |
+| `changes[]` | Mỗi thay đổi kèm lý do, để user đọc ở bước duyệt. |
 
-**Rule độ dài**: giữ CV **1 trang**. Nếu tràn → rút phần ít liên quan (không xoá facts quan trọng).
+Không có trường nào để đổi tiêu đề, ngày tháng, công ty hay nội dung một bullet.
+
+**Rule độ dài**: giữ CV **1 trang** bằng cách ẩn phần ít liên quan. Build xong sẽ đếm trang và
+cảnh báo nếu khác 1; hiện **chưa** có vòng tự cắt (đó là ô 23 của `PLAN.md §9.1`).
 
 ### Bước 4 — Cover letter
-Sinh `cover_letter.tex` → PDF (đã làm ở Phase 17):
+Sinh text rồi build `cover_letter.tex` → PDF:
 - Mở đầu: vị trí ứng tuyển + công ty (`job.title`, `job.company`).
 - Thân: 2–3 điểm mạnh **có thật** khớp must-have, dẫn chứng từ experience/project.
 - Nếu có `MISSING` quan trọng: 1 câu thể hiện tinh thần học hỏi (trung thực, không khẳng định đã biết).
@@ -95,28 +125,33 @@ Sinh `cover_letter.tex` → PDF (đã làm ở Phase 17):
 > `meta.letter.pdf_error`, không nuốt im.
 
 ### Bước 5 — Build & verify
-- Copy `resume/` + assets vào `out/<job_id>/`, apply edits.
-- Build bằng tectonic (lệnh trong `README.md`).
-- **Verify**: build thành công + CV đúng 1 trang + không lỗi LaTeX undefined. Fail → trả lỗi cho orchestrator (state `FAILED`), không post CV hỏng.
+- Áp plan → `CvDocument` tailored → render `.tex` → copy class/font cần thiết vào `out/cv/<scope>/`.
+- Build bằng tectonic (engine duy nhất).
+- **Verify**: build thành công + số trang. Fail → job về `FAILED`, không đưa CV hỏng lên cho user duyệt.
 
-## 3. Định dạng diff cho Slack (để user duyệt)
+## 3. Định dạng diff (để user duyệt)
 
-`meta.json.changes[]` mỗi phần tử:
+`changes[]` mỗi phần tử:
 ```jsonc
-{ "section": "summary", "before": "…", "after": "…", "reason": "khớp must-have 'distributed systems'" }
+{ "section": "summary", "what": "…", "reason": "khớp must-have 'distributed systems'" }
 ```
-Slack hiển thị gọn: *"📝 Summary: nhấn 'distributed systems' (khớp JD) · Skills: đưa Docker/K8s lên đầu · Project: Slide AI lên #1 (khớp RAG/microservices)"* + `gaps` (⚠️ JD cần Kafka — bạn chưa có).
+`what` nói cụ thể: "đưa project Lumen lên đầu" tốt hơn "sắp xếp lại project".
+
+Trang **CV Review** hiện PDF tailored cạnh diff so với Master (`tailor/diff.py` — cùng hàm diff
+mà CV Studio dùng để so hai version bất kỳ) và `gaps` (⚠️ JD cần Kafka — bạn chưa có). Slack, nếu
+bật, hiện bản tóm tắt gọn của cùng dữ liệu đó.
 
 ## 4. Vòng "Sửa" (edit loop)
 
-Khi user bấm **✏️ Sửa** và nhập instruction (vd "rút gọn summary", "bỏ project Food Forum", "nhấn thêm Docker"):
-- Áp dụng instruction **trong khuôn khổ truthfulness** (nếu instruction yêu cầu bịa → từ chối lịch sự, giải thích).
-- Re-build, re-diff, post lại. Tối đa `K` vòng (config), sau đó nhắc user Approve/Bỏ.
+Khi user bấm **✏️ Sửa** và nhập instruction (vd "rút gọn summary", "đẩy project Roundtable xuống cuối", "ưu tiên Docker"):
+- Tailor lại với instruction đó, **vẫn qua đúng schema và guardrail ở §0** — instruction yêu cầu bịa thì không có đường nào để thực hiện.
+- Re-build, re-diff, hiện lại. Tối đa `app.edit_max_rounds` vòng (mặc định 3), sau đó user Approve hoặc Bỏ.
 
 ## 5. Checklist trước khi trả kết quả
-- [ ] Không có skill/metric/fact nào không thuộc Master CV.
-- [ ] `match_score` và `gaps` đã tính.
-- [ ] PDF build ok, đúng 1 trang.
+- [ ] Plan qua cả hai lớp guardrail (structural + lexical).
+- [ ] `summary` không có con số hay thành tích nào Master CV không ghi — guard **không** bắt được, phải đọc.
+- [ ] `match_score` và `gaps` đã có.
+- [ ] PDF build ok; số trang đã được báo.
 - [ ] Cover letter đúng công ty/vị trí.
-- [ ] `meta.json` đủ để render diff.
-- [ ] Master CV (`resume/`) **không** bị ghi đè.
+- [ ] `changes[]` đủ để user hiểu vì sao CV đổi.
+- [ ] Master CV trong `cv_versions` **không** bị ghi đè — bản tailored là một row mới.

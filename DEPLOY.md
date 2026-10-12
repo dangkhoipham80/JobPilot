@@ -113,7 +113,7 @@ Ba cái bẫy đã trả giá, đừng gỡ ra:
   *task* trong UI chứ không ẩn cửa sổ.
 
 Backup nằm ở `%USERPROFILE%\JobPilotBackups`. **Dữ liệu giờ chỉ nằm trên một cái
-laptop**, nên phải verify restore ít nhất một lần — xem §9.
+laptop**, nên phải verify restore ít nhất một lần — xem §6.
 
 ---
 
@@ -144,7 +144,7 @@ Ba lớp phòng thủ hiện có, theo thứ tự quan trọng:
 
 | Yêu cầu | Số tối thiểu | Vì sao |
 |---|---|---|
-| RAM | 2 GB (+2 GB swap) | Chromium (~0.5–1 GB lúc crawl) + Postgres + xelatex |
+| RAM | 2 GB (+2 GB swap) | Chromium (~0.5–1 GB lúc crawl) + Postgres + tectonic |
 | Đĩa | **15 GB** | tectonic ~10 MB + cache ~50 MB, Chromium ~0.5 GB, OS ~5 GB, còn lại cho DB |
 | CPU | 2 vCPU | build PDF là CPU-bound, nhưng chỉ chạy từng lúc |
 | Kiến trúc | x86-64 hoặc ARM64 | tectonic có binary cho cả hai |
