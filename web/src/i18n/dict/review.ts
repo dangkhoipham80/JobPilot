@@ -52,7 +52,7 @@ export const review = ns({
     // Ask-for-a-change box
     askForChange: "Ask for a change",
     roundN: "round {round}",
-    editPlaceholder: "e.g. shorten the summary, put Food Forum last, lead with Docker",
+    editPlaceholder: "e.g. shorten the summary, put Roundtable last, lead with Docker",
     editHint:
       "The agent re-plans within the same rules — it will refuse anything that would claim experience you don't have.",
     retailoring: "Re-tailoring…",
@@ -111,7 +111,7 @@ export const review = ns({
 
     askForChange: "Yêu cầu sửa",
     roundN: "vòng {round}",
-    editPlaceholder: "vd: rút gọn phần summary, đẩy Food Forum xuống cuối, ưu tiên Docker",
+    editPlaceholder: "vd: rút gọn phần summary, đẩy Roundtable xuống cuối, ưu tiên Docker",
     editHint:
       "Agent lập kế hoạch lại trong đúng bộ luật cũ — nó sẽ từ chối mọi yêu cầu khiến CV nhận kinh nghiệm bạn không có.",
     retailoring: "Đang tailor lại…",

@@ -95,8 +95,8 @@ apply:
   portal_prefill: true        # portal jobs: pre-fill then hand off to user
 
 cv:
-  master_dir: resume          # Master CV source of truth
-  out_dir: out                # tailored CVs land in out/<job_id>/
+  master_dir: resume          # legacy and unused: the Master CV lives in the cv_versions table
+  out_dir: out                # builds land in out/cv/<scope>/
   engine: auto                # auto | tectonic (the Docker engine was removed 2026-10-04)
   tectonic_bin: tectonic      # command or path; PATH, then tools/ in the repo
   theme: awesome-red          # default Awesome-CV color theme
