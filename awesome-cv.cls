@@ -16,6 +16,13 @@
 % Class license:
 % LPPL v1.3c (http://www.latex-project.org/lppl)
 %
+% Modified for JobPilot (https://github.com/dangkhoipham80/JobPilot): this is
+% not the unmodified upstream v1.6.1. It is a trimmed copy (no cover-letter,
+% honors or skills macros) that adds \cvsimpleentry, its two styles and the
+% cvempty environment. The two later changes -- one for tectonic's fontspec,
+% one for a header with no contact field -- are marked `% JobPilot:` where they
+% are made.
+%
 
 
 %-------------------------------------------------------------------------------
@@ -157,8 +164,8 @@
 %-------------------------------------------------------------------------------
 % Set the FontAwesome font to be up-to-date.
 %
-% JobPilot: the \let is load-bearing. fontawesome.sty (\RequirePackage'd at line
-% 77, so always before this) has already defined \FA; this line is the one that
+% JobPilot: the \let is load-bearing. fontawesome.sty (\RequirePackage'd near
+% the top, so always before this) has already defined \FA; this line is the one that
 % matters, because only it honours \@fontdir. Upstream redefines it with a plain
 % \newfontfamily and gets away with that on the TeX Live in the Docker builder
 % image, whose fontspec redefines silently -- a newer fontspec (tectonic's
