@@ -75,7 +75,7 @@ between visits.
 ```bash
 # 1. install (extras are opt-in; `all` gets everything)
 pip install -e '.[all]'
-playwright install chromium          # only needed for ITviec / VietnamWorks
+playwright install chromium          # only needed for ITviec / TopCV / VietnamWorks
 
 # 2. point at a database and set a local API token
 cp .env.example .env                 # DATABASE_URL + JOBPILOT_API_TOKEN, plus a key for
@@ -87,6 +87,10 @@ alembic upgrade head
 uvicorn jobpilot.api.main:app --reload    # API + WebSocket on :8000
 cd web && npm install && npm run dev      # dashboard on :5173
 ```
+
+Replace the `changeme` token before step 3: the backend refuses to start on a placeholder or on
+anything shorter than 20 characters. Put the same value in `web/.env.local` as `VITE_API_TOKEN`
+(see `web/.env.example`), or the dashboard is answered with 401.
 
 `make dev` brings up Postgres and the API; the dashboard needs its own terminal (`make web`), since
 `uvicorn --reload` blocks and a Makefile runs its prerequisites in sequence.
@@ -139,8 +143,12 @@ llm:
 ```
 
 Adding a backend is one entry in `llm/registry.PROVIDERS` plus a client module — not a `Literal`
-edited in four places. The three providers do not accept the same JSON Schema, so `llm/schema.py`
+edited in four places. The API providers do not accept the same JSON Schema, so `llm/schema.py`
 adapts it (Gemini's subset, OpenAI's strict mode).
+
+A fourth provider, `claude_cli`, runs the same Claude models through the local `claude` CLI, counted
+against your Claude subscription instead of billed per token. It is for personal use on your own
+machine.
 
 **Measure, don't guess.** Every call — including ones the anti-fabrication guard rejects, and ones
 that error — writes a row to `llm_calls`. Read it with `jobpilot llm stats` or the Models page:
@@ -277,11 +285,14 @@ jobpilot/
   tailor/     index-based plan schema · anti-fabrication guard · model engine · diff
   apply/      cover letter · email (3 gates) · portal hand-off · dispatcher
               followup.py (reminders) · outcome.py (what happened) · inbox.py (read replies)
+  intake/     read a pasted job description · score its fit against the CV
+  companies/  employers and their HR contacts · folding employer names
   llm/        provider registry · per-task engines · schema adapters · cost & quality telemetry
   analytics/  market facets, each carrying how much of the corpus it actually saw
   store/      SQLAlchemy models + Alembic migrations
   slack/      optional secondary channel; a pure client of the REST API
   orchestrator.py   task queue behind the 202-and-a-task-id endpoints
+  backup.py         database + CV backups, behind the CLI, the timer and the Backup page
 web/          React + Vite + TS + Tailwind dashboard
 ```
 
