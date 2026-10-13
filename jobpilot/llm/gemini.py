@@ -29,7 +29,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from jobpilot.llm.base import Completion, LlmError, Usage
+from jobpilot.llm.base import Completion, LlmError, Usage, attachments_of
 from jobpilot.llm.pricing import estimate_cost
 from jobpilot.llm.schema import flatten_schema
 
@@ -104,7 +104,13 @@ class GeminiClient:
 def _turn(message: dict) -> dict:
     """One chat turn in Gemini's shape. ``assistant`` is spelled ``model`` here."""
     role = "model" if message.get("role") == "assistant" else "user"
-    return {"role": role, "parts": [{"text": message.get("content") or ""}]}
+    # Raw bytes, not base64: the SDK encodes ``inline_data`` itself, and handing
+    # it an already-encoded string gets it encoded twice.
+    files = [
+        {"inline_data": {"mime_type": a.media_type, "data": a.data}}
+        for a in attachments_of(message)
+    ]
+    return {"role": role, "parts": [*files, {"text": message.get("content") or ""}]}
 
 
 def _int(obj: Any, name: str) -> int:

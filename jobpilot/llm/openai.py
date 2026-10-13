@@ -22,13 +22,40 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from jobpilot.llm.base import Completion, LlmError, Usage
+from jobpilot.llm.base import Attachment, Completion, LlmError, Usage, attachments_of
 from jobpilot.llm.pricing import estimate_cost
 
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_MODEL = "gpt-4.1"
 MAX_TOKENS = 16000
+
+
+def _file_part(attachment: Attachment) -> dict:
+    """One attachment as a chat-completions content part.
+
+    Both kinds travel as a base64 data URI, but under different part types: an
+    image is an ``image_url``, a PDF is a ``file`` — and a ``file`` part without
+    a filename is rejected, so one is made up when the upload had none.
+    """
+    uri = f"data:{attachment.media_type};base64,{attachment.b64()}"
+    if attachment.is_pdf:
+        return {"type": "file", "file": {"filename": attachment.name or "cv.pdf", "file_data": uri}}
+    return {"type": "image_url", "image_url": {"url": uri}}
+
+
+def wire_message(message: dict) -> dict:
+    """A turn in chat-completions shape. Text-only turns pass through as-is."""
+    files = attachments_of(message)
+    if not files:
+        return {"role": message.get("role", "user"), "content": message.get("content") or ""}
+    return {
+        "role": message.get("role", "user"),
+        "content": [
+            *(_file_part(a) for a in files),
+            {"type": "text", "text": message.get("content") or ""},
+        ],
+    }
 
 
 @dataclass
@@ -64,7 +91,7 @@ class OpenAIClient:
             response = self._sdk().chat.completions.parse(
                 model=self.model,
                 max_completion_tokens=MAX_TOKENS,
-                messages=[{"role": "system", "content": system}, *messages],
+                messages=[{"role": "system", "content": system}, *(wire_message(m) for m in messages)],
                 response_format=schema,
             )
         except Exception as exc:

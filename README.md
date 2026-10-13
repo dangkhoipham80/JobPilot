@@ -55,7 +55,7 @@ Eleven pages, at `localhost:5173` in development (or at `:8000`, served by the A
 |---|---|
 | **Deck** | The funnel and the day's numbers |
 | **Jobs** | Everything crawled, filterable; shortlist or skip from the row |
-| **CV Studio** | Structured editor for the Master CV, version history, diff any two versions |
+| **CV Studio** | Structured editor for the Master CV, version history, diff any two versions; import an existing CV from an image or PDF as a draft you review before saving |
 | **Applications** | Board of what was dispatched, per stage; follow-up reminders and inbox suggestions |
 | **Companies** | Employers and their HR contacts; an HR email can become a job's apply target |
 | **Runs** | Start a crawl, watch the queue, read the run history |
@@ -106,6 +106,7 @@ python -m jobpilot.cli crawl --query "java spring" --limit 30
 python -m jobpilot.cli run --every 60                 # simple loop for cron
 python -m jobpilot.cli backfill --force               # re-derive facets after fixing a parser
 python -m jobpilot.cli cv seed                        # empty Master CV, if there isn't one
+python -m jobpilot.cli cv read scan.png -o my-cv.local.json   # AI reads an image/PDF into a draft (saves nothing)
 python -m jobpilot.cli cv import my-cv.local.json     # load a CV into the DB
 python -m jobpilot.cli cv export my-cv.local.json     # back it up (gitignored)
 python -m jobpilot.cli cv build                       # render JSON → .tex → PDF

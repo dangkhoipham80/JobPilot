@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
 import { MarkupLegend } from "@/components/cv/fields";
 import { HeaderEditor } from "@/components/cv/HeaderEditor";
+import { ImportBox, releaseDraft, type ImportedDraft } from "@/components/cv/ImportBox";
 import { InstructionBox } from "@/components/cv/InstructionBox";
 import { PdfPreview } from "@/components/cv/PdfPreview";
 import { RawLatexEditor } from "@/components/cv/RawLatexEditor";
@@ -57,6 +58,35 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   // undefined = never compiled this session; null = compiled but not checked.
   const [ats, setAts] = useState<AtsReport | null | undefined>(undefined);
 
+  // A draft read from an uploaded file (Master only). It lives in `draft` like
+  // any other unsaved edit; this only remembers that it came from a file, so
+  // the card can keep saying so — and keep the originals one click away — for
+  // as long as it is unsaved.
+  //
+  // `snapshot` is the editor's document exactly as the reading left it, which
+  // is what tells "still the file's words" from "the file's words plus an
+  // hour of the user's corrections" — the second must never be overwritten by
+  // another import without a word. `same` is settled once, at that moment:
+  // the reading matched the saved CV, so there was never a draft to discard.
+  const [imported, setImported] = useState<{
+    draft: ImportedDraft;
+    snapshot: string;
+    same: boolean;
+  } | null>(null);
+  // A reading that came back after the editor had moved on. A read takes a
+  // minute; people type in a minute. Held and offered, never applied — the
+  // same bargain `editSkippedVersion` strikes for an agent edit.
+  const [heldImport, setHeldImport] = useState<ImportedDraft | null>(null);
+  // What a read that is in flight needs to know when it lands, and cannot get
+  // from the closure it was started in: that render is a minute stale by then,
+  // and its card may have unmounted. Refs, so the landing reads the present.
+  const scopeEpoch = useRef(0);
+  const draftRef = useRef<CvDocument | null>(null);
+  const savedRef = useRef<CvDocument | null>(null);
+  const importStart = useRef<{ epoch: number; editor: string } | null>(null);
+  const importedRef = useRef<ImportedDraft | null>(null);
+  const mounted = useRef(true);
+
   // Adopt the server document whenever a different version arrives: on first
   // load, on a scope change, and after save()/rollback() -- all three are the
   // user asking for exactly this. Guarding this effect on "dirty" broke
@@ -72,7 +102,40 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
     if (!data) return;
     setDraft(data.document);
     setSavedVersion(data.version);
+    // Whatever was read from a file is no longer what the editor shows: it was
+    // either just saved (and is now `data`) or just replaced by a restore.
+    setImported(null);
   }, [data]);
+
+  // The object URLs behind "Original:" belong to the draft on screen. Owned
+  // here rather than in ImportBox because that card unmounts on the LaTeX tab
+  // while the draft survives it — revoking there would leave dead links on return.
+  useEffect(() => {
+    const held = imported?.draft;
+    return () => {
+      if (held) releaseDraft(held);
+    };
+  }, [imported]);
+  // ...unless the held reading was just *loaded*: it is then the draft on
+  // screen, under the same object, and releasing it here killed the "Original"
+  // link on exactly the path where the user most needs to compare. Caught in
+  // review, in a browser — the first fix for landings created this path.
+  useEffect(() => {
+    return () => {
+      if (heldImport && importedRef.current !== heldImport) releaseDraft(heldImport);
+    };
+  }, [heldImport]);
+  importedRef.current = imported?.draft ?? null;
+  // A read can outlive the page: leave CV Studio mid-read and its promise still
+  // resolves, into nothing. That landing must give its files back.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  draftRef.current = draft;
+  savedRef.current = data?.document ?? null;
 
   // The installed set never changes while the page is open, so this is fetched
   // once per mount rather than tied to scope/version.
@@ -111,6 +174,10 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   useEffect(() => {
     setCompare(null);
     setEditSkippedVersion(null);
+    setImported(null);
+    setHeldImport(null);
+    // Any read still in flight was started for the CV we just left.
+    scopeEpoch.current += 1;
   }, [scope]);
 
   const dirty = useMemo(
@@ -120,6 +187,11 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+  /** The editor still holds a file's reading untouched — safe to replace. */
+  const pristineImport = useMemo(
+    () => !!imported && !!draft && JSON.stringify(draft) === imported.snapshot,
+    [draft, imported],
+  );
 
   /** A version the agent produced while the editor had unsaved edits — not
    * pulled in automatically, so it doesn't get silently overwritten. */
@@ -259,6 +331,55 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
   if (error) return <Card><CardBody className="text-sm text-critical">{error}</CardBody></Card>;
   if (!draft) return null;
 
+  // The reading replaces the editor's text and nothing else: the template and
+  // theme on screen are the user's choice of look, which a file cannot have an
+  // opinion about (and the endpoint returns the defaults for both).
+  //
+  // Everything from here to `discardImport` reads refs, not `draft`/`scope`:
+  // `landImport` is called by a promise that was created a minute ago, through
+  // whatever version of these functions existed then.
+  const applyImport = (next: ImportedDraft) => {
+    const current = draftRef.current;
+    if (!current) return;
+    const document = { ...next.result.document, template: current.template, theme: current.theme };
+    const snapshot = JSON.stringify(document);
+    setActionError(null);
+    setHeldImport(null);
+    setDraft(document);
+    setImported({ draft: next, snapshot, same: snapshot === JSON.stringify(savedRef.current) });
+  };
+  const startImport = () => {
+    setHeldImport(null);
+    importStart.current = {
+      epoch: scopeEpoch.current,
+      editor: JSON.stringify(draftRef.current),
+    };
+  };
+  const landImport = (next: ImportedDraft) => {
+    const started = importStart.current;
+    // The user left for another CV while the file was being read. Dropping the
+    // result is the only safe answer: the editor now belongs to a tailored CV,
+    // and a reading poured into it would be one click from being saved as that
+    // job's CV — the thing the endpoint itself refuses with a 400.
+    if (!mounted.current || !started || started.epoch !== scopeEpoch.current) {
+      releaseDraft(next);
+      return;
+    }
+    // The user typed while the file was being read. Their edits win; the
+    // reading waits to be asked for.
+    if (JSON.stringify(draftRef.current) !== started.editor) {
+      setHeldImport(next);
+      return;
+    }
+    applyImport(next);
+  };
+  const discardImport = () => {
+    // A reading that matched the saved CV left nothing to discard — and any
+    // difference in the editor since then is the user's own typing.
+    if (data && imported && !imported.same) setDraft(data.document);
+    setImported(null);
+  };
+
   const setSections = (sections: CvSection[]) => setDraft({ ...draft, sections });
   const moveSection = (i: number, delta: number) => {
     const next = [...draft.sections];
@@ -319,6 +440,22 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
           ) : (
             <>
               <MarkupLegend />
+              {scope === "master" && (
+                <ImportBox
+                  imported={imported?.draft ?? null}
+                  unchanged={imported?.same ?? false}
+                  held={heldImport}
+                  // Unsaved edits are the user's own typing unless the editor
+                  // still holds a reading exactly as it arrived; an import
+                  // over anything else would erase work without a trace.
+                  blocked={dirty && !pristineImport}
+                  onStart={startImport}
+                  onDraft={landImport}
+                  onLoadHeld={() => heldImport && applyImport(heldImport)}
+                  onDropHeld={() => setHeldImport(null)}
+                  onDiscard={discardImport}
+                />
+              )}
               {scope === "master" && (
                 <InstructionBox task={editTask} error={editError} onSubmit={askForEdit} />
               )}

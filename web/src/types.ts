@@ -378,6 +378,22 @@ export interface CvDocument {
   sections: CvSection[];
 }
 
+/** A draft read off an uploaded CV by `POST /cv/master/import`. Not saved. */
+export interface CvImportResult {
+  document: CvDocument;
+  /** The model's own notes on what it could not read, in the CV's language. */
+  unreadable: string[];
+  /** True only when a PDF's text layer was compared with the draft. False is
+   *  "nothing was checked" — never "nothing was wrong". */
+  checked: boolean;
+  /** Numbers in the draft that the PDF's own text never states. */
+  unbacked_numbers: string[];
+  /** Stretches the PDF will render as formatting (`~x~`, backticks, `**x**`,
+   *  `[label](url)`) rather than print as the original wrote them. */
+  markup: string[];
+  files: { name: string; media_type: string; bytes: number }[];
+}
+
 /** One entry of `GET /cv/templates` — a look the Studio can switch to. */
 export interface CvTemplate {
   id: string;

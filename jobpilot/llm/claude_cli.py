@@ -40,6 +40,16 @@ What the subprocess is told, and why each flag is there:
 - Before the first call, ``claude auth status`` must say the login *is* a
   subscription. A Console login bills per token too; recording that as $0 is a
   wrong answer that looks right.
+
+A turn that carries files (a CV scan, a PDF) cannot go in as plain text, so that
+one case switches print mode to ``--input-format stream-json``: stdin becomes a
+single user message whose content is the Messages API's own blocks. The CLI then
+insists on ``--output-format stream-json --verbose``, and the answer is the last
+``result`` event of the stream instead of the whole of stdout. Everything else —
+the flags above, the schema, the usage numbers — is the same. Measured on a
+one-page CV: a three-field question about an image or a PDF comes back in ~8 s
+on Haiku; the full ``CvRead`` transcription took 37–40 s on Opus and 72 s on
+Haiku. The output, not the file, is what the time goes on.
 """
 
 from __future__ import annotations
@@ -56,7 +66,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from jobpilot.llm.base import Completion, LlmError, Usage
+from jobpilot.llm.base import Completion, LlmError, Usage, attachments_of
+from jobpilot.llm.claude import file_block
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -209,11 +220,12 @@ class ClaudeCliClient:
         with tempfile.TemporaryDirectory(prefix="jobpilot-claude-") as workdir:
             system_file = Path(workdir) / "system.txt"
             system_file.write_text(system, encoding="utf-8")
+            # Files cannot ride in a text prompt; see the module docstring.
+            stream = any(attachments_of(m) for m in messages)
             argv = [
                 binary or "claude",
                 "-p",
-                "--output-format",
-                "json",
+                *(_STREAM_FLAGS if stream else ("--output-format", "json")),
                 "--no-session-persistence",
                 "--tools",
                 "",
@@ -233,7 +245,7 @@ class ClaudeCliClient:
             try:
                 proc = run(
                     argv,
-                    input=_prompt(messages),
+                    input=_stream_input(messages) if stream else _prompt(messages),
                     capture_output=True,
                     text=True,
                     # Explicit: on Windows the locale default is cp1252, and a
@@ -247,15 +259,18 @@ class ClaudeCliClient:
                 raise LlmError(f"claude CLI did not answer within {TIMEOUT_S}s") from exc
             except OSError as exc:
                 raise LlmError(f"could not start the claude CLI: {exc}") from exc
-        return self._unpack(proc, schema, started)
+        return self._unpack(proc, schema, started, stream=stream)
 
-    def _unpack(self, proc: Any, schema: type[T], started: float) -> Completion[T]:
-        try:
-            data = json.loads(proc.stdout or "")
-        except json.JSONDecodeError:
-            data = None
+    def _unpack(
+        self, proc: Any, schema: type[T], started: float, *, stream: bool = False
+    ) -> Completion[T]:
+        data = _result_event(proc.stdout or "") if stream else _json(proc.stdout or "")
         if not isinstance(data, dict):
-            detail = (proc.stderr or proc.stdout or "").strip()[-500:]
+            # stderr only, on a stream run: the tail of stdout there is whichever
+            # event came last, and the assistant event quotes the document back —
+            # a CV has no business in `llm_calls.error` or in a 502 body.
+            fallback = "" if stream else proc.stdout
+            detail = (proc.stderr or fallback or "").strip()[-500:]
             raise LlmError(f"claude CLI failed (exit {proc.returncode}): {detail or 'no output'}")
         if data.get("is_error") or proc.returncode != 0:
             # The CLI puts its own explanation in `result` — a usage limit, a
@@ -291,6 +306,48 @@ class ClaudeCliClient:
             # same tokens would cost on the API, which is not what anyone paid.
             cost_usd=0.0,
         )
+
+
+#: What ``--input-format stream-json`` drags in: the CLI refuses it without a
+#: stream on the way out too, and refuses *that* without ``--verbose``.
+_STREAM_FLAGS = ("--input-format", "stream-json", "--output-format", "stream-json", "--verbose")
+
+
+def _json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _result_event(stdout: str) -> Any:
+    """The ``result`` event of a stream-json run, or None if there was none.
+
+    The stream is one JSON object per line — init, thinking ticks, the assistant
+    turn, a ``user`` event carrying the structured-output tool's result,
+    rate-limit notices — and only the last ``result`` carries what the
+    plain ``json`` output would have been in full. Lines that are not JSON are
+    skipped rather than fatal: a stray warning on stdout must not cost an answer
+    that is sitting two lines below it.
+    """
+    found = None
+    for line in stdout.splitlines():
+        event = _json(line)
+        if isinstance(event, dict) and event.get("type") == "result":
+            found = event
+    return found
+
+
+def _stream_input(messages: list[dict]) -> str:
+    """The turns as one stream-json user message, files included.
+
+    Same single-turn constraint as :func:`_prompt`, so a retry is still a
+    transcript — with every file from every turn attached once, ahead of it.
+    """
+    blocks = [file_block(a) for m in messages for a in attachments_of(m)]
+    blocks.append({"type": "text", "text": _prompt(messages)})
+    event = {"type": "user", "message": {"role": "user", "content": blocks}}
+    return json.dumps(event) + "\n"
 
 
 def _prompt(messages: list[dict]) -> str:

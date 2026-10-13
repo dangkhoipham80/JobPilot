@@ -19,13 +19,45 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from jobpilot.llm.base import Completion, LlmError, Usage
+from jobpilot.llm.base import Attachment, Completion, LlmError, Usage, attachments_of
 from jobpilot.llm.pricing import estimate_cost
 
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_MODEL = "claude-opus-4-8"
 MAX_TOKENS = 16000
+
+
+def file_block(attachment: Attachment) -> dict:
+    """One attachment as an Anthropic content block.
+
+    Shared with ``claude_cli``: print mode's ``stream-json`` input takes the
+    Messages API's own blocks, so the two Claude backends cannot disagree about
+    what a PDF looks like on the wire.
+    """
+    return {
+        "type": "document" if attachment.is_pdf else "image",
+        "source": {
+            "type": "base64",
+            "media_type": attachment.media_type,
+            "data": attachment.b64(),
+        },
+    }
+
+
+def wire_message(message: dict) -> dict:
+    """A turn in the Messages API's shape. Text-only turns pass through as-is."""
+    files = attachments_of(message)
+    if not files:
+        return {"role": message.get("role", "user"), "content": message.get("content") or ""}
+    # Files first, question last — the order Anthropic's vision docs recommend.
+    return {
+        "role": message.get("role", "user"),
+        "content": [
+            *(file_block(a) for a in files),
+            {"type": "text", "text": message.get("content") or ""},
+        ],
+    }
 
 
 @dataclass
@@ -94,7 +126,7 @@ class ClaudeClient:
                     "cache_control": {"type": "ephemeral"},
                 }
             ],
-            messages=messages,
+            messages=[wire_message(m) for m in messages],
             output_format=schema,
             **extra,
         )

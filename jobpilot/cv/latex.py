@@ -48,6 +48,18 @@ _INLINE_RE = re.compile(
 )
 
 
+def markup_spans(text: str | None) -> list[str]:
+    """The stretches of ``text`` that :func:`tex` will treat as markup.
+
+    For callers that put text they did not write into a CV field — a document
+    read off a scan says "~40% faster for ~2M users" meaning two tildes, and
+    here that is a pair of delimiters: both vanish and the words between them
+    change colour. Same regex as the renderer, so the two cannot disagree about
+    what counts.
+    """
+    return [m.group(0) for m in _INLINE_RE.finditer(text or "")]
+
+
 def escape_tex(text: str) -> str:
     """Escape LaTeX specials in a plain-text run."""
     return _ESCAPE_RE.sub(lambda m: _ESCAPES[m.group()], text)
