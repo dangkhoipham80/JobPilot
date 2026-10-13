@@ -67,6 +67,10 @@
   **im lặng**: dòng bằng nhau ra thứ tự khác nhau giữa trang 1 và trang 2 ⇒ một dòng hiện hai
   lần, một dòng không bao giờ hiện. Ở corpus này `posted_at` **null** với mọi LinkedIn alert nên
   tie là mặc định, không phải ngoại lệ. `paging.page_query()` **raise** nếu thiếu `ORDER BY`.
+- **`GET /jobs`: `SKIPPED` luôn xuống cuối, là khoá sắp xếp ĐẦU TIÊN** (trước `posted_at` /
+  `crawled_at`), ở cả hai `order`. Phải nằm trong `ORDER BY` chứ không sắp lại sau khi lấy trang:
+  sắp sau thì tin bỏ qua chỉ xuống cuối *trang của nó*. Cột UNIQUE vẫn đứng cuối như luật trên.
+  Lọc `status=SKIPPED` thì khoá này thành hằng số — đó là đường tìm lại một tin đã bỏ qua.
 - **`total` đếm bằng subquery của chính statement đã lọc** (`paging.total_for`), không dựng
   lại `where` bằng tay — dựng lại là cách `total` trôi khỏi thứ nó đếm rồi mời user sang một
   trang trống.

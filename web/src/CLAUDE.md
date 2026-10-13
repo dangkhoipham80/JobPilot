@@ -29,6 +29,18 @@ bản không-tham-số-ngôn-ngữ của chúng đã bị xoá nên call-site c�
   boot** (`add_init_script`); bật class `.dark` sau khi mount chỉ repaint CSS — chart giữ palette
   light, ảnh *trông* tối mà verify sai.
 
+### Bảng Jobs + nhãn trạng thái
+
+- **Kiểm `StatusPill` bằng dữ liệu thật, không bằng bảng 9 màu.** Danh sách thật gần như chỉ có
+  `DISCOVERED` và `SKIPPED`; hai kiểu đó từng là hai viền xám gần giống hệt trong khi bảy màu kia
+  không bao giờ lên màn hình. Thêm/đổi màu trạng thái thì đo tương phản trên `--surface` **và**
+  `--surface-2` (hover của dòng) ở cả hai theme — hex literal cần biến thể `dark:` riêng.
+- **Cột Vị trí là một phần của bảng (`w-[38%]`), không phải "phần còn lại"**, và chữ **xuống dòng**,
+  không `truncate`. Đổi sàn `min-w` thì chụp lại ở ~1180px: sàn quá cao làm cột Thao tác tràn ra
+  ngoài card (bảng đã bọc `overflow-x-auto` để tràn thì cuộn chứ không bị cắt).
+- **Thứ tự "đã bỏ qua xuống cuối" là của API** (`jobpilot/api/CLAUDE.md`). Đừng sắp lại `items` ở
+  frontend — sắp trong một trang không phải là sắp cả danh sách.
+
 ### Bẫy React đã trả giá
 
 - **Guard double-click phải là `useRef`, không phải state.** Hai click cùng một tick đều đọc

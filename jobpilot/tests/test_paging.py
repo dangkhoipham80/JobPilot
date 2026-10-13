@@ -92,6 +92,44 @@ def test_walking_the_pages_yields_every_row_exactly_once(client):
     assert seen == sorted(seen, reverse=True), "pages must stay in one global order"
 
 
+def test_skipped_jobs_sink_to_the_end_across_pages_not_within_each(client, session_factory):
+    """A job you passed on stops holding a row among the ones still waiting.
+
+    Checked by walking pages, because the failure worth catching is the
+    half-fix: re-sorting each page after the fact puts a skipped row at the
+    bottom of *its* page and leaves page 1 one job short of undecided ones.
+    """
+    with session_factory() as s:
+        # The two that would otherwise come first and near the middle.
+        s.get(Job, "itviec:11").status = JobStatus.SKIPPED
+        s.get(Job, "itviec:07").status = JobStatus.SKIPPED
+        s.commit()
+
+    seen: list[str] = []
+    for offset in range(0, 12, 5):
+        seen.extend(j["id"] for j in _page(client, limit=5, offset=offset)["items"])
+
+    live = [f"itviec:{i:02d}" for i in (10, 9, 8, 6, 5, 4, 3, 2, 1, 0)]
+    assert seen == live + ["itviec:11", "itviec:07"]
+    # Same rule under the other ordering — it is a property of the list, not of
+    # one sort key.
+    crawled = [j["id"] for j in _page(client, limit=12, order="crawled")["items"]]
+    assert crawled[-2:] == ["itviec:11", "itviec:07"]
+
+
+def test_filtering_to_skipped_still_finds_them(client, session_factory):
+    """Sinking is not hiding: the status filter is how a skipped job is found
+    again, so it has to keep returning them, in the usual order."""
+    with session_factory() as s:
+        s.get(Job, "itviec:11").status = JobStatus.SKIPPED
+        s.get(Job, "itviec:07").status = JobStatus.SKIPPED
+        s.commit()
+
+    body = _page(client, status="SKIPPED")
+    assert body["total"] == 2
+    assert [j["id"] for j in body["items"]] == ["itviec:11", "itviec:07"]
+
+
 def test_the_total_is_counted_with_the_same_filter_as_the_rows(client):
     """A total counted over the table instead of the query offers the user
     pages that come back empty."""

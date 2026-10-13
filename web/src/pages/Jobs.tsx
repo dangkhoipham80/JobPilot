@@ -228,24 +228,29 @@ export function Jobs({ version }: { version: number }) {
         <EmptyState hasFilters={!!hasFilters} />
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs uppercase tracking-wide text-ink-muted">
-                <th className="px-4 py-2.5 font-medium">{t("colRole")}</th>
-                <th className="px-2 py-2.5 font-medium">{t("colSource")}</th>
-                <th className="px-2 py-2.5 font-medium">{t("colMatch")}</th>
-                <th className="px-2 py-2.5 font-medium">{t("colStatus")}</th>
-                <th className="px-2 py-2.5 font-medium">{t("colPosted")}</th>
-                <th className="px-2 py-2.5 font-medium">{t("colCrawled")}</th>
-                <th className="px-4 py-2.5 text-right font-medium">{t("colActions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <Row key={job.id} job={job} pending={pending === job.id} onAct={act} />
-              ))}
-            </tbody>
-          </table>
+          {/* Titles wrap, so the role column has a floor it will not go under;
+              below that the table scrolls sideways inside the card rather than
+              being clipped by it. */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase tracking-wide text-ink-muted">
+                  <th className="px-4 py-2.5 font-medium">{t("colRole")}</th>
+                  <th className="px-2 py-2.5 font-medium">{t("colSource")}</th>
+                  <th className="px-2 py-2.5 font-medium">{t("colMatch")}</th>
+                  <th className="px-2 py-2.5 font-medium">{t("colStatus")}</th>
+                  <th className="px-2 py-2.5 font-medium">{t("colPosted")}</th>
+                  <th className="px-2 py-2.5 font-medium">{t("colCrawled")}</th>
+                  <th className="px-4 py-2.5 text-right font-medium">{t("colActions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job) => (
+                  <Row key={job.id} job={job} pending={pending === job.id} onAct={act} />
+                ))}
+              </tbody>
+            </table>
+          </div>
           <Pagination
             className="px-4 pb-3"
             page={page}
@@ -275,18 +280,32 @@ function Row({
   const labels = useLabels();
   const isFresh =
     !!job.posted_at && Date.now() - new Date(job.posted_at).getTime() < 48 * 3600 * 1000;
+  const skipped = job.status === "SKIPPED";
   return (
     <tr className="border-b last:border-0 hover:bg-surface-2/60">
-      {/* `w-full max-w-0` lets the role column absorb whatever the fixed-width
-          columns leave over, while still giving `truncate` a width to clamp to —
-          a fixed `max-w-[320px]` cut titles short even on a wide screen. */}
-      <td className="w-full max-w-0 px-4 py-3">
+      {/* A share of the table, not "whatever is left over": as `w-full` this
+          column took every spare pixel, so on a wide screen a title sat some
+          700px from its own status and actions. Text wraps instead of being
+          truncated — "Backend Developer (Java, Sp…" hides the half that tells
+          two postings apart — and `overflow-wrap: anywhere` lets a long
+          unbroken token wrap too rather than widen the column. */}
+      <td className="w-[38%] min-w-[12rem] px-4 py-3">
         <Link to={`/jobs/${encodeURIComponent(job.id)}`} className="group block">
-          <div className="flex items-center gap-1.5">
-            {isFresh && <FreshBeacon />}
-            <span className="truncate font-medium text-ink group-hover:text-accent">{job.title}</span>
+          <div className="flex items-start gap-1.5">
+            {/* Pinned to the first line now that the title can run to two. */}
+            {isFresh && <FreshBeacon className="mt-1.5 shrink-0" />}
+            <span
+              className={
+                "font-medium [overflow-wrap:anywhere] group-hover:text-accent " +
+                // A skipped job has had its decision; its title steps back so
+                // the rows still waiting on one are the ones that read first.
+                (skipped ? "text-ink-muted" : "text-ink")
+              }
+            >
+              {job.title}
+            </span>
           </div>
-          <div className="truncate text-xs text-ink-muted">
+          <div className="text-xs text-ink-muted [overflow-wrap:anywhere]">
             {job.company}
             {job.location ? ` · ${job.location}` : ""}
             {job.salary ? ` · ${job.salary}` : ""}

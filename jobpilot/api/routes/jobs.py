@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from jobpilot.api.deps import get_db, require_token
@@ -205,8 +205,15 @@ def list_jobs(
     # unique tie-break the database is free to order the ties differently
     # between the page-1 and page-2 queries — and then a job shows up twice
     # while another is never shown.
+    #
+    # Skipped jobs go last under either ordering. A job you passed on has had
+    # its turn, and left in place it keeps holding a row among the ones still
+    # waiting for a decision. It is the *first* key rather than a re-sort of
+    # each page, so it holds across pages: page 1 is never padded with rows
+    # you already dismissed. Filtering to one status makes it a constant.
+    skipped_last = case((Job.status == JobStatus.SKIPPED, 1), else_=0)
     key = Job.crawled_at if order == "crawled" else Job.posted_at
-    stmt = stmt.order_by(key.desc(), Job.crawled_at.desc(), Job.id.desc())
+    stmt = stmt.order_by(skipped_last, key.desc(), Job.crawled_at.desc(), Job.id.desc())
     rows, total = page_query(db, stmt, limit, offset)
     return page_list([JobOut.model_validate(r) for r in rows], total, limit, offset)
 
