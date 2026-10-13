@@ -80,6 +80,19 @@ ats:
   lever:
     - palantir        # 302 jobs
     - spotify         # 105 jobs
+  # Keep only postings in these places, e.g. ["Ho Chi Minh"] or ["Vietnam"].
+  # Matched as whole words against the posting's own location label, accents
+  # and case ignored, and by city for Vietnamese spellings ("HCMC", "Saigon",
+  # "Ha Noi"). "Vietnam" also matches a label that is only a Vietnamese city.
+  # For any other country the term has to be something the board writes, and
+  # many boards label a posting with its city alone. A posting that carries no
+  # location label is always kept.
+  #
+  # Empty = every location. A company board is worldwide, so empty means the
+  # per-site limit is spent wherever the board happens to start. Setting it
+  # also lifts the stack filter for these boards: a job is then kept even when
+  # its description names none of `crawl.stacks`, at a match of 0%.
+  locations: []
 
 apply:
   # Email is the only full-auto channel. Three independent gates, all on by

@@ -39,6 +39,14 @@ MEMO_BUDGET_CHARS = 32 * 1024 * 1024
 class BaseScraper(ABC):
     source: str = "base"
 
+    #: Whether a job must name one of ``crawl.stacks`` to be kept. True for a
+    #: board that is *searched*: a general board answers "developer" with CNC
+    #: machinists and "ai" with marketing roles, and the stack list is the only
+    #: thing in the pipeline that removes them. False for a source its user
+    #: assembled by hand *and* held to a place — see
+    #: :attr:`jobpilot.crawler.ats.AtsScraper.stack_gated`.
+    stack_gated: bool = True
+
     #: False when the listing already carries the whole job, so there is no
     #: detail page worth fetching. Official feeds ship the full description
     #: inline; requesting each job page again would be N pointless requests.
@@ -279,6 +287,20 @@ class BaseScraper(ABC):
                 limit,
             )
         if limit is not None:
+            if len(hits) > limit:
+                # Not a warning — the limit did what it was asked — but it has
+                # to be findable: on a source that hands over its whole listing
+                # at once (a company board) these are postings the next crawl
+                # will cut again, in the same order, and never bring in.
+                # "At least": a paged board stopped walking once it had enough,
+                # so this is the rest of the last page, not everything unseen.
+                log.info(
+                    "[%s] at least %d matching hit(s) for query=%r were cut by the limit of %d",
+                    self.source,
+                    len(hits) - limit,
+                    query,
+                    limit,
+                )
             hits = hits[:limit]
         log.info("[%s] %d hit(s) for query=%r", self.source, len(hits), query)
 

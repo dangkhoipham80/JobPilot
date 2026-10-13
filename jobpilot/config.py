@@ -94,6 +94,13 @@ class AtsCfg(BaseModel):
 
     greenhouse: list[str] = Field(default_factory=list)
     lever: list[str] = Field(default_factory=list)
+    #: Keep only postings in these places ("Ho Chi Minh", "Vietnam"). Matched
+    #: against the posting's own location label. Vietnamese cities are known by
+    #: their spellings ("HCMC", "Saigon") and "Vietnam" by its cities; any other
+    #: term has to be something the board actually writes. Empty = every location — and a company board
+    #: is worldwide, so then the per-site limit goes to whichever offices are
+    #: listed first, and the stack gate stays on.
+    locations: list[str] = Field(default_factory=list)
 
     def boards_for(self, key: str) -> list[str]:
         return list(getattr(self, key, []) or [])

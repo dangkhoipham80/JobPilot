@@ -199,10 +199,19 @@ platform, so following a new company is one word in `config.yaml` — no code:
 ats:
   greenhouse: [gitlab, grafanalabs, elastic]   # the slug in job-boards.greenhouse.io/<slug>
   lever:      [palantir, spotify]              # the slug in jobs.lever.co/<slug>
+  locations:  ["Ho Chi Minh"]                  # optional — keep only postings in these places
 ```
 
 Then enable `greenhouse` / `lever` in Settings. Each board is one request per crawl, so a long list
-is a slow crawl.
+is a slow crawl. A company board is worldwide, so set `locations` unless you want every office: it
+is matched as whole words against the posting's own location label, accents ignored, and it knows
+the common spellings of Vietnamese cities ("HCMC", "Saigon", "Ha Noi"). "Vietnam" also matches a
+label that is only a Vietnamese city; for any other country the term has to be something the board
+writes, and many label a posting with its city alone. Once `locations` is set, jobs from
+these boards are kept even when the description names none of your `crawl.stacks` (you picked the
+employer and the place) and show a match of 0% in that case; the title exclusions still apply.
+With no `locations` the stack filter stays on, because a query matches any word of a title and a
+whole worldwide board has a great many "engineers".
 
 **Sources deliberately not added.** Several were evaluated and rejected — read
 [`jobpilot/crawler/CLAUDE.md`](jobpilot/crawler/CLAUDE.md) → *"Nguồn tier-2 đã loại"* (in Vietnamese)

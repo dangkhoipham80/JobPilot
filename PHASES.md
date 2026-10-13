@@ -2439,3 +2439,48 @@ thấy. Giờ `.nulls_last()`. Còn lại, chưa sửa: nhãn khoảng làm trò
 
 Chưa làm (user nêu trong cùng buổi, là phase riêng): bỏ qua **kèm lý do** → gom lại → gợi ý chỉnh
 crawl. Hiện `skip` không ghi lý do và `match_score` không đọc hành vi của user.
+
+
+## Phase ats-scope — board công ty: lọc theo địa điểm, và vì sao bật nguồn thôi là chưa đủ (2026-10-13)
+
+User tìm tên một công ty trong `/jobs` không ra gì, sau khi mình nói "công ty đó có N vị trí ở
+HCM". Con số đến từ một script đo gọi thẳng API board của công ty — **không ghi DB** — còn nguồn
+ATS thì đang tắt và trỏ vào công ty khác. Câu "X có N vị trí" đứng một mình đọc như "app có N tin".
+(Tên công ty, số tin và tiêu đề tin cố ý không ghi ở đây: repo public.)
+
+Bật nguồn + đổi danh sách công ty là không đủ, và mỗi bước lộ ra một lớp chặn:
+
+1. **Không có lọc địa điểm.** Một board vài trăm tin toàn cầu chỉ ~4% ở HCM ⇒ `limit` tiêu hết
+   vào tin ở nước khác. Thêm `ats.locations`, lọc trước `limit`. Thật: hai board lần lượt bỏ
+   khoảng 3/4 và 96% số tin.
+2. **Qua được địa điểm thì chết ở cổng stack.** Dry-run thật (không ghi DB) qua đúng biểu thức
+   lọc của pipeline, cùng một mức `limit`: cổng giữ khoảng **một phần năm** số tin trong phạm vi.
+   Các tin kỹ sư phần mềm không ghi cấp bậc bị loại vì JD không nhắc Java/Spring Boot/Backend/
+   Microservices. Board công ty **đã khoanh vùng** giờ được miễn cổng: giữ **hơn một nửa**, phần
+   còn lại bị loại theo tiêu đề.
+3. **Còn lại `limit`.** Ở mức 10 của lịch tự động chỉ khoảng 2/3 số tin giữ được là vào, và phần
+   bị cắt lại gồm đúng các tin không ghi cấp bậc. Chưa sửa — có log, ghi nợ ở
+   `jobpilot/crawler/CLAUDE.md`. Lượt đầu chạy tay với limit cao.
+
+Luật: `jobpilot/crawler/CLAUDE.md` § Board công ty.
+
+Review gate: **CHANGES REQUESTED ba vòng** rồi sửa.
+
+- Vòng 1. Blocker: ví dụ `["Vietnam"]` trong chính `config.yaml` loại toàn bộ tin trong nước của
+  board Lever (nhãn chỉ có tên thành phố, quốc gia ở field riêng). Ngoài ra: miễn cổng stack khi
+  **không** khoanh vùng thì một board giữ vài chục tin kỹ sư không phải phần mềm ở score 0 ⇒ giờ
+  chỉ miễn khi có `locations`; tài liệu ghi thẳng tên hai công ty user đang nhắm ⇒ gỡ; hai con số
+  so sánh được đo ở hai mức `limit` khác nhau ⇒ đo lại cùng mức; tin giữ nhờ văn phòng thứ hai bị
+  lưu dưới văn phòng thứ nhất ⇒ `location_of`.
+- Vòng 2. Blocker **do chính bản sửa vòng 1 gây ra**: nhãn "Vietnam" suy từ mã quốc gia được nhét
+  chung vào danh sách nhãn, nên `location_of` chọn nó ⇒ phạm vi `["Vietnam"]` lưu cả loạt tin với
+  `location = "Vietnam"`, `city = None`. Mình đã "verify" bản sửa bằng cách đếm **bao nhiêu tin
+  trong phạm vi** (đúng) mà không đọc **tin được lưu ra sao** (sai) — test cũng chỉ assert `len`.
+  Giờ tách `scope_hints` (để khớp) khỏi `places` (để lưu).
+- Vòng 3. Code qua; chặn vì **dấu vân tay**: mình gỡ tên công ty nhưng để lại số tin chính xác,
+  tiêu đề tin nguyên văn và thành phố văn phòng trong fixture — đúng những thứ mình vừa viết luật
+  là không được để. Viết lại bằng tỉ lệ và loại vị trí. Thêm: term "Vietnam" giờ nhận nhãn chỉ ghi
+  tên một thành phố Việt Nam.
+
+Lộ ra thêm, chưa sửa: `crawl.match_score_min` có trong config và trang Settings nhưng **không code
+nào đọc** — một setting không làm gì.

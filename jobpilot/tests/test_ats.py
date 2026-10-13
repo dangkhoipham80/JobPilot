@@ -14,6 +14,7 @@ import pytest
 
 from jobpilot.crawler.ats import GreenhouseScraper, LeverScraper
 from jobpilot.crawler.normalize import parse_posted_at
+from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.text import html_to_markdown
 from jobpilot.crawler.types import SearchHit
 
@@ -200,6 +201,262 @@ def test_one_request_per_company_no_detail_fetches():
     jobs = GreenhouseScraper(boards=["gitlab"], fetcher=fetch).crawl("backend", limit=5)
     assert len(fetched) == 1
     assert len(jobs) == 1
+
+
+# --------------------------------------------------------------------------- #
+# location scope
+# --------------------------------------------------------------------------- #
+def _gh(*jobs: tuple[str, str, str | None]) -> str:
+    """A Greenhouse board from (id, title, location) triples."""
+    return json.dumps(
+        {
+            "jobs": [
+                {
+                    "id": jid,
+                    "absolute_url": f"https://job-boards.greenhouse.io/x/jobs/{jid}",
+                    "title": title,
+                    "company_name": "X",
+                    **({"location": {"name": loc}} if loc is not None else {}),
+                    "content": "",
+                }
+                for jid, title, loc in jobs
+            ]
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("place", "term", "expected"),
+    [
+        # the term as whole words inside the label
+        ("Ho Chi Minh City", "Ho Chi Minh", True),
+        ("Ho Chi Minh City, Ho Chi Minh City, Vietnam", "Ho Chi Minh", True),
+        ("Ho Chi Minh City, Ho Chi Minh City, Vietnam", "vietnam", True),
+        ("Thành phố Hồ Chí Minh", "ho chi minh", True),
+        # spellings that share no words — resolved through the city both name
+        ("HCMC", "Ho Chi Minh", True),
+        ("Saigon", "Hồ Chí Minh", True),
+        ("Ha Noi, Vietnam", "Hanoi", True),
+        # the country, spelled either way on either side
+        ("Hồ Chí Minh, Việt Nam", "Vietnam", True),
+        ("Ho Chi Minh City, Viet Nam", "vietnam", True),
+        ("Ho Chi Minh City, Vietnam", "Việt Nam", True),
+        # two-letter parts are country/state codes on a worldwide board, not
+        # Vietnamese abbreviations: HN here is Honduras
+        ("San Pedro Sula, HN", "Hanoi", False),
+        ("Tegucigalpa, HN.", "Hanoi", False),
+        ("Tegucigalpa, HN 11101", "Hanoi", False),
+        ("San Pedro Sula, HN-21102", "Vietnam", False),
+        # a label that is only a Vietnamese city is in Vietnam without saying so
+        ("Ho Chi Minh City", "Vietnam", True),
+        ("Da Nang", "Việt Nam", True),
+        ("Nairobi", "Vietnam", False),
+        ("Remote", "Vietnam", False),
+        # one label naming two cities
+        ("Hanoi & Ho Chi Minh", "Ha Noi", True),
+        ("Hanoi or HCMC", "Saigon", True),
+        ("Vietnamese Street, Sydney", "Vietnam", False),
+        # elsewhere
+        ("London, United Kingdom", "Ho Chi Minh", False),
+        ("Ha Noi, Vietnam", "Ho Chi Minh", False),
+        # whole words, not substrings: the `"remote" in "remote debugging"` trap
+        ("Indianapolis, IN", "India", False),
+        ("Parisot, France", "Paris", False),
+        ("", "Ho Chi Minh", False),
+        ("Ho Chi Minh City", "", False),
+    ],
+)
+def test_place_matches(place, term, expected):
+    from jobpilot.crawler.ats import place_matches
+
+    assert place_matches(place, term) is expected
+
+
+def test_a_location_scope_keeps_the_limit_for_postings_in_scope(caplog):
+    """Checked against a real board where about one posting in twenty-five was
+    in the city searched.
+
+    Without a scope `limit` is spent on whichever offices the board lists first
+    and the crawl still reports a full, successful page. The scope is applied
+    before the limit is counted, so the one posting in scope is found even
+    behind three that are not and a limit of one.
+    """
+    board = _gh(
+        ("1", "Software Engineer", "Reykjavik, Iceland"),
+        ("2", "Software Engineer", "Lima, Peru"),
+        ("3", "Software Engineer", "Nairobi, Kenya"),
+        ("4", "Software Engineer", "Ho Chi Minh City, Ho Chi Minh City, Vietnam"),
+    )
+    s = GreenhouseScraper(boards=["x"], locations=["Ho Chi Minh"], fetcher=lambda u: board)
+    with caplog.at_level(logging.INFO):
+        jobs = s.crawl("engineer", limit=1)
+
+    assert [j.native_id for j in jobs] == ["4"]
+    # Said out loud, so a board with nothing in scope does not read as a board
+    # with no matching jobs.
+    assert any("3 posting(s) outside ats.locations" in r.getMessage() for r in caplog.records)
+
+
+def test_what_the_limit_cut_from_a_board_is_logged(caplog):
+    """A board hands over its whole listing in one response, so the postings
+    past `limit` are the same ones every crawl: cut again, never brought in.
+    That has to be findable in the log rather than look like a full result."""
+    board = _gh(*[(str(i), "Software Engineer", "Saigon") for i in range(5)])
+    s = GreenhouseScraper(boards=["x"], locations=["Ho Chi Minh"], fetcher=lambda u: board)
+    with caplog.at_level(logging.INFO):
+        assert len(s.crawl("engineer", limit=2)) == 2
+    assert any("3 matching hit(s)" in r.getMessage() and "cut by the limit of 2" in r.getMessage() for r in caplog.records)
+
+
+def test_no_location_scope_is_every_location():
+    board = _gh(("1", "Software Engineer", "Lisbon"), ("2", "Software Engineer", "Saigon"))
+    for locations in (None, [], ["  "]):
+        s = GreenhouseScraper(boards=["x"], locations=locations, fetcher=lambda u: board)
+        assert len(s.crawl("engineer", limit=5)) == 2
+
+
+def test_a_posting_that_names_no_location_is_kept():
+    """Unknown is not elsewhere. Dropping it would be a silent loss — the kind
+    of thing the scope exists to stop, not to add."""
+    board = _gh(("1", "Software Engineer", None), ("2", "Software Engineer", "Lima"))
+    s = GreenhouseScraper(boards=["x"], locations=["Ho Chi Minh"], fetcher=lambda u: board)
+    assert [j.native_id for j in s.crawl("engineer", limit=5)] == ["1"]
+
+
+def test_lever_reads_every_office_a_posting_is_open_in():
+    """Lever puts only the first office in `location`. A role listed under
+    London that is also open in Ho Chi Minh City must not be filtered out of
+    the city it is hiring in."""
+    posting = json.loads(LEVER)[0]
+    posting["categories"]["allLocations"] = ["London, United Kingdom", "Ho Chi Minh City"]
+    board = json.dumps([posting])
+
+    scoped = LeverScraper(boards=["palantir"], locations=["Ho Chi Minh"], fetcher=lambda u: board)
+    assert len(scoped.crawl("engineer", limit=5)) == 1
+    # ...and the unmodified fixture is London only.
+    london = LeverScraper(boards=["palantir"], locations=["Ho Chi Minh"], fetcher=lambda u: LEVER)
+    assert london.crawl("engineer", limit=5) == []
+
+
+def test_lever_knows_the_country_its_label_leaves_out():
+    """Checked against a real board: every local posting was labelled with the
+    city alone and carried the country as `country: "VN"`. A scope of
+    "Vietnam" — the example the config file itself gives — kept none of them."""
+    posting = json.loads(LEVER)[0]
+    posting["categories"]["location"] = "Ho Chi Minh City"
+    posting["country"] = "VN"
+    board = json.dumps([posting])
+
+    for scope in (["Vietnam"], ["Việt Nam"]):
+        (job,) = LeverScraper(boards=["x"], locations=scope, fetcher=lambda u: board).crawl("engineer", limit=5)
+        # In scope because of the country — and still stored under its city.
+        # The first fix stored the country here: every local posting came out
+        # located in "Vietnam", with no city for any filter to find.
+        assert job.location == "Ho Chi Minh City"
+    # The fixture as shipped is London, GB — no code is added raw, so "GB"
+    # (or "CA", "IN", "DE": words and states too) never becomes a place.
+    gb = json.loads(LEVER)[0] | {"country": "GB"}
+    assert LeverScraper(boards=["x"], locations=["GB"], fetcher=lambda u: json.dumps([gb])).crawl("engineer", limit=5) == []
+
+
+def test_a_lever_posting_with_a_country_but_no_label_is_still_an_unknown_city():
+    """ "A posting that names no location is always kept" has to hold for the
+    posting the country hint applies to as well. Treating the hint as a label
+    dropped a posting in Vietnam from a Vietnamese city's scope while keeping
+    the same posting when its country was anywhere else."""
+    for country in ("VN", "US", None):
+        posting = json.loads(LEVER)[0]
+        del posting["categories"]["location"]
+        if country:
+            posting["country"] = country
+        board = json.dumps([posting])
+        s = LeverScraper(boards=["x"], locations=["Ho Chi Minh"], fetcher=lambda u: board)
+        (job,) = s.crawl("engineer", limit=5)
+        assert job.location is None, country
+
+
+def test_a_posting_kept_for_its_second_office_is_stored_under_that_office():
+    """Kept because it is open in Ho Chi Minh City, then stored as
+    "Nairobi", the job would be invisible to the city filter it was crawled
+    for. The stored location is the label that put it in scope."""
+    posting = json.loads(LEVER)[0]
+    posting["categories"]["location"] = "Nairobi"
+    posting["categories"]["allLocations"] = ["Nairobi", "Ho Chi Minh City"]
+    board = json.dumps([posting])
+
+    (job,) = LeverScraper(boards=["x"], locations=["Ho Chi Minh"], fetcher=lambda u: board).crawl("engineer", limit=5)
+    assert job.location == "Ho Chi Minh City"
+    # The same under a country scope: the city label is what matched, so it
+    # is what is stored — the posting's own country code here is not Vietnam's.
+    posting["country"] = "KE"
+    by_country = json.dumps([posting])
+    (job,) = LeverScraper(boards=["x"], locations=["Vietnam"], fetcher=lambda u: by_country).crawl("engineer", limit=5)
+    assert job.location == "Ho Chi Minh City"
+    # Unscoped, nothing is rewritten: the board's own first office stands.
+    (job,) = LeverScraper(boards=["x"], fetcher=lambda u: board).crawl("engineer", limit=5)
+    assert job.location == "Nairobi"
+
+
+def test_a_board_with_nothing_in_scope_does_not_stop_the_next_board_being_read(caplog):
+    """The scope is applied inside the walk over boards, not to its result.
+
+    Applied afterwards, the first board's out-of-scope postings fill `limit`,
+    the walk stops there, and the second company — the one with the local jobs
+    — is never requested. And the count that is logged is per search, so a
+    second keyword over the same boards reports the same number, not double.
+    """
+    elsewhere = _gh(*[(str(i), "Software Engineer", "Lisbon") for i in range(3)])
+    local = _gh(("9", "Software Engineer", "Saigon"))
+    pages = {"a": elsewhere, "b": local}
+    asked: list[str] = []
+
+    def fetch(url: str) -> str:
+        board = url.split("/boards/")[1].split("/")[0]
+        asked.append(board)
+        return pages[board]
+
+    s = GreenhouseScraper(
+        boards=["a", "b"],
+        locations=["Ho Chi Minh"],
+        fetcher=fetch,
+        rate_limiter=RateLimiter(0, 0),  # two requests: don't sleep between them in a test
+    )
+    with caplog.at_level(logging.INFO):
+        first = s.crawl("engineer", limit=2)
+        second = s.crawl("software", limit=2)
+
+    assert asked == ["a", "b"], "both boards read once; the second keyword is served from memory"
+    assert [j.native_id for j in first] == ["9"] == [j.native_id for j in second]
+    counts = [r.getMessage() for r in caplog.records if "outside ats.locations" in r.getMessage()]
+    assert len(counts) == 2 and all("3 posting(s)" in c for c in counts)
+
+
+def test_the_configured_locations_reach_the_ats_scrapers_only():
+    from jobpilot.config import AtsCfg, Config, SourceCfg
+    from jobpilot.crawler.registry import build_scrapers
+
+    cfg = Config(
+        sources=[SourceCfg(key="lever", tier=3, enabled=True), SourceCfg(key="itviec", enabled=True)],
+        ats=AtsCfg(lever=["acme"], locations=["Ho Chi Minh"]),
+    )
+    lever, itviec = sorted(build_scrapers(cfg, respect_robots=False), key=lambda s: s.source == "itviec")
+    assert lever.locations == ("Ho Chi Minh",) and lever.boards == ("acme",)
+    assert not hasattr(itviec, "locations")
+
+
+def test_a_company_board_is_exempt_from_the_stack_gate_only_when_scoped():
+    """A query matches any word of a title. Against a whole worldwide board
+    "ai engineer" also matches every engineer the company employs who does not
+    write software, and the gate is what removes them — one real board kept
+    dozens of such postings at score 0 without it. Held to a place, the board is the
+    user's own short list and the gate only removes what they asked for."""
+    from jobpilot.crawler.itviec import ITViecScraper
+
+    for cls in (GreenhouseScraper, LeverScraper):
+        assert cls(boards=["x"], locations=["Ho Chi Minh"]).stack_gated is False
+        assert cls(boards=["x"]).stack_gated is True
+        assert cls(boards=["x"], locations=[]).stack_gated is True
+    assert ITViecScraper.stack_gated is True
 
 
 # --------------------------------------------------------------------------- #

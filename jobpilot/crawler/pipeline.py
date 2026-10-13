@@ -112,7 +112,7 @@ def _crawl_site(
     for raw in raws:
         nj = normalize(raw, cfg, now)
         excluded = title_excluded(raw.title, cfg.crawl.exclude_keywords)
-        no_stack = bool(cfg.crawl.stacks) and nj.match_score <= 0.0
+        no_stack = scraper.stack_gated and bool(cfg.crawl.stacks) and nj.match_score <= 0.0
         if excluded or no_stack:
             filtered += 1
             continue
