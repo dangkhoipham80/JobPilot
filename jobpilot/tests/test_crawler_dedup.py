@@ -207,6 +207,103 @@ def test_a_title_that_names_no_level_still_matches_one_that_does(db, cfg):
     assert (stats.inserted, stats.duplicates) == (1, 1)
 
 
+def test_one_board_listing_a_levelled_and_an_unlevelled_title_has_two_jobs(db, cfg):
+    """The allowance for a silent level is for *another* board's house style.
+
+    The shape of a loss seen in a real crawl: the role with no level in its
+    title was dropped as a copy of the staff-level one listed beside it, and
+    the staff-level one was the row that survived — the wrong half of the pair
+    for anyone not looking for a staff role. One board, two ids: two jobs.
+    """
+    stats = _persist(
+        db,
+        cfg,
+        [
+            _job("topcv", "a", "Staff Data Engineer"),
+            _job("topcv", "b", "Data Engineer"),
+        ],
+    )
+
+    assert (stats.inserted, stats.duplicates) == (2, 0)
+    assert _ids(db) == {"topcv:a", "topcv:b"}
+
+
+def test_one_board_listing_a_team_specific_and_a_generic_opening_has_two_jobs(db, cfg):
+    """The parenthetical is dropped from the key so that "(Java, Spring)" on one
+    board matches a bare title on another. On one board it is the difference
+    between two openings."""
+    stats = _persist(
+        db,
+        cfg,
+        [
+            _job("greenhouse", "1", "Backend Engineer"),
+            _job("greenhouse", "2", "Backend Engineer (Payments)"),
+        ],
+    )
+
+    assert (stats.inserted, stats.duplicates) == (2, 0)
+
+
+@pytest.mark.parametrize(
+    "again",
+    [
+        "data engineer",  # case
+        "Data  Engineer",  # spacing
+        "Data-Engineer",  # punctuation
+        "Data Engineer.",  # a trailing full stop
+    ],
+)
+def test_a_board_re_listing_a_role_under_a_new_id_is_still_one_job(db, cfg, again):
+    """What same-board dedup is for, kept: the same title again is a
+    re-listing, and how it is typed does not make it a second opening. Compared
+    through the shared title normaliser — a rule of its own here would drift
+    from the one every other comparison uses."""
+    stats = _persist(db, cfg, [_job("topcv", "a", "Data Engineer"), _job("topcv", "b", again)])
+
+    assert (stats.inserted, stats.duplicates) == (1, 1)
+
+
+def test_the_other_boards_copy_is_still_a_copy_of_either(db, cfg):
+    """Splitting the pair on its own board must not let a second board's
+    unlevelled copy in as a third job: across boards a silent level still
+    matches."""
+    stats = _persist(
+        db,
+        cfg,
+        [
+            _job("topcv", "a", "Staff Data Engineer"),
+            _job("topcv", "b", "Data Engineer"),
+            _job("itviec", "9", "Data Engineer"),
+        ],
+    )
+
+    assert (stats.inserted, stats.duplicates) == (2, 1)
+
+
+@pytest.mark.parametrize("first", ["Staff Data Engineer", "Data Engineer"])
+def test_the_pair_arrives_over_two_crawls_in_either_order(db, cfg, first):
+    """The production path. The second posting meets the first one through the
+    index *preloaded from the database*, not one built up inside a batch — and
+    that is the path that brings back what earlier crawls merged away."""
+    second = "Data Engineer" if first == "Staff Data Engineer" else "Staff Data Engineer"
+
+    _persist(db, cfg, [_job("topcv", "a", first)])
+    db.commit()
+    db.expunge_all()
+    stats = _persist(db, cfg, [_job("topcv", "b", second)], now=NOW + timedelta(days=1))
+
+    assert (stats.inserted, stats.duplicates) == (1, 0)
+    assert _ids(db) == {"topcv:a", "topcv:b"}
+    # ...and a third crawl seeing both again refreshes them, nothing more.
+    again = _persist(
+        db,
+        cfg,
+        [_job("topcv", "a", first), _job("topcv", "b", second)],
+        now=NOW + timedelta(days=2),
+    )
+    assert (again.inserted, again.updated, again.duplicates) == (0, 2, 0)
+
+
 def test_house_style_is_not_a_different_level(db, cfg):
     """ "Sr." and "Lead" mean the level ``infer_level`` already calls senior.
 

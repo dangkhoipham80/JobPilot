@@ -100,6 +100,20 @@ Lớp 1 = PK `<source>:<native_id>`. Lớp 2 = cross-source `(company, title)` t
   Intern cùng title cùng công ty = 3 job. `title_level` đọc **title thôi**, không dùng
   `infer_level` (nó quét cả JD, mà "we hire senior engineers" trong JD không được quyền
   quyết định hai tin là hai tin).
+- **Hai tin trên CÙNG một board chỉ là một khi board đặt cho chúng cùng tiêu đề** (2026-10-14,
+  `persist._same_posting`). Luật "tiêu đề không ghi level thì khớp mọi level" và việc bỏ phần trong
+  ngoặc khỏi key là nhân nhượng cho **board khác** viết cùng một vai trò theo kiểu khác. Áp cho hai
+  tin cùng board thì gộp những vai trò chính board đó liệt kê riêng: tin không ghi cấp bị coi là
+  bản sao của bản cấp cao đứng cạnh — và bản **sống sót là bản cấp cao**, đúng nửa không ai cần.
+  Cùng board + cùng tiêu đề (khác hoa thường/dấu/gạch nối/khoảng trắng thì vẫn là cùng) vẫn là một:
+  đó là đăng lại dưới id mới, và là 56/65 lần gộp cùng-board đã có trong DB; 9 lần còn lại là gộp
+  nhầm. So bằng `normalize_title(strip_level=False, keep_parens=True)` — **tham số thứ hai của cùng
+  một hàm**, không phải hàm normalize thứ ba (bản đầu của fix này đã viết một hàm riêng).
+- **`repeat_postings` sẽ thấy nhiều nhóm hơn sau fix trên, và đó là đúng.** Nó gộp theo
+  `normalize_title(strip_level=False)` — vẫn bỏ ngoặc — nên các tin "X (team A)" / "X (team B)"
+  cùng board, giờ là row riêng thay vì bị dedup nuốt, được đếm chung vào "tin đăng lại". Row trước
+  đây bị giấu mới là cái sai; nhưng nếu cần "đăng lại đúng nghĩa" thì hàm đó phải dùng
+  `keep_parens=True`.
 - **Không bỏ job im lặng.** Tin bị skip được ghi lên row sống sót
   (`payload.dedup.suppressed`, cap 10, sống qua re-crawl) + log có `extra=`. Bản **có JD**
   thắng bản `needs_jd` kể cả khi bản rỗng vào trước (ca LinkedIn alert): row mới được

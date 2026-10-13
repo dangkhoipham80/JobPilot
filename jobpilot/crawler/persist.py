@@ -28,6 +28,16 @@ posting that says nothing about seniority still matches anything, which keeps
 the original intent — a board that omits "Junior" from its title has not
 announced a different job.
 
+**One board listing two titles has said they are two postings.** The leniency
+above — a silent level matches any level, a parenthetical is ignored — is an
+allowance for *another* board describing the same role differently. Applied
+between two postings on the *same* board it merged roles that board itself
+lists separately: a role with no level in its title was dropped as a copy of
+the staff-level one next to it — and the staff-level row was the survivor —
+and a team-specific opening as a copy of the generic one. Within one source,
+two postings are the same posting only when the board gives them the same
+title, level word and parenthetical included (a re-listing under a new id).
+
 **Nothing is dropped silently, and the copy with a JD wins.** A skipped posting
 is written onto the surviving row (``payload.dedup.suppressed``) and logged with
 its key, so "why is this job not in my dashboard" has an answer. And when the
@@ -50,7 +60,7 @@ from sqlalchemy.orm import Session, defer
 
 from jobpilot.crawler.normalize import NormalizedJob, vn_now
 from jobpilot.crawler.quality import THIN_JD_CHARS
-from jobpilot.crawler.text import dedup_key, title_level
+from jobpilot.crawler.text import dedup_key, normalize_title, title_level
 from jobpilot.store.models import Job, JobStatus
 
 log = logging.getLogger(__name__)
@@ -227,8 +237,14 @@ class _Index:
             level = title_level(job.title)
         self._by_key[key].append(_Seen(job=job, level=level))
 
-    def covering(self, key: str, level: str | None) -> _Seen | None:
-        """The posting already covering ``(key, level)``, or ``None``.
+    def covering(
+        self, key: str, level: str | None, *, source: str, title: str | None
+    ) -> _Seen | None:
+        """The posting already covering this one, or ``None``.
+
+        ``source`` and ``title`` are the candidate's own: whether two postings
+        are one depends on whether the same board listed them both — see
+        :func:`_same_posting`.
 
         Returns the match with the **most** JD rather than the first one found:
         the only question the caller asks of it is "is my candidate richer than
@@ -243,12 +259,33 @@ class _Index:
         matches = [
             seen
             for seen in self._by_key.get(key, ())
-            # Same posting unless both sides name a level and they disagree.
-            if level is None or seen.level is None or seen.level == level
+            if _same_posting(seen, level, source, title)
         ]
         if not matches:
             return None
         return max(matches, key=lambda seen: _jd_chars(seen.job.payload))
+
+
+def _listed(title: str | None) -> str:
+    return normalize_title(title, strip_level=False, keep_parens=True)
+
+
+def _same_posting(seen: _Seen, level: str | None, source: str, title: str | None) -> bool:
+    """Whether a candidate sharing ``seen``'s key is the same posting as it.
+
+    Across boards: yes, unless both name a level and the levels disagree. A
+    board that leaves "Junior" out of a title has not announced another job.
+
+    On the same board that allowance has nothing to stand on — there is no
+    second house style to forgive. The board lists the two under two ids, so
+    they are one posting only if it gave them the same title.
+    """
+    if seen.job.source == source:
+        # The shared normaliser, asked to keep what it otherwise forgives: the
+        # level word and the parenthetical. Case, accents, dashes and spacing
+        # still do not make a title a different title.
+        return _listed(seen.job.title) == _listed(title)
+    return level is None or seen.level is None or seen.level == level
 
 
 def _record_suppressed(winner: Job, nj: NormalizedJob, now: datetime) -> None:
@@ -347,7 +384,11 @@ def _persist_one(
         return "updated", existing
 
     kind = "inserted"
-    incumbent = index.covering(nj.dedup_key, nj.dedup_level) if cross_source else None
+    incumbent = (
+        index.covering(nj.dedup_key, nj.dedup_level, source=nj.source, title=nj.title)
+        if cross_source
+        else None
+    )
     if incumbent is not None:
         if _has_usable_jd(nj.payload) and not _has_usable_jd(incumbent.job.payload):
             # Keep both and say which is which. The incumbent may already be

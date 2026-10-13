@@ -221,25 +221,34 @@ def normalize_company(company: str | None, *, strip_legal: bool = False) -> str:
     return " ".join(tokens)
 
 
-def normalize_title(title: str | None, *, strip_level: bool = True) -> str:
+def normalize_title(
+    title: str | None, *, strip_level: bool = True, keep_parens: bool = False
+) -> str:
     """Canonicalize a job title for grouping.
 
-    Drops parentheticals and punctuation; keeps tech tokens (``+``/``#``/``.``
+    Drops punctuation and (by default) parentheticals; keeps tech tokens (``+``/``#``/``.``
     survive so "c++"/"c#"/".net" stay distinct). Folded to ASCII first, or the
     punctuation pass would shred a Vietnamese title into initials — "Lập trình
     viên Java" became ``"l p tr nh vi n java"``, which matches no other spelling
     of itself.
 
-    ``strip_level`` is the *only* thing that separates the two callers, and it
-    is a parameter rather than a second function on purpose. Cross-source dedup
+    ``strip_level`` is what separates the first two callers, and it is a
+    parameter rather than a second function on purpose. Cross-source dedup
     strips the level (see :func:`dedup_key`); repeat-posting detection keeps it,
     because an employer re-advertising the senior role is not re-advertising the
     junior one. Two hand-written normalizers for the same string is how the
     ``analytics`` grouping and this one silently drifted apart in the first
     place.
+
+    ``keep_parens`` is the third caller's one difference, and a parameter for
+    the same reason. A parenthetical is dropped because one board writes
+    "(Java, Spring Boot)" where another writes nothing. Between two postings on
+    the *same* board there is no second house style, and the parenthetical is
+    what tells two openings apart — see ``persist._same_posting``.
     """
     t = fold(title)
-    t = re.sub(r"\(.*?\)", " ", t)  # drop "(Java, Spring Boot)" etc.
+    if not keep_parens:
+        t = re.sub(r"\(.*?\)", " ", t)  # drop "(Java, Spring Boot)" etc.
     t = re.sub(r"[^a-z0-9+#. ]", " ", t)
     # A *trailing* dot is abbreviation punctuation, never part of a tech token:
     # ".net" wears its dot in front and "node.js" in the middle. Keeping it made
