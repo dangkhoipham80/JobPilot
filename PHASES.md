@@ -2484,3 +2484,32 @@ Review gate: **CHANGES REQUESTED ba vòng** rồi sửa.
 
 Lộ ra thêm, chưa sửa: `crawl.match_score_min` có trong config và trang Settings nhưng **không code
 nào đọc** — một setting không làm gì.
+
+## Fix dedup-same-board — board liệt kê hai tin thì là hai tin (2026-10-14)
+
+Lớp chặn thứ tư trên đường một tin từ board công ty vào `/jobs`, lộ ra ở lượt crawl thật đầu tiên
+sau phase ats-scope: lọc địa điểm đúng, cổng stack đã miễn, `limit` đủ cao — và tin không ghi cấp
+bậc **vẫn không vào**, bị đếm vào `stats.duplicates`. Lớp dedup "cross-source" không hề kiểm tra
+hai tin có khác nguồn không, nên luật "level im lặng thì khớp mọi level" gộp nó vào bản cấp cao
+cùng board; và việc bỏ phần trong ngoặc gộp một tin theo team vào tin chung.
+
+Sửa: trong cùng một nguồn, hai tin chỉ là một khi board đặt cùng tiêu đề (`_same_posting`). Giữa
+hai nguồn, luật cũ nguyên vẹn. Luật: `jobpilot/crawler/CLAUDE.md` § Dedup.
+
+- Thật, **trong transaction rồi rollback**: chạy `persist_jobs` của worktree trên Postgres với mọi
+  tin hợp lệ của hai board — các tin từng bị gộp đều thành `inserted`, phần còn lại `updated`,
+  không còn `duplicates`; sau rollback số row y như trước.
+- Tác động lên dữ liệu đã có (mọi nguồn): 65 lần gộp cùng-board trong DB, 56 lần là cùng tiêu đề
+  (vẫn gộp), 9 lần khác tiêu đề (giờ sẽ tách). Row thắng của 9 ca đó vẫn giữ entry `suppressed`
+  trỏ tới tin giờ đã thành row riêng — không gì ngoài `persist.py` đọc trace này, nên để nguyên.
+- Đột biến (bỏ nhánh cùng-nguồn; cùng-nguồn không bao giờ khớp; so tiêu đề thô) mỗi cái đỏ đúng
+  test của nó.
+
+Review gate: **CHANGES REQUESTED** rồi sửa. Logic qua; chặn vì **lại là dấu vân tay** — test và
+docstring dựng lại đúng cặp tiêu đề thật trên đúng loại board thật, nhật ký ghi số đếm của lượt
+crawl. Lần thứ hai trong hai ngày cùng một lỗi: gỡ *tên* thì dễ nhớ, còn ví dụ "lấy từ ca thật cho
+sinh động" thì mình vẫn chép nguyên. Ngoài ra bản đầu viết một hàm so tiêu đề riêng trong
+`persist.py` — đúng thứ luật "đừng viết hàm normalize thứ ba" cấm; giờ là tham số `keep_parens`.
+
+Bài học lặp lại: ba lớp trước đều đã "verify" xong, và chỉ **lượt crawl thật ghi DB rồi đọc từng
+row** mới cho thấy tin cần nhất vẫn thiếu. Dry-run dừng ở `normalize` không đi qua `persist`.
