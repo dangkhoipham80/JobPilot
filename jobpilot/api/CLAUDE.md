@@ -67,10 +67,18 @@
   **im lặng**: dòng bằng nhau ra thứ tự khác nhau giữa trang 1 và trang 2 ⇒ một dòng hiện hai
   lần, một dòng không bao giờ hiện. Ở corpus này `posted_at` **null** với mọi LinkedIn alert nên
   tie là mặc định, không phải ngoại lệ. `paging.page_query()` **raise** nếu thiếu `ORDER BY`.
-- **`GET /jobs`: `SKIPPED` luôn xuống cuối, là khoá sắp xếp ĐẦU TIÊN** (trước `posted_at` /
-  `crawled_at`), ở cả hai `order`. Phải nằm trong `ORDER BY` chứ không sắp lại sau khi lấy trang:
-  sắp sau thì tin bỏ qua chỉ xuống cuối *trang của nó*. Cột UNIQUE vẫn đứng cuối như luật trên.
-  Lọc `status=SKIPPED` thì khoá này thành hằng số — đó là đường tìm lại một tin đã bỏ qua.
+- **`GET /jobs`: `SKIPPED` luôn xuống cuối, là khoá sắp xếp ĐẦU TIÊN**, ở mọi `order`. Phải nằm
+  trong `ORDER BY` chứ không sắp lại sau khi lấy trang: sắp sau thì tin bỏ qua chỉ xuống cuối
+  *trang của nó*. Cột UNIQUE vẫn đứng cuối như luật trên. Lọc `status=SKIPPED` thì khoá này thành
+  hằng số — đó là đường tìm lại một tin đã bỏ qua.
+- **`GET /jobs` có 3 `order`, mặc định là `crawled`** = **ngày** crawl ↓ rồi `match_score` ↓.
+  Ngày là `func.date(Job.crawled_at)` — đúng biểu thức `/stats` `by_day` dùng, để "một ngày crawl"
+  chỉ có một định nghĩa. Xếp theo timestamp chính xác thì độ khớp chỉ còn phá hoà, và tin tốt nhất
+  của lượt sáng nằm dưới tin tệ nhất của lượt chiều. `match` = độ khớp ↓ trên toàn bộ; `posted` =
+  ngày đăng ↓ (mặc định cũ). Slack gọi không kèm `order` nên cũng theo mặc định mới.
+- **Khoảng độ khớp là nửa-mở: `match_min` ≤ score < `match_below`.** Điểm của job crawl luôn rơi
+  đúng mốc (0.25/0.5/0.75/1.0 với 4 stack) nên hai đầu cùng đóng thì một tin nằm ở hai khoảng,
+  cùng mở thì không ở khoảng nào. Khoảng ngược (`min ≥ below`) là **422**, không phải trang rỗng.
 - **`total` đếm bằng subquery của chính statement đã lọc** (`paging.total_for`), không dựng
   lại `where` bằng tay — dựng lại là cách `total` trôi khỏi thứ nó đếm rồi mời user sang một
   trang trống.

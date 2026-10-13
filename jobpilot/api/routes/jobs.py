@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from jobpilot.api.deps import get_db, require_token
@@ -174,7 +174,9 @@ def list_jobs(
     fresh: bool = False,
     run_id: int | None = Query(None, description="only jobs discovered by this crawl"),
     crawled_after: datetime | None = Query(None, description="crawled at or after this time"),
-    order: str = Query("posted", pattern="^(posted|crawled)$"),
+    match_min: float | None = Query(None, ge=0, le=1, description="match score at or above"),
+    match_below: float | None = Query(None, ge=0, le=1, description="match score strictly below"),
+    order: str = Query("crawled", pattern="^(posted|crawled|match)$"),
     limit: int = LimitParam(),
     offset: int = OffsetParam(),
 ) -> dict:
@@ -195,25 +197,49 @@ def list_jobs(
         stmt = stmt.where(Job.run_id == run_id)
     if crawled_after is not None:
         stmt = stmt.where(Job.crawled_at >= crawled_after)
+    # A half-open band, [match_min, match_below): adjacent bands then share no
+    # job and miss none, which two inclusive ends cannot do for a score that
+    # sits exactly on the boundary — and with four configured stacks every
+    # crawled score does (0.25, 0.5, 0.75, 1.0).
+    if match_min is not None and match_below is not None and match_min >= match_below:
+        # Refused rather than answered with an empty page: "no jobs in that
+        # band" and "that is not a band" must not look the same.
+        raise HTTPException(status_code=422, detail="match_min must be lower than match_below")
+    if match_min is not None:
+        stmt = stmt.where(Job.match_score >= match_min)
+    if match_below is not None:
+        stmt = stmt.where(Job.match_score < match_below)
 
-    # Default: freshest posting first. "crawled" answers a different question —
-    # what did the agent turn up most recently — so it is a separate ordering
-    # rather than a tweak of the same one.
+    # Three orderings, because they answer three questions:
     #
-    # `Job.id` last is what makes the order total. `posted_at` is null for a
-    # LinkedIn alert and identical across a whole crawl batch, so without a
-    # unique tie-break the database is free to order the ties differently
-    # between the page-1 and page-2 queries — and then a job shows up twice
-    # while another is never shown.
+    #   crawled (default)  what turned up most recently, best match first.
+    #                      Grouped by crawl *day* — the same `date(crawled_at)`
+    #                      the dashboard's by-day chart counts — and ranked by
+    #                      match inside it. By exact timestamp the match score
+    #                      would only ever break ties, and the morning crawl's
+    #                      best job would sit under the evening crawl's worst.
+    #   match              the best matches of everything, whenever found.
+    #   posted             freshest posting first, by the board's own date.
     #
-    # Skipped jobs go last under either ordering. A job you passed on has had
+    # `Job.id` last is what makes each order total. `posted_at` is null for a
+    # LinkedIn alert and identical across a whole crawl batch, and match scores
+    # come in a handful of values, so without a unique tie-break the database
+    # is free to order the ties differently between the page-1 and page-2
+    # queries — and then a job shows up twice while another is never shown.
+    #
+    # Skipped jobs go last under every ordering. A job you passed on has had
     # its turn, and left in place it keeps holding a row among the ones still
     # waiting for a decision. It is the *first* key rather than a re-sort of
     # each page, so it holds across pages: page 1 is never padded with rows
     # you already dismissed. Filtering to one status makes it a constant.
     skipped_last = case((Job.status == JobStatus.SKIPPED, 1), else_=0)
-    key = Job.crawled_at if order == "crawled" else Job.posted_at
-    stmt = stmt.order_by(skipped_last, key.desc(), Job.crawled_at.desc(), Job.id.desc())
+    if order == "posted":
+        keys = (Job.posted_at.desc(), Job.crawled_at.desc())
+    elif order == "match":
+        keys = (Job.match_score.desc(), Job.crawled_at.desc())
+    else:
+        keys = (func.date(Job.crawled_at).desc(), Job.match_score.desc(), Job.crawled_at.desc())
+    stmt = stmt.order_by(skipped_last, *keys, Job.id.desc())
     rows, total = page_query(db, stmt, limit, offset)
     return page_list([JobOut.model_validate(r) for r in rows], total, limit, offset)
 

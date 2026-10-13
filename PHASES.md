@@ -2409,6 +2409,19 @@ hai order: 452 dòng, 452 id khác nhau, 2 tin SKIPPED nằm đúng hai dòng cu
 nhầm code của checkout chính (`python -` đặt cwd lên đầu `sys.path`, thắng cả `PYTHONPATH`) và
 báo "không ở cuối" — đúng với code cũ; in `inspect.getsourcefile` ra mới thấy mình đang đo cái gì.
 
+**Thêm trong cùng PR (user yêu cầu sau khi xem bản đầu): xếp theo độ khớp + lọc theo khoảng.**
+`GET /jobs` có ba `order`; mặc định đổi từ `posted` sang `crawled` = **ngày crawl ↓ → độ khớp ↓**,
+`match` = độ khớp ↓ toàn bộ. Thêm `match_min` / `match_below` (khoảng nửa-mở). Trang Jobs có hai
+dropdown mới thay cho logic cũ tự đổi order khi bật lọc thời gian. Luật: `jobpilot/api/CLAUDE.md`.
+
+- Thật: dựng backend + bundle của worktree ở `:8001` trên Postgres thật (476 tin, chỉ GET). Mặc
+  định: tin 100% của hôm nay đứng đầu; `order=match`: điểm giảm dần qua các ngày; khoảng 50–74%:
+  **83 tin**, đúng bằng số tin `match_score = 0.5` đếm thẳng trong DB. 0 response ≥ 400.
+- Tự gây: sau khi thử đột biến mình hoàn tác bằng `git checkout -- <file>` trong lúc bản vá
+  backend **chưa commit** — mất luôn bản vá, phải áp lại. Commit trước, đột biến sau.
+- Lộ ra khi nhìn màn hình, **chưa sửa** (là việc của crawler): tiêu đề VietnamWorks lưu nguyên
+  thực thể HTML — `Java Developer (&gt;5 YOE)`.
+
 Review gate: **APPROVE**, hai finding đã sửa. (1) Test đầu **không ghim "khoá đầu tiên"**: fixture
 cho mọi dòng `posted_at`/`crawled_at` null nên dòng nào cũng hoà nhau, và reviewer đẩy
 `skipped_last` ra *sau* hai khoá ngày thì test vẫn xanh — trong khi trên Postgres thật tin SKIPPED

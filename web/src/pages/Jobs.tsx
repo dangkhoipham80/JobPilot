@@ -33,6 +33,32 @@ const WINDOWS = [
   { key: "30d", label: "window30d", hours: 24 * 30 },
 ] as const;
 
+/**
+ * Match-score bands. Half-open on the API side — `min` <= score < `below` — so
+ * a job scoring exactly 50% is in one band, not two, and the four bands add up
+ * to the whole list.
+ */
+const MATCH_BANDS: {
+  key: string;
+  label: "matchAny" | "match75" | "match50" | "match25" | "match0";
+  min?: number;
+  below?: number;
+}[] = [
+  { key: "", label: "matchAny" },
+  { key: "75", label: "match75", min: 0.75 },
+  { key: "50", label: "match50", min: 0.5, below: 0.75 },
+  { key: "25", label: "match25", min: 0.25, below: 0.5 },
+  { key: "0", label: "match0", below: 0.25 },
+];
+
+/** The three orderings the API offers; `crawled` is its default and ours. */
+const ORDERS = [
+  { key: "crawled", label: "sortCrawled", summary: "orderCrawled" },
+  { key: "match", label: "sortMatch", summary: "orderMatch" },
+  { key: "posted", label: "sortPosted", summary: "orderPosted" },
+] as const;
+type Order = (typeof ORDERS)[number]["key"];
+
 export function Jobs({ version }: { version: number }) {
   const t = useT("jobs");
   const common = useT("common");
@@ -43,6 +69,8 @@ export function Jobs({ version }: { version: number }) {
   const [level, setLevel] = useState("");
   const [fresh, setFresh] = useState(false);
   const [win, setWin] = useState("");
+  const [band, setBand] = useState("");
+  const [order, setOrder] = useState<Order>("crawled");
   const [pending, setPending] = useState<string | null>(null);
 
   // `run` and `status` live in the URL, not in state: both are arrived at from
@@ -76,6 +104,7 @@ export function Jobs({ version }: { version: number }) {
 
   const query: JobsQuery = useMemo(() => {
     const hours = WINDOWS.find((w) => w.key === win)?.hours ?? null;
+    const matchBand = MATCH_BANDS.find((b) => b.key === band);
     return {
       q: q || undefined,
       source: source || undefined,
@@ -84,17 +113,21 @@ export function Jobs({ version }: { version: number }) {
       fresh: fresh || undefined,
       run_id: runId,
       crawled_after: hours ? new Date(Date.now() - hours * 3600 * 1000).toISOString() : undefined,
-      // Filtering by crawl time only reads right if the list is sorted that way.
-      order: win || runId ? "crawled" : "posted",
+      match_min: matchBand?.min,
+      match_below: matchBand?.below,
+      // Chosen, not inferred. This used to flip to "crawled" whenever a time
+      // window or a run filter was on; now that is the default everywhere and
+      // the dropdown says which order you are looking at.
+      order,
       limit: size,
       offset,
     };
-  }, [q, source, level, status, fresh, win, runId, size, offset]);
+  }, [q, source, level, status, fresh, win, band, order, runId, size, offset]);
 
   // A changed filter means a different list, so page 7 of the old one is not a
   // place in the new one. Without this, narrowing a search from 300 hits to 4
   // lands on an empty table with no clue that the rows are on page 1.
-  const filterKey = JSON.stringify([q, source, level, status, fresh, win, runId]);
+  const filterKey = JSON.stringify([q, source, level, status, fresh, win, band, order, runId]);
   useEffect(reset, [filterKey, reset]);
 
   const { data, loading, error, refetch } = useApi(() => api.jobs(query), [query, version]);
@@ -111,7 +144,7 @@ export function Jobs({ version }: { version: number }) {
     }
   }
 
-  const hasFilters = q || source || level || status || fresh || win || runId;
+  const hasFilters = q || source || level || status || fresh || win || band || runId;
 
   return (
     <div className="animate-fade-up space-y-4">
@@ -124,7 +157,7 @@ export function Jobs({ version }: { version: number }) {
                 search with 83 hits, and the pager below already reports the
                 window. */}
             {data ? t("matching", { count: data.total }) : common("loading")} ·{" "}
-            {query.order === "crawled" ? t("orderCrawled") : t("orderPosted")}
+            {t(ORDERS.find((o) => o.key === order)?.summary ?? "orderCrawled")}
           </p>
         </div>
         <AddJobForm onCreated={() => refetch()} />
@@ -191,6 +224,24 @@ export function Jobs({ version }: { version: number }) {
             </option>
           ))}
         </Select>
+        <Select value={band} onChange={(e) => setBand(e.target.value)} title={t("matchTitle")}>
+          {MATCH_BANDS.map((b) => (
+            <option key={b.key} value={b.key}>
+              {t(b.label)}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={order}
+          onChange={(e) => setOrder(e.target.value as Order)}
+          title={t("sortTitle")}
+        >
+          {ORDERS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {t(o.label)}
+            </option>
+          ))}
+        </Select>
         <button
           onClick={() => setFresh((f) => !f)}
           className={
@@ -210,6 +261,7 @@ export function Jobs({ version }: { version: number }) {
               setLevel("");
               setFresh(false);
               setWin("");
+              setBand("");
               setParams({}, { replace: true });
             }}
           >

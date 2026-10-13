@@ -38,8 +38,11 @@ bản không-tham-số-ngôn-ngữ của chúng đã bị xoá nên call-site c�
 - **Cột Vị trí là một phần của bảng (`w-[38%]`), không phải "phần còn lại"**, và chữ **xuống dòng**,
   không `truncate`. Đổi sàn `min-w` thì chụp lại ở ~1180px: sàn quá cao làm cột Thao tác tràn ra
   ngoài card (bảng đã bọc `overflow-x-auto` để tràn thì cuộn chứ không bị cắt).
-- **Thứ tự "đã bỏ qua xuống cuối" là của API** (`jobpilot/api/CLAUDE.md`). Đừng sắp lại `items` ở
-  frontend — sắp trong một trang không phải là sắp cả danh sách.
+- **Thứ tự là của API** (`jobpilot/api/CLAUDE.md`): "đã bỏ qua xuống cuối", ba `order`, khoảng độ
+  khớp. Đừng sắp hay lọc lại `items` ở frontend — làm trong một trang không phải là làm trên cả
+  danh sách. Dropdown xếp/khoảng độ khớp gửi tham số mà API bản cũ **từ chối (422)**, nên bundle
+  và backend phải lên cùng nhau (`deploy/macos/update.sh` làm đúng vậy); verify thì dựng backend
+  của worktree ở cổng khác chứ đừng trỏ Vite vào service đang chạy.
 
 ### Bẫy React đã trả giá
 
