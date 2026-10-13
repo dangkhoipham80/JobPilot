@@ -83,5 +83,6 @@ def build_scrapers(
         # you listed, so it needs that list rather than a page ceiling.
         if src.key in ATS_SOURCES:
             kwargs["boards"] = cfg.ats.boards_for(src.key)
+            kwargs["locations"] = cfg.ats.locations
         scrapers.append(cls(**kwargs))
     return scrapers

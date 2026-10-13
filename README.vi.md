@@ -199,10 +199,18 @@ không cần code:
 ats:
   greenhouse: [gitlab, grafanalabs, elastic]   # slug trong job-boards.greenhouse.io/<slug>
   lever:      [palantir, spotify]              # slug trong jobs.lever.co/<slug>
+  locations:  ["Ho Chi Minh"]                  # tuỳ chọn — chỉ giữ tin ở những nơi này
 ```
 
 Sau đó bật `greenhouse` / `lever` trong Settings. Mỗi board là một request mỗi lượt crawl, nên
-danh sách dài thì crawl chậm.
+danh sách dài thì crawl chậm. Board của một công ty là toàn cầu, nên hãy đặt `locations` trừ khi
+bạn muốn mọi văn phòng: nó khớp theo nguyên từ với nhãn địa điểm của chính tin đó, bỏ qua dấu, và
+biết các cách viết thường gặp của thành phố Việt Nam ("HCMC", "Saigon", "Ha Noi"). "Vietnam" khớp cả nhãn
+chỉ ghi tên một thành phố Việt Nam; với nước khác thì term phải là thứ board thật sự viết ra, mà
+nhiều board chỉ ghi tên thành phố. Khi đã đặt `locations`, tin từ các board
+này được giữ kể cả khi mô tả không nhắc `crawl.stacks` nào (công ty và nơi làm là do bạn chọn) và
+khi đó hiện độ khớp 0%; luật loại theo tiêu đề vẫn áp dụng. Không đặt `locations` thì bộ lọc stack
+vẫn bật, vì từ khoá khớp bất kỳ từ nào của tiêu đề và một board toàn cầu có rất nhiều "engineer".
 
 **Nguồn cố ý không thêm.** Vài nguồn đã được đánh giá và loại — đọc
 [`jobpilot/crawler/CLAUDE.md`](jobpilot/crawler/CLAUDE.md) → *"Nguồn tier-2 đã loại"* trước khi

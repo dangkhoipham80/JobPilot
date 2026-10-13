@@ -204,9 +204,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
 | public | **Repo public + MIT** (2026-10-12): `LICENSE` + license của phần vendor, `README.vi.md`, `CONTRIBUTING(.vi).md`, `CODEOWNERS`; `main` được bảo vệ, CI của PR từ fork chờ duyệt | `LICENSE`, `CONTRIBUTING.md`, `.github/CODEOWNERS` |
 | cv-import | **Nhập CV từ ảnh/PDF**: model chép file thành bản nháp trong CV Studio, **không tự lưu**; PDF có text layer thì đối chiếu con số; tầng LLM nhận file đính kèm (`Attachment`) ở cả 4 provider | `cv/reader.py`, `cv/importer.py`, `llm/base.py`, `web/src/components/cv/ImportBox.tsx` |
+| ats-scope | **Board công ty lọc theo địa điểm** (`ats.locations`, nguyên từ, trước `limit`) + miễn cổng stack cho board đã khoanh vùng (`stack_gated`) | `crawler/ats.py`, `crawler/pipeline.py`, `jobpilot/crawler/CLAUDE.md` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1138 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
+1177 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên

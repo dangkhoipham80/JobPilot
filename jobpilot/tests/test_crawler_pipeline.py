@@ -82,6 +82,31 @@ def test_pipeline_persists_filtered_normalized_jobs(session_factory):
         assert db.get(Job, "fixture:3") is None
 
 
+def test_a_source_exempt_from_the_stack_gate_keeps_a_job_that_names_no_stack(session_factory):
+    """A company board the user picked is not a searched board.
+
+    The stack gate is what clears accountants out of a general board's results.
+    On a hand-picked board it removed the plain "Software Engineer" role whose
+    JD names no stack. Exempt sources keep such a job at match 0 — shown and
+    visibly unranked — and still lose the titles the user excluded.
+    """
+
+    class _HandPicked(FixtureScraper):
+        stack_gated = False
+
+    scraper = _HandPicked(_pages(), source="picked", rate_limiter=RateLimiter(0, 0))
+    with session_factory() as db:
+        report = run_crawl([scraper], _cfg(), db, now=NOW)
+
+    assert report.totals.inserted == 2
+    assert report.totals.filtered == 1  # only the excluded title
+    with session_factory() as db:
+        golang = db.get(Job, "picked:3")
+        assert golang is not None and golang.match_score == 0.0
+        assert db.get(Job, "picked:2") is None, "Senior is excluded by title, gate or no gate"
+        assert db.get(Job, "picked:1").match_score == 1.0
+
+
 def test_run_row_recorded_with_stats(session_factory):
     with session_factory() as db:
         report = run_crawl([_fixture(_pages())], _cfg(), db, now=NOW)

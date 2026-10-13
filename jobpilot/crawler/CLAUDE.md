@@ -113,6 +113,63 @@ Lớp 1 = PK `<source>:<native_id>`. Lớp 2 = cross-source `(company, title)` t
 - **Dấu chấm cuối token là dấu tắt, không phải tech token**: `.net` mang dấu ở đầu, `node.js`
   ở giữa. Giữ nó lại làm `"Sr."` vừa không nhận ra là level, vừa tách hẳn key khỏi `"Senior"`.
 
+## Board công ty (Greenhouse / Lever) — phạm vi địa điểm + cổng stack (2026-10-13)
+
+Luật dưới đây đo trên hai board thật: một board cỡ vài trăm tin với khoảng 4% ở thành phố đang
+tìm, một board cỡ vài chục tin với khoảng một phần tư.
+
+**Không ghi tên công ty user đang nhắm vào repo, và cũng đừng để lại dấu vân tay của nó**: số tin
+chính xác, tiêu đề tin nguyên văn, thành phố trụ sở, dạng nhãn đặc trưng trong fixture — ghép lại
+là khoanh ra được một công ty. Repo public, và "đang tìm việc ở X" là thông tin cá nhân dù không
+nằm trong CV. Viết tỉ lệ thay cho số đếm, loại vị trí thay cho tiêu đề.
+
+- **`ats.locations` lọc TRƯỚC khi đếm `limit`** (trong `AtsScraper.matches_query`, tức bên trong
+  vòng đi qua các board). Không có phạm vi thì `limit` tiêu vào văn phòng nào board liệt kê trước,
+  và crawl vẫn báo "đủ tin, ok". Rỗng = mọi nơi (hành vi cũ, không đổi gì).
+- **Khớp theo NGUYÊN TỪ, không substring** (`ats.place_matches`): "India" không được nhận
+  "Indianapolis" — cùng bẫy với `"remote" in "remote debugging"`. Cách viết không chung từ nào
+  ("HCMC", "Saigon", "Ha Noi") đi qua `canonical_city` của từng phần của nhãn (tách ở `, ; / | &`,
+  ` - `, ` or `, ` and `); phần **≤ 2 ký tự bị bỏ qua** ở nhánh này vì trên board toàn cầu đó là
+  mã bang/quốc gia (`"San Pedro Sula, HN"` là Honduras, mà bảng city đọc `HN` là Hà Nội).
+- **Term "Vietnam" phải nhận ra tin trong nước dù board không viết chữ "Vietnam".** Nhãn thường chỉ
+  là tên thành phố. Hai đường: nhãn mà `canonical_city` ra một thành phố Việt Nam thì thuộc
+  Vietnam; và Lever có `country: "VN"` ở field riêng (`scope_hints`). Bản đầu để ví dụ
+  `["Vietnam"]` trong chính `config.yaml` và nó loại **toàn bộ** tin trong nước của board Lever.
+  "Việt Nam"/"Viet Nam" được coi là "Vietnam". Mã quốc gia khác **không** được đưa vào thô ("CA",
+  "IN", "DE" cũng là từ và là bang), nên với nước khác term phải có mặt trong chính nhãn.
+- **Gợi ý để KHỚP ≠ nhãn để LƯU** (`scope_hints` vs `places`). Bản sửa trên lúc đầu nhét "Vietnam"
+  vào `places()`: phạm vi `["Vietnam"]` giữ đủ tin nhưng **lưu cả loạt với `location = "Vietnam"`,
+  `city = None`** — crawl báo thành công, không tin nào còn thành phố, và `_refresh` sẽ ghi đè cả
+  row đang đúng. Thứ code *suy ra* chỉ được dùng để quyết định phạm vi; thứ được lưu luôn là nhãn
+  board viết. Cũng vì thế tin không có nhãn nào thì vẫn là "không biết thành phố" ⇒ giữ, dù có gợi ý.
+  **Verify bộ lọc thì đọc thứ được LƯU, đừng chỉ đếm số tin trong phạm vi** — lỗi này qua được
+  đúng một lượt "verify" bằng cách đếm.
+- **Tin không ghi địa điểm thì GIỮ.** Không biết ở đâu ≠ biết là ở chỗ khác.
+- **Lever: đọc cả `categories.allLocations`**, và **lưu nhãn đã đưa tin vào phạm vi**
+  (`location_of`), không phải văn phòng đầu tiên — giữ tin vì có văn phòng trong phạm vi rồi lưu
+  dưới văn phòng khác thì bộ lọc thành phố không bao giờ thấy nó.
+- **Board công ty được miễn cổng stack — CHỈ KHI có `locations`** (`AtsScraper.stack_gated` là
+  property = `not self.locations`). Cổng `match_score > 0` dọn tin lạc đề khỏi board *tìm kiếm*.
+  Trên board đã khoanh vùng nó loại đúng các tin kỹ sư phần mềm không ghi stack trong JD: cùng một
+  mức `limit`, cổng giữ khoảng **một phần năm** số tin trong phạm vi, miễn thì **hơn một nửa**
+  (phần còn lại bị loại theo tiêu đề, luật đó **vẫn áp dụng**). Không khoanh vùng thì **không
+  miễn**: query khớp bất kỳ từ nào của tiêu đề, nên "ai engineer" trên cả board lấy luôn vài chục
+  tin kỹ sư **không phải phần mềm** ở score 0. Tin được miễn vào với `match_score = 0` — hiện ra,
+  thấy rõ là chưa xếp hạng.
+- **Nợ: `limit` cắt trước khi lọc tiêu đề** — và cắt trúng tin cần nhất. Ở `jobs_per_site: 10`, hơn
+  nửa số chỗ của một board bị tin "Senior …" chiếm rồi mới bị loại; phần bị cắt lại chính là các
+  tin không ghi cấp bậc. Board trả cùng thứ tự mỗi lần nên lượt sau cắt **đúng những tin đó**: tin
+  mới nằm sau vị trí 10 lịch tự động không bao giờ thấy. Có log `at least N … were cut by the
+  limit`; sửa thật là lọc tiêu đề trước `limit` (cũng tiết kiệm ~1/3 request trang chi tiết ở
+  board VN). Lượt đầu cho một board mới thì crawl tay với limit cao.
+- **Nợ: nhiều board trên một ATS dùng chung một `limit`.** Board đầu đủ `limit` thì board sau
+  **không được gọi**, và log không nhắc tới nó. Hôm nay mỗi ATS một board nên chưa dính.
+- **Nợ: `payload.city` của Greenhouse không canonical** — nhãn dạng `"<thành phố>, <thành phố>,
+  <nước>"` đi qua `canonical_city` nguyên xi, nên facet thành phố ở `/market` không đếm nó vào
+  đúng thành phố (Lever ghi tên thành phố trần thì đúng).
+- **Nợ: `infer_level` không đọc bậc ghi bằng số trong tiêu đề** ("… Engineer I/II/III") — level rơi
+  về những gì JD tình cờ nhắc, nên một tin bậc thấp có thể ra `senior`.
+
 ## Nợ kỹ thuật + bẫy đã trả giá
 
 - **Tiêu đề VietnamWorks còn nguyên thực thể HTML** (thấy 2026-10-13, **chưa sửa**): DB có tin
