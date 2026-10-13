@@ -156,7 +156,7 @@ Crawler thiết kế pluggable nên **thêm nguồn = thêm 1 scraper + 1 dòng 
 
 **Insight áp dụng vào hệ thống** (từ thực tế tuyển dev VN):
 - **Alert theo stack**: `config.yaml` khai báo `stacks: ["Java Spring Boot", "Backend", ...]` → crawler filter theo đó (mở rộng được: ReactJS, NodeJS, Golang, DevOps, Data Engineer, BrSE…).
-- **Ưu tiên job mới (freshness)**: job dev VN tuyển nhanh → sort theo `posted_at` giảm dần, **gắn cờ 🔥 job < 48h** khi post lên Slack để user apply sớm.
+- **Ưu tiên job mới (freshness)**: job dev VN tuyển nhanh → `order=posted` sort theo `posted_at` giảm dần (từ 2026-10-13 mặc định của `GET /jobs` là ngày crawl ↓ → độ khớp ↓), **gắn cờ 🔥 job < 48h** khi post lên Slack để user apply sớm.
 - **Dedup xuyên nguồn**: cùng 1 job đăng nhiều site → dedup theo `(company, title normalized)` bên cạnh `id`, tránh spam Slack.
 
 ### 5.2 `slack/` — kênh phụ: thông báo + thao tác nhanh (Bolt Python, Socket Mode)

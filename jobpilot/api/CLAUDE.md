@@ -75,7 +75,8 @@
   Ngày là `func.date(Job.crawled_at)` — đúng biểu thức `/stats` `by_day` dùng, để "một ngày crawl"
   chỉ có một định nghĩa. Xếp theo timestamp chính xác thì độ khớp chỉ còn phá hoà, và tin tốt nhất
   của lượt sáng nằm dưới tin tệ nhất của lượt chiều. `match` = độ khớp ↓ trên toàn bộ; `posted` =
-  ngày đăng ↓ (mặc định cũ). Slack gọi không kèm `order` nên cũng theo mặc định mới.
+  ngày đăng ↓ (mặc định cũ) với **`.nulls_last()` viết rõ**: Postgres xếp NULL *lên đầu* khi DESC,
+  SQLite xếp cuối, nên "tin đăng mới nhất" từng mở đầu bằng 5 tin không có ngày mà test không thấy. Slack gọi không kèm `order` nên cũng theo mặc định mới.
 - **Khoảng độ khớp là nửa-mở: `match_min` ≤ score < `match_below`.** Điểm của job crawl luôn rơi
   đúng mốc (0.25/0.5/0.75/1.0 với 4 stack) nên hai đầu cùng đóng thì một tin nằm ở hai khoảng,
   cùng mở thì không ở khoảng nào. Khoảng ngược (`min ≥ below`) là **422**, không phải trang rỗng.

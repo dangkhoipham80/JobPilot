@@ -2422,12 +2422,20 @@ dropdown mới thay cho logic cũ tự đổi order khi bật lọc thời gian.
 - Lộ ra khi nhìn màn hình, **chưa sửa** (là việc của crawler): tiêu đề VietnamWorks lưu nguyên
   thực thể HTML — `Java Developer (&gt;5 YOE)`.
 
-Review gate: **APPROVE**, hai finding đã sửa. (1) Test đầu **không ghim "khoá đầu tiên"**: fixture
+Review gate **vòng 1** (ba sửa đầu): **APPROVE**, hai finding đã sửa. (1) Test đầu **không ghim "khoá đầu tiên"**: fixture
 cho mọi dòng `posted_at`/`crawled_at` null nên dòng nào cũng hoà nhau, và reviewer đẩy
 `skipped_last` ra *sau* hai khoá ngày thì test vẫn xanh — trong khi trên Postgres thật tin SKIPPED
 quay lại vị trí 24–26/476. Test giờ cho hai tin SKIPPED ngày mới nhất ở cả hai cột. (2) Bấm nhầm
 "Bỏ qua" thì dòng nhảy sang trang cuối mà màn hình không nói gì; phụ đề giờ ghi "…, tin đã bỏ qua
 xuống cuối" ở cả hai ngôn ngữ.
+
+Review gate **vòng 2** (xếp + khoảng độ khớp): **APPROVE**, ba finding đã sửa. (1) Doc viết "API
+cũ từ chối tham số mới bằng 422" — chỉ đúng với `order=match`; `match_min` bị **bỏ qua im lặng**,
+trả 200 kèm danh sách không lọc. (2) "SKIPPED xuống cuối ở mọi order" chưa được ghim cho `match`.
+(3) Có từ trước nhưng giờ thành lựa chọn có nhãn: `posted_at DESC` trên Postgres là NULLS FIRST,
+nên "tin đăng mới nhất" mở đầu bằng 5 tin **không có ngày**; SQLite xếp ngược lại nên test không
+thấy. Giờ `.nulls_last()`. Còn lại, chưa sửa: nhãn khoảng làm tròn (0.745 hiện "75%" mà nằm ở
+"50–74%"; chỉ tin đã tailor mới có điểm lẻ), và `order`/khoảng nằm trong state nên chưa link được.
 
 Chưa làm (user nêu trong cùng buổi, là phase riêng): bỏ qua **kèm lý do** → gom lại → gợi ý chỉnh
 crawl. Hiện `skip` không ghi lý do và `match_score` không đọc hành vi của user.

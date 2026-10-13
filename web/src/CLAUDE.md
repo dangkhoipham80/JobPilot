@@ -40,8 +40,9 @@ bản không-tham-số-ngôn-ngữ của chúng đã bị xoá nên call-site c�
   ngoài card (bảng đã bọc `overflow-x-auto` để tràn thì cuộn chứ không bị cắt).
 - **Thứ tự là của API** (`jobpilot/api/CLAUDE.md`): "đã bỏ qua xuống cuối", ba `order`, khoảng độ
   khớp. Đừng sắp hay lọc lại `items` ở frontend — làm trong một trang không phải là làm trên cả
-  danh sách. Dropdown xếp/khoảng độ khớp gửi tham số mà API bản cũ **từ chối (422)**, nên bundle
-  và backend phải lên cùng nhau (`deploy/macos/update.sh` làm đúng vậy); verify thì dựng backend
+  danh sách. Bundle và backend phải lên **cùng nhau**: với API bản cũ, `order=match` bị **422**
+  nhưng `match_min`/`match_below` thì bị **bỏ qua im lặng** — 200 kèm danh sách *không lọc* dưới
+  một nhãn đang nói là đã lọc, đúng loại lỗi trông-như-đúng. Nên hai thứ lên cùng nhau (`deploy/macos/update.sh` làm đúng vậy); verify thì dựng backend
   của worktree ở cổng khác chứ đừng trỏ Vite vào service đang chạy.
 
 ### Bẫy React đã trả giá

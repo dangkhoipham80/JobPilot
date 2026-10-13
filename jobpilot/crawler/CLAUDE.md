@@ -115,6 +115,10 @@ Lớp 1 = PK `<source>:<native_id>`. Lớp 2 = cross-source `(company, title)` t
 
 ## Nợ kỹ thuật + bẫy đã trả giá
 
+- **Tiêu đề VietnamWorks còn nguyên thực thể HTML** (thấy 2026-10-13, **chưa sửa**): DB có tin
+  `Java Developer (&gt;5 YOE)`. Title đến từ JSON-LD và không qua `html.unescape` — sửa ở chỗ đọc
+  JSON-LD (`jsonld.py`) rồi `backfill`, đừng vá ở frontend.
+
 - **Nguồn đang chạy**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev còn chưa có scraper (disabled trong config). Trang Runs chỉ cho chọn nguồn `enabled && ready` — `ready` = có scraper đăng ký trong `registry.SCRAPERS`, vì bật trong Settings không có nghĩa là đã implement. Cần `pip install -e '.[crawler]' && playwright install chromium` để crawl (2 nguồn tier-2 **không cần** Playwright).
 - **Bật nguồn trên máy đã dùng Settings**: `config.local.yaml` merge **theo key** nên nguồn mới trong `config.yaml` luôn hiện ra; nhưng key nào overlay từng ghi `enabled: false` thì vẫn tắt. Bật lại trong Settings, hoặc xoá `config.local.yaml`.
 - **VietnamWorks lazy-load — xử lý bằng phân trang, không phải scroll**: 1 fetch chỉ render ~9–20 card, nhưng `search()` đi tiếp `?page=N` nên `jobs_per_site` > 9 vẫn đủ hàng (verify thật: 9 → **29 job**; trang 3 lặp lại trang 2 và bị guard bắt). Giữ `PlaywrightFetcher` là `(url) -> html` thuần — scroll sẽ đổi contract dùng chung cho mọi site, phân trang thì không.

@@ -219,7 +219,8 @@ def list_jobs(
     #                      would only ever break ties, and the morning crawl's
     #                      best job would sit under the evening crawl's worst.
     #   match              the best matches of everything, whenever found.
-    #   posted             freshest posting first, by the board's own date.
+    #   posted             freshest posting first, by the board's own date;
+    #                      postings with no date go after the dated ones.
     #
     # `Job.id` last is what makes each order total. `posted_at` is null for a
     # LinkedIn alert and identical across a whole crawl batch, and match scores
@@ -234,7 +235,10 @@ def list_jobs(
     # you already dismissed. Filtering to one status makes it a constant.
     skipped_last = case((Job.status == JobStatus.SKIPPED, 1), else_=0)
     if order == "posted":
-        keys = (Job.posted_at.desc(), Job.crawled_at.desc())
+        # NULLS LAST, spelled out. Postgres sorts NULL *first* under DESC, so
+        # "newest postings first" opened with the postings that have no date at
+        # all; SQLite sorts it last, so no test ever saw it. Undated is not new.
+        keys = (Job.posted_at.desc().nulls_last(), Job.crawled_at.desc())
     elif order == "match":
         keys = (Job.match_score.desc(), Job.crawled_at.desc())
     else:

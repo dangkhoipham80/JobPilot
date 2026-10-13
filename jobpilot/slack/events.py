@@ -120,7 +120,10 @@ def notification_for(
 def digest(
     client: JobPilotClient, limit: int = 5, web_base: str = "http://localhost:5173"
 ) -> list[Notification]:
-    """A crawl summary plus the freshest undecided jobs — what Slack is for."""
+    """A crawl summary plus the top undecided jobs — what Slack is for.
+
+    "Top" is the API's default order: the newest crawl day, best match first.
+    """
     out = [
         Notification(
             kind="crawl",

@@ -117,7 +117,7 @@ def test_skipped_jobs_sink_to_the_end_across_pages_not_within_each(client, sessi
         s.commit()
 
     live = [f"itviec:{i:02d}" for i in (10, 9, 8, 6, 5, 4, 3, 2, 1, 0)]
-    for order in ("posted", "crawled"):
+    for order in ("posted", "crawled", "match"):
         seen: list[str] = []
         for offset in range(0, 12, 5):
             page = _page(client, limit=5, offset=offset, order=order)
@@ -207,6 +207,24 @@ def test_match_bands_are_half_open_so_adjacent_ones_partition_the_list(client, s
     assert {r["match_score"] for r in pages[1]["items"]} == {0.5}
     ids = [r["id"] for p in pages for r in p["items"]]
     assert len(ids) == len(set(ids)) == 12
+
+
+def test_order_posted_puts_undated_postings_after_dated_ones(client, session_factory):
+    """ "Newest postings first" must not open with postings that have no date.
+
+    Honest about its reach: SQLite already sorts NULL last under DESC, so this
+    passes here with or without `nulls_last()`. Postgres sorts NULL *first* —
+    that is where the bug lived (the first five rows of the real list were all
+    undated) and where the fix was checked. What this pins is the contract.
+    """
+    with session_factory() as s:
+        for i in (2, 5, 9):
+            s.get(Job, f"itviec:{i:02d}").posted_at = datetime(2026, 10, i, tzinfo=timezone.utc)
+        s.commit()
+
+    rows = _page(client, limit=12, order="posted")["items"]
+    assert [r["id"] for r in rows[:3]] == ["itviec:09", "itviec:05", "itviec:02"]
+    assert all(r["posted_at"] is None for r in rows[3:])
 
 
 def test_an_inverted_match_band_is_refused_not_answered_with_nothing(client):
