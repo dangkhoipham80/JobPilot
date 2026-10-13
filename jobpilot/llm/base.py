@@ -41,6 +41,39 @@ class LlmError(RuntimeError):
         super().__init__(*(redact(a) if isinstance(a, str) else a for a in args))
 
 
+@dataclass(frozen=True)
+class Attachment:
+    """A file the model should look at: a page image, or a PDF.
+
+    A user turn carries these under ``"attachments"``, next to its ``"content"``
+    text. Each provider spells "here is a picture" differently — an ``image``
+    block, an ``image_url`` data URI, an ``inline_data`` part — so the turn stays
+    in this neutral shape until a client translates it, the same way the schema
+    stays a Pydantic class until a client compiles it.
+
+    ``data`` is the raw bytes. Base64 is a wire detail of three of the four
+    backends, not of the file.
+    """
+
+    media_type: str
+    data: bytes
+    name: str = ""
+
+    @property
+    def is_pdf(self) -> bool:
+        return self.media_type == "application/pdf"
+
+    def b64(self) -> str:
+        import base64
+
+        return base64.b64encode(self.data).decode("ascii")
+
+
+def attachments_of(message: dict) -> list[Attachment]:
+    """The files riding on one turn — empty for every turn that is only text."""
+    return list(message.get("attachments") or [])
+
+
 @dataclass
 class Usage:
     """What one call cost, in tokens and in wall clock.
@@ -74,6 +107,11 @@ class StructuredClient(Protocol):
     into a grammar, which is what makes an index-based plan safe to check
     afterwards. A backend that could only promise "probably JSON" would need its
     own retry here, not a looser guardrail upstream.
+
+    A turn is ``{"role", "content"}`` with ``content`` a string. A user turn may
+    also carry ``"attachments"`` (:class:`Attachment`), and every client must
+    either deliver them or raise — a backend that dropped the file and answered
+    from the text alone would be describing a document it never saw.
     """
 
     provider: str

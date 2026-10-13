@@ -22,7 +22,7 @@ Hai lớp:
 | File | Nội dung |
 |---|---|
 | `jobpilot/crawler/CLAUDE.md` | thêm site mới, robots, nguồn tier-2 đã loại, LinkedIn alerts, bẫy selector/fetch |
-| `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX |
+| `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX; nhập CV từ ảnh/PDF (không tự lưu, 3 trạng thái kiểm) |
 | `jobpilot/intake/CLAUDE.md` | dán JD → AI đọc + chấm độ khớp; JD lưu là bản của user, 3 loại `match_score` |
 | `jobpilot/companies/CLAUDE.md` | fold tên nhà tuyển dụng (hướng gộp nhầm là hướng nguy hiểm), HR contact, `apply_target` ai nói ra thì thắng |
 | `jobpilot/llm/CLAUDE.md` | chọn provider/model theo việc, schema từng provider, đo chi phí, scrub key |
@@ -38,7 +38,7 @@ Claude đọc lại file trong thư mục đó. Session dài đụng nhiều vù
 
 1. **Truthfulness**: khi tailor CV, KHÔNG bịa skill/kinh nghiệm/metric. Chỉ nhấn mạnh/diễn đạt lại dữ kiện có thật. Chi tiết: `SKILL.md §0`.
 2. **Human-in-the-loop**: mọi hành động gửi ra ngoài cần user Approve, trừ kênh **email** đã bật rõ. **Không** auto-apply LinkedIn. **Không** scrape LinkedIn.
-3. **Không commit thông tin cá nhân** (repo **public**): Master CV sống trong bảng `cv_versions` của Postgres, ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
+3. **Không commit thông tin cá nhân** (repo **public**): Master CV sống trong bảng `cv_versions` của Postgres, ra/vào qua API (`GET/PUT /cv/{scope}`). Repo không chứa CV nào — DB mới thì `ensure_master()` tạo **CV rỗng** (`cv/skeleton.py`), user tự điền trong CV Studio, nhập từ ảnh/PDF ở đó, hoặc `jobpilot cv import <file.json>`. `cv/sample.py` là CV **hư cấu** chỉ dùng cho test + demo, app không bao giờ seed từ đó.
 4. **Không ghi đè Master CV**: bản tailored sinh ra ở `out/cv/<scope>/`, Master trong DB giữ nguyên.
 5. **Tôn trọng ToS/robots.txt/rate-limit** khi crawl. Site nào fail thì log + chạy tiếp, không retry vô hạn.
 6. **Secrets**: mọi token (Slack, Claude API, email) đặt trong `.env` (đã gitignore). Không log, không commit token, không commit `jobpilot.db`.
@@ -106,6 +106,7 @@ python -m jobpilot.cli crawl --query "java, spring boot" --limit 50   # scope 1 
 python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích + link công ty cho job cũ (idempotent)
 python -m jobpilot.cli backfill --force   # tính lại cả row đã có — dùng sau khi SỬA parser
 python -m jobpilot.cli cv seed      # tạo Master CV rỗng nếu chưa có (idempotent)
+python -m jobpilot.cli cv read scan.png -o my-cv.local.json   # AI đọc ảnh/PDF → bản nháp JSON, KHÔNG lưu
 python -m jobpilot.cli cv import my-cv.local.json   # nạp CV có sẵn vào DB
 python -m jobpilot.cli cv export my-cv.local.json   # backup CV từ DB ra file (gitignored)
 python -m jobpilot.cli cv build     # render JSON → .tex → PDF ở out/cv/master/
@@ -202,9 +203,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | crawl-fix | id > 128 ký tự làm đỏ cả crawl → `make_job_id()` + savepoint mỗi job/site, row hỏng = `rejected` | `crawler/types.py`, `persist.py`, `pipeline.py` |
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
 | public | **Repo public + MIT** (2026-10-12): `LICENSE` + license của phần vendor, `README.vi.md`, `CONTRIBUTING(.vi).md`, `CODEOWNERS`; `main` được bảo vệ, CI của PR từ fork chờ duyệt | `LICENSE`, `CONTRIBUTING.md`, `.github/CODEOWNERS` |
+| cv-import | **Nhập CV từ ảnh/PDF**: model chép file thành bản nháp trong CV Studio, **không tự lưu**; PDF có text layer thì đối chiếu con số; tầng LLM nhận file đính kèm (`Attachment`) ở cả 4 provider | `cv/reader.py`, `cv/importer.py`, `llm/base.py`, `web/src/components/cv/ImportBox.tsx` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1046 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
+1131 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên

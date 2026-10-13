@@ -163,3 +163,76 @@ ship; UI phải **nói ra** (`TemplatePicker` báo đỏ) thay vì hiện "khôn
 by the plain template". Cùng một luật với `tex_override`: **im lặng bỏ qua thứ user gõ tệ hơn
 là từ chối nhận nó**. Thêm template đơn sắc mới thì thêm id vào `MONOCHROME_TEMPLATES`
 (`web/src/components/cv/HeaderEditor.tsx`).
+
+### Nhập CV từ ảnh / PDF (`cv/reader.py` + `cv/importer.py`)
+
+`POST /cv/master/import` (và `jobpilot cv read`) đưa ảnh từng trang hoặc một PDF cho model **chép
+lại** thành `CvDocument`. Model nằm trọn trong `reader.py`; mọi thứ làm được không cần model
+(kiểm file, dựng document, đối chiếu) nằm ở `importer.py`.
+
+- **KHÔNG BAO GIỜ tự lưu.** `import_cv()` trả document, không ghi version. Master CV là corpus mà
+  mọi lượt tailor về sau bị đối chiếu, nên một chỗ đọc nhầm lọt vào đó là được "rửa" thành "đã có
+  trên CV" cho mọi job. Bản nháp vào editor (`draft` của CV Studio), thành version qua đúng
+  `PUT /cv/master` cũ khi user bấm Lưu. Route vì thế **không mở DB session nào** và trả 200.
+  Đừng thêm "import & save" một bước — bước user đọc lại là guard duy nhất mà một tấm ảnh cho phép.
+- **Không có vòng retry, và đó là cố ý.** Tailor/edit retry được vì có luật bị vỡ để trích lại.
+  Bản chép từ ảnh thì không có gì để so ngoài chính tấm ảnh — thứ code không đọc được.
+- **Thứ duy nhất kiểm được bằng máy: con số, và chỉ với PDF có text layer.** `text_layer()` đọc
+  phần chữ của PDF (`cv/ats.extract`), `unbacked_numbers()` báo số có trong nháp mà không có trong
+  đó. **Báo, không sửa, không từ chối**: extractor có lỗi riêng, tự "sửa" theo nó là bịa ra đúng
+  cái lỗi mình tuyên bố bắt được. Ba trạng thái là ba khẳng định khác nhau và UI phải giữ đủ ba:
+  `checked` + rỗng / `checked` + có số / **`checked=False` = "chưa kiểm gì"** (ảnh, PDF scan, upload
+  lẫn PDF với ảnh, thiếu extractor) — cái cuối **không bao giờ** được hiện như "không có gì sai".
+- **Text layer ngắn hơn nửa bản nháp thì coi như không có** (`_MIN_LAYER_SHARE`), và **file hay
+  trang nào không có chữ thì cả upload là "chưa kiểm"** (`_pages`, pdfminer ngắt trang bằng `\f`).
+  Ngưỡng tính trên *tổng* nên bản đầu để lọt: PDF có layer + PDF scan trắng ⇒ `checked=True` và báo
+  7 con số thật là "không có" (review gate đo được) — đúng loại finding do công cụ bịa ra. **Vẫn
+  chưa kín**: trang scan có đóng số trang thì được tính là có chữ. Hướng hỏng là báo động giả
+  (đẩy user đi xem bản gốc), không phải yên tâm giả.
+- **Chữ chép từ file không phải markup, nhưng field của `CvDocument` thì có** (`cv/latex.py`).
+  `"Cut latency by ~40% for ~2M users"` ra PDF mất cả hai dấu `~`: "~40%" thành "40%" trong khi
+  editor vẫn hiện đúng. `markup_hits()` dùng **chính regex của renderer** (`latex.markup_spans`) để
+  báo các đoạn đó (`CvImportOut.markup`); báo, không viết lại — chỉ người cầm bản gốc biết ký hiệu
+  đó có ý hay không. Chưa có cú pháp escape trong `latex.py`; đó là việc riêng.
+- **`github`/`linkedin`/`homepage` chỉ nhận thứ trông đúng loại.** Link in ra chỉ là một chữ
+  ("Portfolio", "LinkedIn") là *nhãn*: `_homepage()` đòi có dấu chấm, `_handle()` bỏ tên dịch vụ,
+  cắt query + phần đường dẫn thừa, nhận subdomain quốc gia (`vn.linkedin.com` — dạng CV ở VN hay
+  in) và dạng `in/<tên>`; LinkedIn mà path không bắt đầu bằng `in/` (`/pub/`, `/company/`) thì bỏ. Ca "Portfolio" là đo thật; ca
+  `linkedin`/`github` là suy từ nó (chưa thấy model thật trả nhãn cho hai field này).
+- **`CvRead` chứ không phải `CvDocument`** là schema gửi provider: phẳng, mỗi loại section một
+  list, **mọi field required**, "không có" = `""`/`[]` (lý do đo được ở `jobpilot/llm/CLAUDE.md`).
+  Có test ghim (`test_every_field_the_provider_sees_is_required`). Thêm field thì **không** default.
+- **Section không có trên CV thì bỏ hẳn, không thêm rỗng** — nháp có đúng những section bản gốc
+  có. `base` chỉ cho mượn `template` + `theme`; không chữ nào của Master cũ sống sót, vì nháp trộn
+  hai CV thì không đối chiếu được với cái nào.
+- **Key section phải là ASCII** (nó thành tên file `resume/<key>.tex`): heading tiếng Việt qua
+  `_key()` (`đ` map tay — NFKD không tách được nó), trùng thì thêm `-2`.
+- **Loại file đọc từ BYTE, không từ tên hay `type` của browser** (`sniff`). Chuỗi đó được gửi cho
+  provider như một lời khẳng định về byte; `.png` mà ruột là HEIC sẽ bị từ chối ở bên kia bằng một
+  lỗi decode không nói gì với người upload. HEIC của iPhone là ca hay gặp nhất → 422 nói rõ tên file.
+- **Giới hạn lấy theo cách đọc chặt nhất** (ảnh 3,5 MB, PDF 10 MB, 6 file, 10 trang), không theo
+  provider đang chọn: upload chạy hay hỏng tuỳ `/models` đang trỏ đâu là một bug chờ được báo.
+  Số 3,5 MB là **giả định thận trọng, chưa đo**: API Anthropic ghi trần 5 MB/ảnh, không rõ tính
+  trước hay sau base64 (+1/3). `claude_cli` nhận được PNG 4,5 MB, nhưng CLI có thể tự thu nhỏ nên
+  không chứng minh gì cho đường API. Dashboard tự thu nhỏ ảnh quá cỡ (`web/src/lib/upload.ts`,
+  đã thử: PNG 5,0 MB → JPEG 1,2 MB); CLI `cv read` thì không.
+- **Dùng backend của `tailor`**, không phải task thứ năm — cùng lý do sửa Master CV dùng nó: cả hai
+  đặt nguyên CV trước model, nên lựa chọn "ai được thấy CV" và cảnh báo data-use của user đã phủ
+  sẵn. `llm_calls.task = "cv_import"` để `llm stats` tách được nó khỏi tailor/edit.
+- **Đo thật 2026-10-12** (`claude_cli`, CV mẫu hư cấu 1 trang render từ `cv/sample.py`). Với
+  **`claude-opus-5`**: ảnh PNG 1202×1700 → **78/83 field trùng khớp**, PDF → **77/83** (field thứ 78
+  là `homepage` đọc nhầm, xem dưới); 37–40 s/lượt. Với **`claude-haiku-4-5`** (một lượt, do review
+  gate chạy): **72 s**, và tên + tiêu đề trả về viết HOA theo cách template in — số 78/83 là của
+  Opus, đừng đem sang model khác. 5 field lệch đều là **thứ không in trên trang**: 3 URL project
+  + link "Portfolio" nằm sau icon (model ghi đúng vào `unreadable`, không đoán), và key `honors` →
+  `honors-awards`. Ca đọc nhầm duy nhất: chữ "Portfolio" bị xếp làm `homepage` → `_homepage()` giờ
+  chỉ nhận thứ trông như địa chỉ. **Chỉ `claude_cli` được gọi thật**; đường `claude`/`openai`/
+  `gemini` mới có unit test cho wire format (máy này không có key của ba provider đó).
+- **Bản đọc về tới nơi thì editor có thể đã đổi** — một lượt đọc mất cả phút. `CvStudio` kiểm lại
+  lúc *hạ cánh*, không phải lúc bấm: đổi scope giữa chừng ⇒ **bỏ kết quả** (`scopeEpoch`; nếu không
+  nó đổ vào CV tailored của một job, cách "Lưu" một click — đúng thứ endpoint từ chối bằng 400);
+  editor khác lúc bấm ⇒ **giữ lại và hỏi** (`heldImport`), không tự đè. Sửa tay trên bản nháp rồi
+  thì nút Đọc bị khoá (`pristineImport` so với `snapshot`). Review gate tái hiện được cả ba ca trên
+  trình duyệt trước khi sửa. Callback chạy sau `await` phải đọc **ref**, không đọc state trong closure.
+- **Link ẩn sau nhãn/icon thì mất.** PDF giữ URL trong annotation, model không thấy. Chưa trích —
+  gán URL vào đúng entry là việc đoán. User điền tay; `unreadable` nhắc chỗ nào.

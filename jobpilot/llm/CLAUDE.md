@@ -84,6 +84,30 @@
   thư nhà tuyển dụng **đã khớp đơn** thì rời khỏi máy. Cái *vẫn* đúng: thư không khớp đơn nào
   dừng lại trong máy (xem `jobpilot/apply/CLAUDE.md` § Inbox sync).
 
+### File đính kèm (ảnh / PDF) — `llm.base.Attachment` (2026-10-12)
+
+- **Một lượt user có thể mang `"attachments": [Attachment, …]`** cạnh `"content"`. Hình dạng trung
+  lập (`media_type` + **bytes thô**) đi tới tận client, rồi mỗi client tự dịch — cùng cách schema
+  là class Pydantic cho tới khi client compile nó. Engine phía trên không biết provider nào nhận.
+- **Bốn hình dạng trên dây, đừng trộn:** Claude = block `image` / `document` (base64); OpenAI =
+  `image_url` (data URI) cho ảnh, `file` cho PDF và **`file` thiếu `filename` bị từ chối**; Gemini =
+  `inline_data` với **bytes thô** (SDK tự base64 — đưa chuỗi đã encode là encode hai lần);
+  `claude_cli` = block của Claude, gửi qua `--input-format stream-json`.
+- **Key `attachments` không bao giờ được tới SDK** — mỗi SDK validate hình dạng lượt của nó. Có
+  test ghim cho cả ba (`test_the_neutral_attachments_key_never_reaches_an_sdk`).
+- **Client nào không gửi được file thì phải raise, không được lặng lẽ bỏ.** Trả lời từ phần chữ
+  mà không thấy file là mô tả một tài liệu chưa từng đọc — và nó sẽ trông hoàn toàn hợp lý.
+- **`claude_cli` có file thì đổi hẳn chế độ I/O.** stdin là **một** dòng JSON (`{"type":"user",
+  "message":{…}}`), CLI bắt buộc kèm `--output-format stream-json --verbose`, và câu trả lời là
+  event `result` **cuối cùng** của stream (dòng không phải JSON thì bỏ qua, không fatal). Đường
+  text-only giữ nguyên `--output-format json` đã đo. File chỉ đi qua **stdin**, không bao giờ argv.
+  Stream hỏng thì thông báo lỗi chỉ lấy **stderr**: đuôi stdout là event `assistant`, tức là chính
+  nội dung tài liệu, và nó không có việc gì trong `llm_calls.error`.
+- **Đã gọi thật: chỉ `claude_cli`** (ảnh PNG + PDF). Thời gian đi theo **output**, không theo file:
+  hỏi 3 field ~8 s trên haiku-4-5; chép nguyên một CV một trang (`CvRead`) 37–40 s trên opus-5,
+  72 s trên haiku-4-5. Ba provider API mới có unit test cho wire format — máy này không có key. Lần đầu bật
+  import trên `claude`/`openai`/`gemini` phải thử thật một file trước khi tin.
+
 ### Provider `claude_cli` — chạy trên gói Claude của user (2026-10-04)
 
 User chốt: JobPilot host trên máy của chính họ, gói Pro/Max dùng không hết ⇒ dùng nó thay vì

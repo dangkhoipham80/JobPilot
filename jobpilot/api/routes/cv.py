@@ -7,6 +7,9 @@ should still ``encodeURIComponent`` it.
 
 from __future__ import annotations
 
+import base64
+import binascii
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -17,6 +20,8 @@ from jobpilot.api.paging import LimitParam, OffsetParam, page_list
 from jobpilot.api.schemas import (
     CvCompileOut,
     CvDocumentOut,
+    CvImportIn,
+    CvImportOut,
     CvTemplatesOut,
     CvTexIn,
     CvTexOut,
@@ -28,8 +33,9 @@ from jobpilot.api.schemas import (
     TaskOut,
 )
 from jobpilot.api.ws import manager
-from jobpilot.cv import store
+from jobpilot.cv import importer, store
 from jobpilot.cv.compile import UnsafeTexPath, build_dir, check_build, check_override, compile_document
+from jobpilot.cv.reader import CvReader, CvReadError, default_reader
 from jobpilot.cv.render import list_templates, render_document, render_tex_snapshot
 from jobpilot.cv.schema import CvDocument
 from jobpilot.orchestrator import TaskBusy, cv_edit_body, queue
@@ -105,6 +111,78 @@ def edit_cv(
     except TaskBusy as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return JSONResponse(status_code=202, content=TaskOut(**task.to_dict()).model_dump(mode="json"))
+
+
+def get_reader() -> CvReader:
+    """Overridden in tests with a fixture reader (no network, no API key).
+
+    The same backend and the same pre-flight as editing: a read puts the whole
+    CV in front of the model that ``llm.tailor`` names.
+    """
+    blocked = llm.blocker("tailor")
+    if blocked:
+        raise HTTPException(status_code=409, detail=blocked)
+    return default_reader()
+
+
+def _decode(name: str, data: str) -> bytes:
+    """One uploaded file's bytes. Accepts a bare base64 string or a data URI."""
+    payload = data.split(",", 1)[1] if data.startswith("data:") else data
+    # Checked on the encoded length, before decoding: a body far past any limit
+    # should cost a comparison, not an allocation the size of the upload.
+    if len(payload) > importer.MAX_PDF_BYTES * 4 // 3 + 4:
+        raise importer.CvImportRefused(f"{name or 'file'} is larger than any import accepts")
+    try:
+        return base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise importer.CvImportRefused(f"{name or 'file'} did not arrive intact") from exc
+
+
+@router.post("/{scope}/import", response_model=CvImportOut)
+def import_cv(
+    scope: str,
+    body: CvImportIn,
+    reader: CvReader = Depends(get_reader),
+) -> CvImportOut:
+    """Read an uploaded CV (page images or a PDF) into a draft. **Saves nothing.**
+
+    200, not 201, and no database session at all: the draft goes back to the
+    editor, and it becomes a version through the ordinary ``PUT /cv/master``
+    once the user has compared it with the file. Its template and theme are the
+    defaults — the editor keeps whichever ones it is already showing.
+
+    Not queued, for the reason ``routes/intake.py`` gives: one structured call
+    with a person waiting on it, and a single-worker queue that a running crawl
+    would park it behind. ``def``, not ``async def``, so the model call runs in
+    the threadpool rather than on the event loop.
+    """
+    if scope != store.MASTER_SCOPE:
+        raise HTTPException(
+            status_code=400,
+            detail="only the Master CV is imported from a file; a tailored CV is derived from it",
+        )
+    try:
+        # Counted before anything is decoded: the limit exists so that a body of
+        # a thousand files costs a comparison, not a thousand allocations.
+        if len(body.files) > importer.MAX_FILES:
+            raise importer.CvImportRefused(
+                f"at most {importer.MAX_FILES} files per import — got {len(body.files)}"
+            )
+        files = [(f.name, _decode(f.name, f.data)) for f in body.files]
+        result = importer.import_cv(files, reader, CvDocument())
+    except importer.CvImportRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except CvReadError as exc:
+        # 502, not 500: the provider failed, this app did not — check /models.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return CvImportOut(
+        document=result.document,
+        unreadable=result.unreadable,
+        checked=result.checked,
+        unbacked_numbers=result.unbacked_numbers,
+        markup=result.markup,
+        files=result.files,
+    )
 
 
 @router.get("/{scope}", response_model=CvDocumentOut)

@@ -2290,3 +2290,98 @@ letter (300 từ văn xuôi, gửi cho nhà tuyển dụng) có đúng lỗ đó
   vòng bị từ chối, nên muốn biết luật nào chặn phải bọc `check_letter` như lần này.
 
 1046 test pass.
+
+## Phase cv-import — nhập CV từ ảnh / PDF, và vì sao nó không tự lưu (2026-10-12)
+
+User có CV dạng ảnh và muốn đưa vào app. Trước phase này đường duy nhất là gõ tay trong CV Studio
+hoặc `cv import <file.json>`; không lượt gọi LLM nào gửi được file.
+
+- **Tầng LLM nhận file** (`llm.base.Attachment`): một lượt user mang `attachments` ở dạng trung lập
+  (bytes thô), mỗi client tự dịch sang hình dạng của provider. Chi tiết 4 wire format ở
+  `jobpilot/llm/CLAUDE.md`.
+- **`claude -p` nhận ảnh/PDF qua `--input-format stream-json`** — thử thật trước khi viết code,
+  vì đây là provider đang chạy trên Mac mini và docs không nói print mode làm được. stdin là một
+  dòng JSON chứa đúng content block của Messages API; CLI bắt kèm `--output-format stream-json
+  --verbose`; `structured_output` và `usage` nằm ở event `result` cuối. Các flag "khoá" (`--tools ""`,
+  system prompt riêng, không session) giữ nguyên.
+- **Model chỉ chép, và bản chép không tự lưu.** `POST /cv/master/import` trả `CvDocument` nháp;
+  CV Studio đặt nó vào `draft` như một chỉnh sửa chưa lưu, kèm link mở bản gốc. Thành version qua
+  `PUT /cv/master` khi user bấm Lưu. Lý do: Master là corpus mọi guard về sau so vào — đọc nhầm mà
+  lọt vào đó là thành "sự thật" cho mọi job.
+- **Guard bằng máy chỉ có một, và chỉ cho PDF có text layer:** con số trong nháp phải có trong phần
+  chữ của PDF. Báo ra, không sửa. Ảnh thì `checked=False` và UI nói thẳng "không kiểm được gì" —
+  ba trạng thái, ba câu khác nhau.
+- **Không dùng task queue** (cùng lý do với intake: một structured call, user đang chờ, queue 1
+  worker có thể kẹt sau một lượt crawl). ~40 s với opus-5 qua CLI.
+
+### Chạy thật (không chỉ test)
+
+Dữ liệu thử là **CV mẫu hư cấu** (`cv/sample.py`) build ra PDF rồi render thành PNG 1202×1700 — không
+đụng CV thật, không đụng DB thật (SQLite tạm, API chạy ở cổng 8011 từ worktree).
+
+| Đầu vào | Field khớp | Kiểm số | Thời gian |
+|---|---|---|---|
+| PNG | 78/83 | `checked=False` (đúng) | 39 s |
+| PDF | 77/83 (lệch thêm `homepage`, đã sửa — xem dưới) | "mọi con số đều có" | 37 s |
+
+- 5 field lệch đều là **thứ không in trên trang**: 3 URL project + link "Portfolio" nằm sau icon, và
+  key `honors` → `honors-awards` (nội dung y hệt). Model ghi cả hai vào `unreadable` thay vì đoán URL.
+- **Bug lộ ra khi chạy thật:** lượt PDF trả `homepage = "Portfolio"` — nhãn của link bị xếp làm địa
+  chỉ, template sẽ link nó thành `http://Portfolio`. Thêm `_homepage()` (phải có dấu chấm, không
+  có khoảng trắng) + câu trong prompt; gọi lại qua API thì `homepage=None`. Không test nào bắt được
+  cái này trước khi có một PDF thật.
+- Trên trình duyệt (luồng đầy đủ ở VI/dark, trạng thái "số không khớp" ở EN/light): upload PNG → nháp vào editor → Lưu thành v2 → Compile ra
+  PDF 1 trang; upload PDF → dòng xanh "mọi con số đều có"; HEIC giả → từ chối bằng tên file; đang sửa
+  dở → nút bị khoá kèm lý do; "Bỏ bản nháp" trả editor về bản đã lưu; PNG nhiễu 5,0 MB → tự thu
+  nhỏ còn JPEG 1,2 MB. 0 console error.
+- Trạng thái "có số không khớp" mới chỉ thấy trên UI bằng response giả (chặn `fetch` trong trang);
+  ở backend nó có test, nhưng **chưa có lượt model thật nào đọc nhầm một con số** để xem nó tự bật.
+
+### Chưa làm / chưa kiểm
+
+- **Ba provider API (`claude`, `openai`, `gemini`) chưa gọi thật với file** — máy này không có key.
+  Wire format có unit test, nhưng "test xanh không chứng minh parser đúng" áp dụng nguyên xi ở đây.
+- **Trần 3,5 MB/ảnh là giả định**, xem `jobpilot/cv/CLAUDE.md`.
+- **CV nhiều trang, CV tiếng Việt, CV hai cột, ảnh chụp nghiêng/mờ: chưa thử.** Mẫu thử là một
+  trang, tiếng Anh, một cột, render sạch — ca dễ nhất. Prompt có luật "không dịch", chưa có bằng chứng.
+- **URL ẩn sau nhãn/icon bị mất** (PDF giữ trong annotation, model không thấy).
+- **Chữ thì không kiểm.** Chỉ con số được đối chiếu; một tên công ty đọc nhầm đi qua mọi thứ trừ mắt user.
+
+### Review gate (cv-import) — findings đã sửa
+
+Verdict vòng 1: **CHANGES REQUESTED**. Reviewer tái hiện bằng Playwright + một reader giả trễ 4 giây.
+
+- **Blocker — bản nháp hạ cánh không kiểm lại gì sau `await`.** `blocked` chỉ kiểm lúc bấm. (1) Bấm
+  Đọc ở `/cv`, bấm Back sang `/cv/<job>` trước khi request về ⇒ các ô của CV **tailored** bị thay
+  bằng bản đọc, nút Lưu sáng: một click là bản chép thô thành CV của job đó. (2) Gõ trong lúc chờ ⇒
+  chữ vừa gõ biến mất, không cảnh báo. Lượt thật mất 40–72 s nên cửa sổ này rộng. Sửa: kiểm lúc hạ
+  cánh bằng ref (`scopeEpoch` ⇒ bỏ; editor khác lúc bấm ⇒ giữ lại và hỏi). Cùng lớp bug mà effect
+  edit-landing đã phải rào từ cv-B — **mình đã đọc đoạn rào đó rồi vẫn viết thiếu nó cho đường mới.**
+- **Sửa tay trên bản nháp không được bảo vệ**: `blocked = dirty && !imported` coi "từng nhập" là
+  "editor đúng là thứ file nói". Nhập trang 1, sửa, nhập lại ⇒ mất chỗ sửa. Giờ so với `snapshot`.
+- **`~40% for ~2M users` mất dấu `~` trên PDF** (reviewer chạy `tex()` thật). Báo qua `markup`.
+- **`_handle` thiếu đúng cái lọc vừa thêm cho `homepage`**; **`checked=True` với PDF có layer + PDF
+  scan** (báo động giả 7 con số); **test CLI qua vì lý do sai** (`sample.template` == default nên
+  "lấy look của Master" và "lấy default" là một assert) — và nhánh đó thật ra còn *seed Master rỗng*
+  trên DB trắng, trái với chữ "saves nothing" in ngay trong help. Đều đã sửa + có test.
+- **Docs nói quá số đo**: "haiku ~8 s" là lượt hỏi 3 field, chép cả CV trên Haiku mất 72 s. Bài học
+  cũ của `llm/CLAUDE.md` ("đừng chốt khi n nhỏ") áp dụng cho chính dòng mình vừa viết.
+- Nit đã sửa: đếm số file trước khi decode; `_key` cắt 40 ký tự; `int()` nổ với dãy > 4300 chữ số;
+  PDF có BOM trước `%PDF-`; lỗi stream không còn trích stdout (nội dung CV) vào `llm_calls.error`.
+
+Vòng 2: **APPROVE**, kèm hai chỗ *chính lượt sửa làm hỏng* — đều tái hiện được, đã sửa trong nhánh:
+
+- **Nạp bản đọc đang "giữ lại" thì link "Bản gốc" chết.** `applyImport` gọi `setHeldImport(null)`,
+  cleanup của effect `[heldImport]` revoke đúng object URL của bản nháp vừa thành `imported`. Đường
+  này do chính bản sửa blocker tạo ra, và 19 kiểm tra mình chạy lại không có phép thử nào bấm vào
+  link. Giờ cleanup bỏ qua draft đã "chuyển chủ" (`importedRef`), và có kiểm tra thứ 20: `fetch` blob.
+- **`_handle` mới trả sai ở ca bản cũ trả đúng**: `https://vn.linkedin.com/in/x/` → `'https:'`, vì
+  regex chỉ nhận `www.`. Viết lại theo host + path, thêm test subdomain và `/pub/`, `/company/`.
+- Rời hẳn CV Studio giữa lượt đọc thì object URL không ai revoke ⇒ `landImport` kiểm `mounted`.
+
+Chạy lại sau khi sửa: **20/20** kiểm tra trên trình duyệt (kịch bản của reviewer, kết quả mong đợi
+mới). Còn 2 console error 404 trong lượt đó, chưa truy là resource nào — đừng đọc dòng "0 console
+error" phía trên thành "cả phase không có".
+
+Chưa làm (nit của vòng 2, cố ý để lại): đi khỏi rồi quay lại `/cv` giữa lượt đọc thì kết quả bị bỏ
+mà không có dòng nào báo.

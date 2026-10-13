@@ -111,6 +111,83 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cv_read(db, args: argparse.Namespace) -> int:
+    """Read page images or a PDF into a draft JSON file. Never touches the DB's CV.
+
+    Two steps on purpose — ``cv read`` writes a file, ``cv import`` saves one —
+    so that a person reads the draft in between. The dashboard does the same
+    thing with an editor instead of a file.
+    """
+    from jobpilot import llm
+    from jobpilot.cv import importer, store
+    from jobpilot.cv.reader import CvReadError, default_reader
+    from jobpilot.cv.schema import CvDocument
+
+    blocked = llm.blocker("tailor")
+    if blocked:
+        print(f"ERROR: {blocked}", file=sys.stderr)
+        return 1
+    for line in llm.warnings("tailor"):
+        print(f"WARNING: {line}", file=sys.stderr)
+    try:
+        files = [(Path(f).name, Path(f).read_bytes()) for f in args.files]
+    except OSError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    # The current Master's template and theme, so importing the draft does not
+    # also reset how the CV looks. Its text is not carried over. Read with
+    # `latest_version`, not `get_document`: that one seeds an empty Master on a
+    # fresh database, and a command that promises to save nothing must not be
+    # the thing that writes version 1.
+    row = store.latest_version(db, store.MASTER_SCOPE)
+    base = CvDocument.model_validate(row.content) if row else CvDocument()
+    try:
+        result = importer.import_cv(files, default_reader(), base)
+    except importer.CvImportRefused as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    except CvReadError as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return 1
+
+    out = Path(args.output)
+    payload = {
+        "_comment": "Draft read from a file by a model — NOT saved. Check it against "
+        "the original, then: jobpilot cv import <this file>. Contains personal data — "
+        "keep it out of git (*.local.json is gitignored).",
+        **result.document.model_dump(mode="json"),
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    sections = ", ".join(s.title for s in result.document.sections)
+    print(f"Draft written to {out}  (not saved to the database)")
+    print(f"  sections: {sections}")
+    for note in result.unreadable:
+        print(f"  could not read: {note}")
+    if not result.checked:
+        print("  numbers: NOT checked - no text layer to compare with. Compare it yourself.")
+    elif result.unbacked_numbers:
+        print(
+            "  numbers not found in the PDF's own text - check these: "
+            + ", ".join(result.unbacked_numbers)
+        )
+    else:
+        print("  numbers: every number in the draft also appears in the PDF's own text")
+    if result.markup:
+        print(
+            "  will render as formatting, not as written (~x~, `x`, **x**, [x](url)): "
+            + " | ".join(result.markup)
+        )
+    if not out.name.endswith(".local.json"):
+        print(
+            f"WARNING: {out.name} is not gitignored (only *.local.json is) and holds your CV.",
+            file=sys.stderr,
+        )
+    print(f"Next: read it over, then  python -m jobpilot.cli cv import {out}")
+    return 0
+
+
 def cmd_cv(args: argparse.Namespace) -> int:
     """CV Studio from the terminal: seed / render / build / list versions."""
     from jobpilot.cv import store
@@ -137,6 +214,9 @@ def cmd_cv(args: argparse.Namespace) -> int:
             name = f"{doc.header.first_name} {doc.header.last_name}".strip() or "(no name)"
             print(f"Imported into {args.scope} as v{row.version}: {name}")
             return 0
+
+        if args.cv_command == "read":
+            return _cv_read(db, args)
 
         if args.cv_command == "export":
             try:
@@ -622,13 +702,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("dir", nargs="?", default=None, help="work dir (default: repo root)")
     p_build.add_argument("--entry", default="cv.tex", help="LaTeX entry file")
     p_build.set_defaults(func=cmd_build)
-    p_cv = sub.add_parser("cv", help="CV Studio: seed/import/export/render/build (Phase 4.5)")
+    p_cv = sub.add_parser("cv", help="CV Studio: seed/read/import/export/render/build (Phase 4.5)")
     cv_sub = p_cv.add_subparsers(dest="cv_command", required=True)
     cv_sub.add_parser("seed", help="create an empty Master CV if there isn't one (idempotent)")
 
     p_import = cv_sub.add_parser("import", help="load a CV JSON file into the database")
     p_import.add_argument("file", help="path to a CV document JSON")
     p_import.add_argument("--scope", default="master", help="'master' or a job id")
+
+    p_read = cv_sub.add_parser(
+        "read", help="read a CV from page images or a PDF into a draft JSON (saves nothing)"
+    )
+    p_read.add_argument("files", nargs="+", help="PNG/JPEG/WebP pages in order, or a PDF")
+    p_read.add_argument(
+        "-o",
+        "--output",
+        default="cv-draft.local.json",
+        help="where to write the draft (default: cv-draft.local.json, gitignored)",
+    )
 
     p_export = cv_sub.add_parser("export", help="write a CV from the database to JSON (backup)")
     p_export.add_argument("file", help="destination path — use *.local.json to stay gitignored")

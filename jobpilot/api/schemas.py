@@ -264,6 +264,49 @@ class CvDocumentOut(BaseModel):
     tex_override: bool = False
 
 
+class CvImportFileIn(BaseModel):
+    name: str = ""
+    #: The file's bytes, base64. JSON rather than multipart so that several
+    #: pages travel in one request without a form-parsing dependency.
+    data: str
+
+
+class CvImportIn(BaseModel):
+    """Page images or a PDF of one CV, in reading order."""
+
+    files: list[CvImportFileIn]
+
+
+class CvImportFileOut(BaseModel):
+    """What was actually read — the type is sniffed from the bytes, not trusted."""
+
+    name: str
+    media_type: str
+    bytes: int
+
+
+class CvImportOut(BaseModel):
+    """A draft read off an upload. **Not saved** — the editor holds it until Save.
+
+    Deliberately keys and values, not sentences: ``checked`` and
+    ``unbacked_numbers`` are rendered by the dashboard in its own language. Only
+    ``unreadable`` is prose, and it is the model's, written per request in the
+    language of the CV.
+    """
+
+    document: CvDocument
+    unreadable: list[str] = Field(default_factory=list)
+    #: True only when the upload was a PDF whose text layer could be compared
+    #: with the draft. False means "nothing was checked", never "nothing wrong".
+    checked: bool = False
+    #: Numbers in the draft that the PDF's own text never states.
+    unbacked_numbers: list[str] = Field(default_factory=list)
+    #: Stretches of the draft that the PDF will render as formatting (``~x~``,
+    #: backticks, ``**x**``, ``[label](url)``) instead of printing as written.
+    markup: list[str] = Field(default_factory=list)
+    files: list[CvImportFileOut] = Field(default_factory=list)
+
+
 class CvTemplateOut(BaseModel):
     """One entry of ``GET /cv/templates`` — enough for the Studio's picker.
 

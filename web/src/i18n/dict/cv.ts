@@ -119,6 +119,50 @@ export const cv = ns({
     moveDown: "Move down",
     tagsHint: "comma-separated, order is kept",
 
+    // --- Import from a file ----------------------------------------------
+    // Blunt on purpose, like the instruction box: this is a model putting
+    // words on the Master CV with no text to check them against. The three
+    // `importNumbers*` / `importUnchecked` lines are three different claims;
+    // do not let a translation soften "nothing was checked" into reassurance.
+    importTitle: "Import from an image or PDF",
+    importChoose: "Choose files",
+    importDropHint: "or drop them here — PNG, JPEG, WebP or PDF. For photos, one file per page, in order.",
+    importRemove: "Remove {name}",
+    importLead: "The AI copies the file into the fields below.",
+    importLeadEmphasis: "Nothing is saved",
+    importLeadRest:
+      "until you press Save version — a misread date or number would otherwise become a fact every tailored CV repeats.",
+    importRead: "Read into the editor",
+    importReading: "Reading…",
+    importReadingHint: "One model call — about a minute, sometimes two.",
+    importBlocked: "You have unsaved edits. Save them first — an import replaces what is in the editor.",
+    importUnsupported: "{name} is not a PNG, JPEG, WebP or PDF. Convert it first (iPhone HEIC photos land here).",
+    importTooLarge: "{name} is too large, even after shrinking. A PDF can be 10 MB, an image 3.5 MB.",
+    importUndecodable: "{name} could not be opened as an image.",
+    importTooMany: "At most {max} files per import.",
+    importFailed: "The import failed",
+    importDraftTitle: "A draft is in the editor — it is not saved.",
+    importDraftBody:
+      "Read it against the original, line by line, and fix what is wrong. Save version keeps it; your current Master CV stays in History either way.",
+    importHeldTitle: "The file has been read — but you edited while it was being read.",
+    importHeldBody:
+      "Your edits were kept and the reading was not applied. Loading it replaces everything in the editor, including those edits.",
+    importHeldLoad: "Load the reading",
+    importHeldDrop: "Throw it away",
+    importMarkup:
+      "The PDF will treat these as formatting, not print them as written — the symbols disappear and the words between them are restyled. Edit them if the original means the symbol:",
+    importSameTitle: "The file reads the same as your saved Master CV.",
+    importSameBody: "Nothing differs, so there is nothing to save. The notes below still apply to what is saved.",
+    importDismiss: "Dismiss",
+    importOriginals: "Original:",
+    importPage: "page {n}",
+    importNumbersFound: "Every number in the draft also appears in the PDF's own text. Words were not checked.",
+    importNumbersMissing: "Not found in the PDF's own text — check these numbers in the draft:",
+    importUnchecked:
+      "Nothing here could be checked automatically: an image, a scanned PDF, or a PDF with a page that carries no text leaves nothing to compare with. Dates, numbers and names are yours to verify.",
+    importUnreadableLead: "The AI noted what it could not read:",
+    importDiscard: "Discard the draft",
+
     // --- Instruction box --------------------------------------------------
     askForChange: "Ask for a change",
     instructionPlaceholder: "Describe the change in your own words…",
@@ -310,6 +354,46 @@ export const cv = ns({
     moveUp: "Đưa lên trên",
     moveDown: "Đưa xuống dưới",
     tagsHint: "cách nhau bằng dấu phẩy, giữ nguyên thứ tự",
+
+    // --- Nhập từ file -----------------------------------------------------
+    importTitle: "Nhập từ ảnh hoặc PDF",
+    importChoose: "Chọn file",
+    importDropHint: "hoặc thả vào đây — PNG, JPEG, WebP hay PDF. Ảnh chụp thì mỗi trang một file, đúng thứ tự.",
+    importRemove: "Bỏ {name}",
+    importLead: "AI chép nội dung file vào các ô bên dưới.",
+    importLeadEmphasis: "Chưa có gì được lưu",
+    importLeadRest:
+      "cho tới khi bạn bấm Lưu version — đọc nhầm một ngày tháng hay một con số là mọi CV tailor về sau lặp lại đúng chỗ sai đó.",
+    importRead: "Đọc vào editor",
+    importReading: "Đang đọc…",
+    importReadingHint: "Một lượt gọi model — khoảng một phút, có khi hai.",
+    importBlocked: "Bạn đang có chỉnh sửa chưa lưu. Lưu trước đã — nhập file sẽ thay toàn bộ nội dung trong editor.",
+    importUnsupported: "{name} không phải PNG, JPEG, WebP hay PDF. Hãy đổi định dạng trước (ảnh HEIC của iPhone rơi vào đây).",
+    importTooLarge: "{name} quá lớn, kể cả sau khi thu nhỏ. PDF tối đa 10 MB, ảnh tối đa 3,5 MB.",
+    importUndecodable: "Không mở được {name} như một tấm ảnh.",
+    importTooMany: "Mỗi lần nhập tối đa {max} file.",
+    importFailed: "Nhập file thất bại",
+    importDraftTitle: "Bản nháp đang nằm trong editor — chưa lưu.",
+    importDraftBody:
+      "Hãy đối chiếu từng dòng với bản gốc và sửa chỗ sai. Bấm Lưu version thì nó mới được giữ; Master CV hiện tại vẫn còn trong Lịch sử dù bạn chọn thế nào.",
+    importHeldTitle: "Đã đọc xong file — nhưng bạn đã sửa trong lúc nó đang đọc.",
+    importHeldBody:
+      "Phần bạn sửa được giữ nguyên, bản đọc chưa được áp vào. Nạp nó sẽ thay toàn bộ nội dung trong editor, kể cả phần bạn vừa sửa.",
+    importHeldLoad: "Nạp bản đọc",
+    importHeldDrop: "Bỏ đi",
+    importMarkup:
+      "PDF sẽ coi những chỗ này là định dạng chứ không in nguyên văn — ký hiệu biến mất, chữ ở giữa bị đổi kiểu. Nếu bản gốc thật sự có ký hiệu đó thì hãy sửa lại:",
+    importSameTitle: "File đọc ra giống hệt Master CV đang lưu.",
+    importSameBody: "Không có gì khác nên không có gì để lưu. Các ghi chú bên dưới vẫn đúng với bản đang lưu.",
+    importDismiss: "Đóng",
+    importOriginals: "Bản gốc:",
+    importPage: "trang {n}",
+    importNumbersFound: "Mọi con số trong bản nháp đều có trong phần chữ của chính file PDF. Phần chữ thì chưa được kiểm.",
+    importNumbersMissing: "Không thấy trong phần chữ của file PDF — hãy kiểm các con số này trong bản nháp:",
+    importUnchecked:
+      "Không kiểm tự động được gì ở đây: ảnh, PDF scan, hay PDF có một trang không mang chữ thì không có gì để so. Ngày tháng, con số và tên riêng là phần bạn phải tự soát.",
+    importUnreadableLead: "AI ghi lại những chỗ nó không đọc được:",
+    importDiscard: "Bỏ bản nháp",
 
     askForChange: "Nhờ sửa giúp",
     instructionPlaceholder: "Mô tả thay đổi bạn muốn, bằng lời của bạn…",
