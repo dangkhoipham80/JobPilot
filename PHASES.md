@@ -2391,7 +2391,7 @@ mà không có dòng nào báo.
 User mở `/jobs` ở dark mode và báo ba thứ, cả ba đều đúng khi chụp lại:
 
 - **Hai trạng thái mà danh sách thật sự hiển thị thì giống hệt nhau.** `StatusPill` có 9 kiểu,
-  nhưng 448/452 tin là `DISCOVERED` và phần còn lại là `SKIPPED` — đúng hai kiểu duy nhất cùng là
+  nhưng 448/452 tin là `DISCOVERED`, và thứ user vừa tạo thêm là `SKIPPED` — đúng hai kiểu duy nhất cùng là
   viền xám, khác nhau một nét gạch ở opacity 70% (đo: **2.9:1** light, **3.7:1** dark). Bảy màu
   kia đẹp nhưng không ai thấy. `DISCOVERED` giờ có hue riêng (cyan, 5.2:1 / 8.4:1); `SKIPPED` vẫn
   xám vì là trạng thái hết việc, nhưng viền đứt + `ink-muted` đủ đậm, và tiêu đề của dòng đó lùi
@@ -2408,6 +2408,13 @@ Thật: gọi `list_jobs` của worktree trên Postgres (452 tin, 2 tin SKIPPED)
 hai order: 452 dòng, 452 id khác nhau, 2 tin SKIPPED nằm đúng hai dòng cuối. Lần kiểm đầu chạy
 nhầm code của checkout chính (`python -` đặt cwd lên đầu `sys.path`, thắng cả `PYTHONPATH`) và
 báo "không ở cuối" — đúng với code cũ; in `inspect.getsourcefile` ra mới thấy mình đang đo cái gì.
+
+Review gate: **APPROVE**, hai finding đã sửa. (1) Test đầu **không ghim "khoá đầu tiên"**: fixture
+cho mọi dòng `posted_at`/`crawled_at` null nên dòng nào cũng hoà nhau, và reviewer đẩy
+`skipped_last` ra *sau* hai khoá ngày thì test vẫn xanh — trong khi trên Postgres thật tin SKIPPED
+quay lại vị trí 24–26/476. Test giờ cho hai tin SKIPPED ngày mới nhất ở cả hai cột. (2) Bấm nhầm
+"Bỏ qua" thì dòng nhảy sang trang cuối mà màn hình không nói gì; phụ đề giờ ghi "…, tin đã bỏ qua
+xuống cuối" ở cả hai ngôn ngữ.
 
 Chưa làm (user nêu trong cùng buổi, là phase riêng): bỏ qua **kèm lý do** → gom lại → gợi ý chỉnh
 crawl. Hiện `skip` không ghi lý do và `match_score` không đọc hành vi của user.

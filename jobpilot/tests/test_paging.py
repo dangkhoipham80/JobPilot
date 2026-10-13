@@ -19,6 +19,8 @@ is barely worth a test. These pin the parts that fail *without an error*:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from jobpilot.tests.conftest import api_client
@@ -95,26 +97,32 @@ def test_walking_the_pages_yields_every_row_exactly_once(client):
 def test_skipped_jobs_sink_to_the_end_across_pages_not_within_each(client, session_factory):
     """A job you passed on stops holding a row among the ones still waiting.
 
-    Checked by walking pages, because the failure worth catching is the
-    half-fix: re-sorting each page after the fact puts a skipped row at the
-    bottom of *its* page and leaves page 1 one job short of undecided ones.
+    Two half-fixes are what this is written against. Re-sorting each page
+    after the fact puts a skipped row at the bottom of *its* page and leaves
+    page 1 one job short, hence the walk. And a sort key placed *after* the
+    date keys only breaks ties — so the two skipped jobs here are given the
+    newest dates on both clocks: with the shared fixture's all-null dates
+    every row ties and that misplaced key passes too.
     """
+    base = datetime(2026, 10, 1, tzinfo=timezone.utc)
     with session_factory() as s:
-        # The two that would otherwise come first and near the middle.
-        s.get(Job, "itviec:11").status = JobStatus.SKIPPED
-        s.get(Job, "itviec:07").status = JobStatus.SKIPPED
+        for i in range(12):
+            job = s.get(Job, f"itviec:{i:02d}")
+            job.posted_at = job.crawled_at = base + timedelta(days=i)
+        # Newest of all, on both clocks: by date alone they lead the list.
+        for job_id, days in (("itviec:11", 31), ("itviec:07", 30)):
+            job = s.get(Job, job_id)
+            job.status = JobStatus.SKIPPED
+            job.posted_at = job.crawled_at = base + timedelta(days=days)
         s.commit()
 
-    seen: list[str] = []
-    for offset in range(0, 12, 5):
-        seen.extend(j["id"] for j in _page(client, limit=5, offset=offset)["items"])
-
     live = [f"itviec:{i:02d}" for i in (10, 9, 8, 6, 5, 4, 3, 2, 1, 0)]
-    assert seen == live + ["itviec:11", "itviec:07"]
-    # Same rule under the other ordering — it is a property of the list, not of
-    # one sort key.
-    crawled = [j["id"] for j in _page(client, limit=12, order="crawled")["items"]]
-    assert crawled[-2:] == ["itviec:11", "itviec:07"]
+    for order in ("posted", "crawled"):
+        seen: list[str] = []
+        for offset in range(0, 12, 5):
+            page = _page(client, limit=5, offset=offset, order=order)
+            seen.extend(j["id"] for j in page["items"])
+        assert seen == live + ["itviec:11", "itviec:07"], order
 
 
 def test_filtering_to_skipped_still_finds_them(client, session_factory):

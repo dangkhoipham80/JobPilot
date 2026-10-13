@@ -21,8 +21,8 @@ export const jobs = ns({
     title: "Jobs",
     /** Everything the filters matched, not just this page. */
     matching: "{count} matching",
-    orderCrawled: "most recently crawled first",
-    orderPosted: "newest postings first",
+    orderCrawled: "most recently crawled first, skipped ones last",
+    orderPosted: "newest postings first, skipped ones last",
 
     // Banner shown when the list is narrowed to one crawl run. Split around the
     // bold run number so both languages can put it where their grammar wants.
@@ -159,8 +159,8 @@ export const jobs = ns({
   vi: {
     title: "Việc làm",
     matching: "{count} tin khớp",
-    orderCrawled: "crawl gần đây nhất trước",
-    orderPosted: "tin đăng mới nhất trước",
+    orderCrawled: "crawl gần đây nhất trước, tin đã bỏ qua xuống cuối",
+    orderPosted: "tin đăng mới nhất trước, tin đã bỏ qua xuống cuối",
 
     runFilterPrefix: "Chỉ hiện những tin mà",
     runFilterCrawl: "crawl #{id}",
