@@ -21,8 +21,9 @@ export const jobs = ns({
     title: "Jobs",
     /** Everything the filters matched, not just this page. */
     matching: "{count} matching",
-    orderCrawled: "most recently crawled first",
-    orderPosted: "newest postings first",
+    orderCrawled: "newest crawl day first, best match within the day, skipped ones last",
+    orderMatch: "best match first, skipped ones last",
+    orderPosted: "newest postings first, skipped ones last",
 
     // Banner shown when the list is narrowed to one crawl run. Split around the
     // bold run number so both languages can put it where their grammar wants.
@@ -41,6 +42,18 @@ export const jobs = ns({
     window24h: "Last 24h",
     window7d: "Last 7 days",
     window30d: "Last 30 days",
+    // Bands are half-open on the API side (50% is in "50–74%", 75% is not),
+    // so the four of them add up to the whole list.
+    matchTitle: "Match score band",
+    matchAny: "Any match",
+    match75: "Match 75%+",
+    match50: "Match 50–74%",
+    match25: "Match 25–49%",
+    match0: "Match under 25%",
+    sortTitle: "Sort order",
+    sortCrawled: "Sort: crawl day, then match",
+    sortMatch: "Sort: best match",
+    sortPosted: "Sort: newest posting",
     freshOnly: "Fresh",
     clear: "Clear",
 
@@ -159,8 +172,10 @@ export const jobs = ns({
   vi: {
     title: "Việc làm",
     matching: "{count} tin khớp",
-    orderCrawled: "crawl gần đây nhất trước",
-    orderPosted: "tin đăng mới nhất trước",
+    orderCrawled:
+      "ngày crawl mới nhất trước, trong ngày thì độ khớp cao trước, tin đã bỏ qua xuống cuối",
+    orderMatch: "độ khớp cao nhất trước, tin đã bỏ qua xuống cuối",
+    orderPosted: "tin đăng mới nhất trước, tin đã bỏ qua xuống cuối",
 
     runFilterPrefix: "Chỉ hiện những tin mà",
     runFilterCrawl: "crawl #{id}",
@@ -176,6 +191,16 @@ export const jobs = ns({
     window24h: "24h qua",
     window7d: "7 ngày qua",
     window30d: "30 ngày qua",
+    matchTitle: "Khoảng độ khớp",
+    matchAny: "Mọi độ khớp",
+    match75: "Khớp từ 75%",
+    match50: "Khớp 50–74%",
+    match25: "Khớp 25–49%",
+    match0: "Khớp dưới 25%",
+    sortTitle: "Thứ tự sắp xếp",
+    sortCrawled: "Xếp: ngày crawl → độ khớp",
+    sortMatch: "Xếp: độ khớp cao nhất",
+    sortPosted: "Xếp: tin đăng mới nhất",
     // Not "fresher" — that is a seniority level in this same UI.
     freshOnly: "Tin mới",
     clear: "Xoá lọc",

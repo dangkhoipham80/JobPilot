@@ -305,7 +305,11 @@ export interface JobsQuery {
   run_id?: number;
   /** ISO timestamp — only jobs crawled at or after it. */
   crawled_after?: string;
-  order?: "posted" | "crawled";
+  /** Match score band, half-open: `match_min` <= score < `match_below`. */
+  match_min?: number;
+  match_below?: number;
+  /** `crawled` (the API default) is crawl day first, then match within it. */
+  order?: "posted" | "crawled" | "match";
   limit?: number;
   offset?: number;
 }

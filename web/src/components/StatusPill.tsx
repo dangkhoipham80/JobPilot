@@ -8,8 +8,16 @@ import { cn } from "@/lib/utils";
 // The mid-stage hues are literal hex rather than theme tokens, so they need an
 // explicit dark variant: a colour picked for contrast against white paper is
 // unreadable on a near-black surface.
+//
+// DISCOVERED and SKIPPED used to be two grey outlines, told apart only by a
+// strikethrough at 70% opacity — and that is the pair a Jobs list actually
+// shows, since nearly every row is one or the other. DISCOVERED now has a hue
+// of its own (a cyan between REVIEW's blue and APPROVED's green; 5.2:1 on the
+// light surface, 8.4:1 on the dark one). SKIPPED stays grey because it is the
+// one state with nothing left to do, but hollow and dashed, and at full
+// `ink-muted`: at 70% the label measured 2.9:1 light and 3.7:1 dark.
 const STYLES: Record<JobStatus, string> = {
-  DISCOVERED: "border-ink/15 text-ink-muted",
+  DISCOVERED: "border-[#1493ad]/40 text-[#0c6f85] bg-[#1493ad]/10 dark:text-[#6fcbe0]",
   SHORTLISTED: "border-accent/40 text-accent bg-accent/10",
   TAILORING: "border-[#4a3aa7]/40 text-[#5b4bd0] bg-[#4a3aa7]/10 dark:text-[#a99cf0]",
   REVIEW: "border-[#2a78d6]/40 text-[#2a78d6] bg-[#2a78d6]/10 dark:text-[#79b0f0]",
@@ -17,7 +25,7 @@ const STYLES: Record<JobStatus, string> = {
   SUBMITTING: "border-[#eda100]/50 text-[#a97600] bg-[#eda100]/10 dark:text-[#e8bb4e]",
   SUBMITTED: "border-good/40 text-good bg-good/10",
   FAILED: "border-critical/40 text-critical bg-critical/10",
-  SKIPPED: "border-ink/10 text-ink-muted/70 line-through",
+  SKIPPED: "border-dashed border-ink/25 text-ink-muted line-through",
 };
 
 export function StatusPill({ status, className }: { status: JobStatus; className?: string }) {

@@ -2385,3 +2385,57 @@ error" phía trên thành "cả phase không có".
 
 Chưa làm (nit của vòng 2, cố ý để lại): đi khỏi rồi quay lại `/cv` giữa lượt đọc thì kết quả bị bỏ
 mà không có dòng nào báo.
+
+## Fix jobs-list — trạng thái nhìn không ra, cột Vị trí quá rộng, tin đã bỏ qua vẫn nằm đầu (2026-10-13)
+
+User mở `/jobs` ở dark mode và báo ba thứ, cả ba đều đúng khi chụp lại:
+
+- **Hai trạng thái mà danh sách thật sự hiển thị thì giống hệt nhau.** `StatusPill` có 9 kiểu,
+  nhưng 448/452 tin là `DISCOVERED`, và thứ user vừa tạo thêm là `SKIPPED` — đúng hai kiểu duy nhất cùng là
+  viền xám, khác nhau một nét gạch ở opacity 70% (đo: **2.9:1** light, **3.7:1** dark). Bảy màu
+  kia đẹp nhưng không ai thấy. `DISCOVERED` giờ có hue riêng (cyan, 5.2:1 / 8.4:1); `SKIPPED` vẫn
+  xám vì là trạng thái hết việc, nhưng viền đứt + `ink-muted` đủ đậm, và tiêu đề của dòng đó lùi
+  về `ink-muted`.
+- **Cột Vị trí là `w-full`** nên nuốt mọi pixel thừa: màn 1680px thì tiêu đề cách trạng thái của
+  chính nó ~700px. Giờ là `w-[38%]`, chữ **xuống dòng** thay vì `truncate` (user: không được để
+  "…"), sàn `min-w-[12rem]`, và bảng cuộn ngang trong card khi hẹp hơn sàn — bản đầu để sàn 15rem
+  làm cột Thao tác bị card cắt mất 11px ở 1180px, chỉ thấy khi chụp.
+- **Tin đã bỏ qua xuống cuối, ở API chứ không ở trang.** `list_jobs` thêm khoá sắp xếp *đầu tiên*
+  `status == SKIPPED`. Sắp lại từng trang ở frontend là nửa-fix: tin bỏ qua xuống cuối *trang của
+  nó* và trang 1 vẫn thiếu một chỗ. Lọc `status=SKIPPED` vẫn ra đủ — chìm không phải là ẩn.
+
+Thật: gọi `list_jobs` của worktree trên Postgres (452 tin, 2 tin SKIPPED) — đi hết các trang ở cả
+hai order: 452 dòng, 452 id khác nhau, 2 tin SKIPPED nằm đúng hai dòng cuối. Lần kiểm đầu chạy
+nhầm code của checkout chính (`python -` đặt cwd lên đầu `sys.path`, thắng cả `PYTHONPATH`) và
+báo "không ở cuối" — đúng với code cũ; in `inspect.getsourcefile` ra mới thấy mình đang đo cái gì.
+
+**Thêm trong cùng PR (user yêu cầu sau khi xem bản đầu): xếp theo độ khớp + lọc theo khoảng.**
+`GET /jobs` có ba `order`; mặc định đổi từ `posted` sang `crawled` = **ngày crawl ↓ → độ khớp ↓**,
+`match` = độ khớp ↓ toàn bộ. Thêm `match_min` / `match_below` (khoảng nửa-mở). Trang Jobs có hai
+dropdown mới thay cho logic cũ tự đổi order khi bật lọc thời gian. Luật: `jobpilot/api/CLAUDE.md`.
+
+- Thật: dựng backend + bundle của worktree ở `:8001` trên Postgres thật (476 tin, chỉ GET). Mặc
+  định: tin 100% của hôm nay đứng đầu; `order=match`: điểm giảm dần qua các ngày; khoảng 50–74%:
+  **83 tin**, đúng bằng số tin `match_score = 0.5` đếm thẳng trong DB. 0 response ≥ 400.
+- Tự gây: sau khi thử đột biến mình hoàn tác bằng `git checkout -- <file>` trong lúc bản vá
+  backend **chưa commit** — mất luôn bản vá, phải áp lại. Commit trước, đột biến sau.
+- Lộ ra khi nhìn màn hình, **chưa sửa** (là việc của crawler): tiêu đề VietnamWorks lưu nguyên
+  thực thể HTML — `Java Developer (&gt;5 YOE)`.
+
+Review gate **vòng 1** (ba sửa đầu): **APPROVE**, hai finding đã sửa. (1) Test đầu **không ghim "khoá đầu tiên"**: fixture
+cho mọi dòng `posted_at`/`crawled_at` null nên dòng nào cũng hoà nhau, và reviewer đẩy
+`skipped_last` ra *sau* hai khoá ngày thì test vẫn xanh — trong khi trên Postgres thật tin SKIPPED
+quay lại vị trí 24–26/476. Test giờ cho hai tin SKIPPED ngày mới nhất ở cả hai cột. (2) Bấm nhầm
+"Bỏ qua" thì dòng nhảy sang trang cuối mà màn hình không nói gì; phụ đề giờ ghi "…, tin đã bỏ qua
+xuống cuối" ở cả hai ngôn ngữ.
+
+Review gate **vòng 2** (xếp + khoảng độ khớp): **APPROVE**, ba finding đã sửa. (1) Doc viết "API
+cũ từ chối tham số mới bằng 422" — chỉ đúng với `order=match`; `match_min` bị **bỏ qua im lặng**,
+trả 200 kèm danh sách không lọc. (2) "SKIPPED xuống cuối ở mọi order" chưa được ghim cho `match`.
+(3) Có từ trước nhưng giờ thành lựa chọn có nhãn: `posted_at DESC` trên Postgres là NULLS FIRST,
+nên "tin đăng mới nhất" mở đầu bằng 5 tin **không có ngày**; SQLite xếp ngược lại nên test không
+thấy. Giờ `.nulls_last()`. Còn lại, chưa sửa: nhãn khoảng làm tròn (0.745 hiện "75%" mà nằm ở
+"50–74%"; chỉ tin đã tailor mới có điểm lẻ), và `order`/khoảng nằm trong state nên chưa link được.
+
+Chưa làm (user nêu trong cùng buổi, là phase riêng): bỏ qua **kèm lý do** → gom lại → gợi ý chỉnh
+crawl. Hiện `skip` không ghi lý do và `match_score` không đọc hành vi của user.
