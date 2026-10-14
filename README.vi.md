@@ -295,7 +295,7 @@ jobpilot/
   tailor/     schema plan theo index · guardrail chống bịa · engine gọi model · diff
   apply/      cover letter · email (3 chốt) · chuyển giao cho portal · dispatcher
               followup.py (nhắc) · outcome.py (chuyện gì đã xảy ra) · inbox.py (đọc thư trả lời)
-  intake/     đọc JD dán vào · chấm độ khớp với CV
+  intake/     đọc JD dán vào (hoặc ảnh chụp tin) · chấm độ khớp với CV
   companies/  nhà tuyển dụng và liên hệ HR · gộp tên nhà tuyển dụng
   llm/        registry provider · engine theo từng việc · adapter schema · đo chi phí & chất lượng
   analytics/  facet thị trường, mỗi cái kèm nó đã thấy bao nhiêu phần của corpus

@@ -2598,3 +2598,77 @@ mất 87–137 giây. Đã sửa: (1) thiếu test cho "trang 1 toàn tiêu đ�
 keyword không rỗng, biến `"Java "` thành thứ loại luôn "JavaScript" — giờ chỉ bỏ entry rỗng;
 (3) docs nói "thêm một trang listing" trong khi dữ liệu của chính lượt đo cho thấy có thể hơn.
 
+## Phase intake-file — thêm job từ ảnh/PDF, và ghi nơi tìm thấy nó (2026-10-14)
+
+User đưa ví dụ một bài tuyển dụng trong group Facebook và muốn hai thứ ở form "Thêm job": ghi
+được **nguồn là Facebook**, và nhập được tin khi nó chỉ là **ảnh/PDF**. Luật: `jobpilot/intake/CLAUDE.md`
+§ "Tin là ảnh hoặc PDF" và § "Nguồn của job thêm tay".
+
+- **Ảnh → text, không phải ảnh → job.** Luật số một của intake là JD lưu xuống không bao giờ là
+  bản model kể lại. Một tấm ảnh thì không có bản dán nào, nên model được *chép* — vào ô mô tả, nơi
+  user so được với ảnh — rồi field được đọc từ text đó bằng đúng lượt gọi của một lần dán.
+- **PDF có text layer không qua model**: chữ của người đăng tốt hơn mọi bản chép.
+- **Nguồn là danh sách đóng, id không đổi theo nguồn.** `jobs.source` nhận `facebook`/`linkedin`/
+  `zalo`, id vẫn `manual:<native>` để dán lại không sinh row mới và để biết job nào là thêm tay.
+
+### Chạy thật
+
+- Model thật trên một bài đăng **bịa** (ảnh chụp kiểu mạng xã hội + PDF): chi tiết ở
+  `jobpilot/intake/CLAUDE.md`. Lỗi duy nhất lộ ra: `|` bị đọc thành `l`, sửa bằng một dòng prompt.
+- Trình duyệt, build của worktree + SQLite tạm: URL facebook/linkedin tự chọn nguồn, user đã chọn
+  thì URL không đè; ô có chữ gõ tay thì nút file khoá; PDF → note "không có AI nào viết" → field
+  được điền; ảnh thay được bản đọc PDF còn nguyên → note "AI đã chép" + link bản gốc → text trong ô
+  bằng text nguồn → lưu → row `source=facebook`, id `manual:…`, `description_md` bằng đúng text
+  trong ô; bộ lọc nguồn ở `/jobs` có thêm "Facebook". 0 lỗi console, 0 response ≥ 400.
+- Đột biến (bỏ qua text layer; dán lại reset nguồn; cho PATCH nguồn job crawl; id đi theo nguồn;
+  nhận bản chép rỗng; bỏ sàn 200 ký tự của layer) — cái nào cũng có test đỏ.
+
+### Review gate (intake-file) — CHANGES REQUESTED, hai blocker
+
+Cả hai là **dữ liệu sai mà báo thành công**, và cả hai chỉ lộ vì reviewer chạy probe thay vì đọc diff:
+
+- **`not_seen` giả.** Job dán tay ghi `linkedin` bị báo "có thể đã bị gỡ" sau hai lượt alert:
+  `get_job` coi `source` là khoá crawler. Trước phase này source luôn là `manual` nên không có
+  lượt nào để so; chính việc cho chọn nguồn mở ra lỗi.
+- **Hai bài Facebook ghi đè nhau.** `_native_id` cắt query rồi lấy segment cuối, mà Facebook để
+  danh tính bài trong query: trình xem ảnh ra `photo`, link thông báo ra id của *group*,
+  `permalink.php` ra `permalink-php`. Lỗi có sẵn từ trước, nhưng tới giờ mới có lý do để ai đó
+  dán URL Facebook vào ô đó.
+
+Sửa thêm theo finding: sàn text layer tính theo **từng trang** (trang poster không còn núp sau
+trang caption); luật dedup cùng-board bỏ qua row thêm tay; `/market` thấy nguồn của job thêm tay;
+ô mô tả bị khoá trong lúc đang đọc (gõ trong lúc chờ từng bị thay sạch); dán clipboard có cả text
+lẫn ảnh thì lấy text; câu từ chối file sai loại thôi chỉ cách nhập *CV*. Mỗi cái có test, và bảy
+đột biến tương ứng đều đỏ — đột biến thứ bảy (địa chỉ group) lúc đầu **không** đỏ vì lưới
+`dedup_key` che mất, nên có thêm một test ghim đúng thứ luật đó bảo vệ: job không được mang id của
+cái group.
+
+**Vòng hai — vẫn CHANGES REQUESTED, một blocker, nằm trong chính lưới vừa viết.** Lưới "id yếu chỉ
+dùng khi cùng tin" so bằng `dedup_key`, khoá *cross-board* vốn bỏ cấp bậc và phần trong ngoặc — nên
+"Junior …" và "Senior …" của cùng công ty trên cùng một trang careers vẫn đè nhau; và số bài
+Facebook được coi là "mạnh" trong khi một bài thường liệt kê nhiều vị trí. Giờ chỉ số job LinkedIn
+(kể cả `currentJobId`) là mạnh; mọi id khác phải qua phép so **chặt** (`_as_listed`). Đây là lần
+thứ hai trong một tuần cùng một nhầm lẫn — PR #52 đã chốt rằng khoá cross-board không dùng được khi
+không có "house style" thứ hai để tha, và mình lại với lấy đúng khoá đó vì nó có sẵn.
+Sửa kèm: URL mạng xã hội thiếu scheme; `fbid` toàn ký tự rác không còn thành id.
+
+**Vòng ba — APPROVE.** Reviewer chỉ thêm một ca đè *có từ trước* ở đường lùi `slug(company-title)`
+(tên công ty dài lấp đầy 80 ký tự của slug; tiêu đề không phải chữ Latin chuẩn hoá về rỗng). Không
+chặn push, nhưng sửa chỉ vài dòng nên làm luôn: đường lùi cũng bị hỏi "row này có phải tin đang
+lưu không", lệch thì id gắn digest. Phần này **không** nằm trong phạm vi approval — nó được giữ
+bởi test và hai đột biến, không phải bởi một vòng review nữa.
+
+Bài học: thêm một giá trị mới cho một cột cũ (`source`) là đổi nghĩa của cột với **mọi** chỗ đang
+đọc nó. Mình đã grep các chỗ đọc và kết luận "chuỗi nào cũng chạy được" — đúng về kiểu dữ liệu, sai
+về ý nghĩa: ba chỗ trong số đó ngầm hiểu `source` là "board mà crawler đi qua".
+
+### Chưa làm / chưa kiểm
+
+- Ảnh chụp bằng điện thoại, poster chữ cách điệu, upload nhiều trang: chưa đo.
+- Chữ nằm trong ảnh trên một trang PDF vốn đủ chữ: layer không có, form chỉ cảnh báo.
+- Clipboard thật của Office/Excel chưa thử; luật "có text thì lấy text" suy từ cách các app đó hay
+  đặt clipboard.
+- Chỉ `claude_cli` được gọi thật.
+- Không có nút sửa nguồn trên trang job (API `PATCH` đã nhận) — muốn đổi thì dán lại tin và chọn nguồn.
+- Chưa có logo Facebook/Zalo; màu monogram lấy theo hash nên có thể trùng màu một board khác.
+

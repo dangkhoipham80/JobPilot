@@ -117,7 +117,9 @@ class JobStatus(str, enum.Enum):
 class Job(Base):
     __tablename__ = "jobs"
 
-    # id = "<source>:<native_id>" — dedup key (PLAN.md §3.1).
+    # id = "<source>:<native_id>" — dedup key (PLAN.md §3.1). One exception: a
+    # job added by hand is always "manual:<native_id>", whatever its `source`
+    # says about where it was found (`crawler/types.is_hand_added`).
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     source: Mapped[str] = mapped_column(String(32), index=True)
     url: Mapped[str] = mapped_column(Text, default="")

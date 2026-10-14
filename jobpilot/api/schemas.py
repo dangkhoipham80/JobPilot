@@ -25,6 +25,15 @@ assert set(WORK_MODES) | {""} == set(WorkModeStr.__args__), (
     "WORK_MODES and WorkModeStr disagree — update both or derive one from the other"
 )
 
+#: Where a posting added by hand was found. Closed for the reason ``WorkModeStr``
+#: is: this becomes ``jobs.source``, the column every per-source chart groups
+#: by, and free text there splits one place into "fb", "Facebook" and "facebook
+#: group". ``manual`` is the member for "somewhere else" — it is what every
+#: hand-added job was before this list existed. Proper nouns only, so the names
+#: need no translation (``web/src/lib/labels.ts``).
+HandSourceStr = Literal["manual", "facebook", "linkedin", "zalo"]
+HAND_SOURCES: tuple[str, ...] = HandSourceStr.__args__
+
 #: Rows per request when the caller doesn't say.
 DEFAULT_PAGE_SIZE = 25
 #: Hard ceiling. A caller asking for more gets a 422, not a slow success — an
@@ -417,6 +426,10 @@ class JobIn(BaseModel):
     """
 
     url: str = ""
+    #: Where the user found it. None = not said: a new job is then ``manual``,
+    #: and re-pasting an existing one leaves the source it already has alone —
+    #: a client that predates this field must not reset it.
+    source: HandSourceStr | None = None
     title: str
     company: str
     location: str | None = None
@@ -529,6 +542,29 @@ class IntakeIn(BaseModel):
     url: str = ""
 
 
+class IntakeFileIn(BaseModel):
+    """A posting as page images or a PDF — a screenshot of a post, a poster."""
+
+    files: list[CvImportFileIn]
+
+
+class IntakeFileOut(BaseModel):
+    """The text of an uploaded posting. **Not saved**, and no fields read yet.
+
+    ``text`` goes into the form's description box, where the user can hold it
+    against the picture; ``POST /jobs/intake`` then reads the fields from it
+    exactly as it does for a paste.
+    """
+
+    text: str
+    #: True when a model typed the text out of the file — proof-read it. False
+    #: when it is the PDF's own text layer, which no model touched.
+    transcribed: bool
+    #: The model's notes on what it could not read, in the posting's language.
+    unreadable: list[str] = Field(default_factory=list)
+    files: list[CvImportFileOut] = Field(default_factory=list)
+
+
 class IntakeOut(BaseModel):
     """Fields read out of a paste — a filled-in form, not a saved job.
 
@@ -575,6 +611,9 @@ class JobPatch(BaseModel):
     salary: str | None = None
     level: str | None = None
     url: str | None = None
+    #: Only for a job added by hand; a crawled job's source is a fact about
+    #: where it was crawled, and the route refuses to rewrite it.
+    source: HandSourceStr | None = None
     description_md: str | None = None
     skills: list[str] | None = None
     work_mode: WorkModeStr | None = None

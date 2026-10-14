@@ -24,6 +24,7 @@ import type {
   FitReport,
   HrContact,
   HrContactInput,
+  JdFileReading,
   JdIntake,
   Job,
   JobDetail,
@@ -119,6 +120,11 @@ export const api = {
      crawl would park this behind for minutes. */
   readJd: (text: string, url = "") =>
     req<JdIntake>("/jobs/intake", { method: "POST", body: JSON.stringify({ text, url }) }),
+  /* Get the *text* out of a posting uploaded as images or a PDF — a screenshot
+     of a post, a hiring poster. Saves nothing and reads no fields: the text goes
+     into the form's description box and `readJd` then reads it like any paste. */
+  readJdFile: (files: { name: string; data: string }[]) =>
+    req<JdFileReading>("/jobs/intake/file", { method: "POST", body: JSON.stringify({ files }) }),
   /* Score a saved job against the Master CV. Advisory: it never edits the CV
      and never feeds the tailor, so it is safe to run on anything, at any stage.
      The result is stored on the job and comes back on `job()` afterwards. */

@@ -18,7 +18,15 @@ from sqlalchemy.orm import Session
 
 from jobpilot import llm
 from jobpilot.api.deps import get_db, require_token
-from jobpilot.api.schemas import FitOut, IntakeIn, IntakeOut, JdSectionsOut
+from jobpilot.api.schemas import (
+    FitOut,
+    IntakeFileIn,
+    IntakeFileOut,
+    IntakeIn,
+    IntakeOut,
+    JdSectionsOut,
+)
+from jobpilot.cv import importer as uploads
 from jobpilot.intake import service
 from jobpilot.intake.engine import IntakeEngine, IntakeError, default_engine
 
@@ -77,6 +85,33 @@ def read_paste(
         language=extract.language,
         flags=result.flags,
         notes=result.notes,
+    )
+
+
+@router.post("/intake/file", response_model=IntakeFileOut)
+def read_file(
+    body: IntakeFileIn,
+    engine: IntakeEngine = Depends(get_engine),
+) -> IntakeFileOut:
+    """Get the text out of a posting uploaded as images or a PDF. Saves nothing.
+
+    Text only — the fields are read from it by ``POST /jobs/intake``, the same
+    call a paste makes, once the text is in the form. Two requests rather than
+    one so that what gets stored as the job's description is what the user saw
+    in the box, not something that went from a picture to a row unseen.
+    """
+    try:
+        files = uploads.decode_uploads([(f.name, f.data) for f in body.files])
+        reading = service.read_files(files, engine)
+    except (uploads.CvImportRefused, service.IntakeRefused) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except IntakeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return IntakeFileOut(
+        text=reading.text,
+        transcribed=reading.transcribed,
+        unreadable=reading.unreadable,
+        files=reading.files,
     )
 
 

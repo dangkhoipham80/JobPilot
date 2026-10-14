@@ -26,6 +26,9 @@ const SOURCE_NAMES: Record<string, string> = {
   greenhouse: "Greenhouse",
   lever: "Lever",
   topdev: "TopDev",
+  // Not boards anyone crawls: where a job added by hand was found.
+  facebook: "Facebook",
+  zalo: "Zalo",
 };
 
 /**

@@ -27,8 +27,8 @@ from typing import Protocol
 
 from jobpilot.cv.schema import CvDocument
 from jobpilot.intake import prompt as prompts
-from jobpilot.intake.schema import FitReport, JdExtract, JdSections
-from jobpilot.llm.base import Completion, LlmError, StructuredClient
+from jobpilot.intake.schema import FitReport, JdExtract, JdSections, JdTranscript
+from jobpilot.llm.base import Attachment, Completion, LlmError, StructuredClient
 from jobpilot.llm.usage import call_log
 from jobpilot.store.models import Job
 
@@ -43,6 +43,8 @@ class IntakeEngine(Protocol):
     def extract(self, text: str, url: str = "") -> JdExtract: ...
 
     def sections(self, text: str) -> JdSections: ...
+
+    def transcribe(self, files: list[Attachment]) -> JdTranscript: ...
 
     def assess(self, master: CvDocument, job: Job) -> FitReport: ...
 
@@ -85,6 +87,29 @@ class ModelIntakeEngine:
             usage.succeeded()
             return result
 
+    def transcribe(self, files: list[Attachment]) -> JdTranscript:
+        # Its own name in `llm stats`: a picture costs several times what a
+        # paste does, and folding the two together would hide which one a
+        # sudden bill came from.
+        with call_log("intake_file") as usage:
+            try:
+                completion: Completion[JdTranscript] = self.client.structured(
+                    system=prompts.transcribe_system_prompt(),
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompts.transcribe_user_prompt(len(files)),
+                            "attachments": files,
+                        }
+                    ],
+                    schema=JdTranscript,
+                )
+            except LlmError as exc:
+                raise IntakeError(str(exc)) from exc
+            result = usage.add_from(completion)
+            usage.succeeded()
+            return result
+
     def assess(self, master: CvDocument, job: Job) -> FitReport:
         with call_log("intake", job_id=job.id) as usage:
             completion: Completion[FitReport] = self._ask(
@@ -102,6 +127,8 @@ class FixtureIntakeEngine:
     extracted: JdExtract | None = None
     parsed: JdSections | None = None
     report: FitReport | None = None
+    transcript: JdTranscript | None = None
+    transcribe_calls: list[list[Attachment]] = field(default_factory=list)
     extract_calls: list[tuple[str, str]] = field(default_factory=list)
     section_calls: list[str] = field(default_factory=list)
     assess_calls: list[str] = field(default_factory=list)
@@ -117,6 +144,12 @@ class FixtureIntakeEngine:
         if self.parsed is None:
             raise IntakeError("fixture engine has no sections answer configured")
         return self.parsed
+
+    def transcribe(self, files: list[Attachment]) -> JdTranscript:
+        self.transcribe_calls.append(files)
+        if self.transcript is None:
+            raise IntakeError("fixture engine has no transcript configured")
+        return self.transcript
 
     def assess(self, master: CvDocument, job: Job) -> FitReport:
         self.assess_calls.append(job.id)

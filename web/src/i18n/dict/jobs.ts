@@ -110,12 +110,26 @@ export const jobs = ns({
     addJob: "Add job",
     addJobTitle: "Add a job by hand",
     addJobIntro:
-      "For postings JobPilot can't crawl — LinkedIn's robots.txt forbids it. Paste the description too, or the tailor has nothing to work from.",
+      "For postings JobPilot can't crawl — LinkedIn's robots.txt forbids it, and a post in a Facebook or Zalo group is nobody's to crawl. Paste the description, or upload a screenshot of it; without one the tailor has nothing to work from.",
+    foundOn: "Found on",
+    foundElsewhere: "Somewhere else",
+    readFile: "From an image / PDF",
+    readFileBusy: "Reading the file…",
+    readFileFailed: "Could not read the file",
+    readFileBlocked:
+      "The description box holds text you typed or edited. Clear it first — a file reading replaces what is in the box.",
+    readFileTranscribed:
+      "The AI typed this text out of your file. Read it against the original before saving — a misread number becomes a requirement nobody set.",
+    readFileLayer:
+      "This is the PDF's own text, copied as is — no AI wrote it. Words that sit inside a picture in the PDF are not in it, and columns may have come out interleaved.",
+    readFileOriginal: "Original:",
+    readFilePage: "page {n}",
+    readFileUnreadable: "The AI noted what it could not read:",
     fieldTitle: "Job title *",
     fieldCompany: "Company *",
     fieldLocation: "Location",
     fieldSalary: "Salary",
-    addJobJdPlaceholder: "Paste the full job description here…",
+    addJobJdPlaceholder: "Paste the full job description here — or paste a screenshot of it…",
     addJobChannel: "Applies as external — you submit it yourself.",
     addJobFailed: "Could not add the job",
 
@@ -249,12 +263,26 @@ export const jobs = ns({
     addJob: "Thêm job",
     addJobTitle: "Thêm job bằng tay",
     addJobIntro:
-      "Dành cho tin JobPilot không crawl được — robots.txt của LinkedIn chặn. Nhớ dán cả mô tả, không thì tailor chẳng có gì để làm.",
+      "Dành cho tin JobPilot không crawl được — robots.txt của LinkedIn chặn, còn bài đăng trong group Facebook hay Zalo thì không ai được crawl. Dán mô tả, hoặc tải ảnh chụp tin lên; thiếu mô tả thì tailor chẳng có gì để làm.",
+    foundOn: "Tìm thấy ở",
+    foundElsewhere: "Nơi khác",
+    readFile: "Từ ảnh / PDF",
+    readFileBusy: "Đang đọc file…",
+    readFileFailed: "Không đọc được file",
+    readFileBlocked:
+      "Ô mô tả đang có chữ bạn gõ hoặc đã sửa. Xoá đi trước đã — bản đọc từ file sẽ thay toàn bộ nội dung trong ô.",
+    readFileTranscribed:
+      "AI đã chép phần chữ này từ file của bạn. Hãy so với bản gốc trước khi lưu — đọc nhầm một con số là thành một yêu cầu không ai đặt ra.",
+    readFileLayer:
+      "Đây là phần chữ của chính file PDF, lấy nguyên văn — không có AI nào viết. Chữ nằm trong ảnh của PDF thì không có ở đây, và các cột có thể bị xen vào nhau.",
+    readFileOriginal: "Bản gốc:",
+    readFilePage: "trang {n}",
+    readFileUnreadable: "AI ghi lại những chỗ nó không đọc được:",
     fieldTitle: "Tiêu đề công việc *",
     fieldCompany: "Công ty *",
     fieldLocation: "Địa điểm",
     fieldSalary: "Lương",
-    addJobJdPlaceholder: "Dán toàn bộ mô tả công việc vào đây…",
+    addJobJdPlaceholder: "Dán toàn bộ mô tả công việc vào đây — hoặc dán ảnh chụp tin…",
     addJobChannel: "Nộp theo kênh external — bạn tự nộp.",
     addJobFailed: "Không thêm được job",
 
