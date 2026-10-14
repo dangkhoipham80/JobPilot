@@ -803,6 +803,10 @@ export interface Settings {
     queries: string[];
     /** One Vietnamese city to hold ITviec/TopCV/VietnamWorks to. "" = every city. */
     city: string;
+    /** Where you want to work; empty = anywhere. */
+    places?: string[];
+    /** onsite / hybrid / remote to keep; empty = any. */
+    work_modes?: WorkMode[];
     rate_limit_seconds: [number, number];
   };
   sources: SourceSetting[];
@@ -1007,6 +1011,10 @@ export interface CrawlRequest {
   query?: string;
   sources?: string[];
   limit?: number;
+  /** Where to work, this run. Omitted = the saved default; [] = anywhere. */
+  places?: string[];
+  /** Work modes to keep, this run. Omitted = the saved default; [] = any. */
+  work_modes?: WorkMode[];
 }
 
 /** A past crawl setup, exactly what `POST /crawl` takes (`GET /crawl/recent`). */
@@ -1019,6 +1027,9 @@ export interface RecentCrawl {
   sources: string[] | null;
   /** null = the configured default. */
   limit: number | null;
+  /** null = recorded before these existed (ran with the saved default). */
+  places?: string[] | null;
+  work_modes?: WorkMode[] | null;
   inserted: number | null;
 }
 
@@ -1043,6 +1054,11 @@ export interface CrawlSetupInfo {
   /** What a crawl searches for when you type nothing. */
   default_query: string;
   jobs_per_site: number;
+  /** Saved "where and how" defaults the form starts from. */
+  places: string[];
+  work_modes: WorkMode[];
+  /** The one city the Vietnamese boards are held to when no place is chosen. */
+  city: string;
   sources: CrawlSource[];
 }
 

@@ -1123,4 +1123,9 @@ class CrawlRequest(BaseModel):
     # Subset of the sources enabled in Settings. None = all of them.
     sources: list[str] | None = None
     limit: int | None = Field(None, ge=1, le=200, description="jobs per site")
+    #: Where to work, this run only ("Ho Chi Minh", "Vietnam", "Remote"…).
+    #: None = the saved default (`crawl.places`); [] = anywhere.
+    places: list[str] | None = Field(None, max_length=12)
+    #: onsite / hybrid / remote, this run only. None = the saved default.
+    work_modes: list[Literal["onsite", "hybrid", "remote"]] | None = None
     no_robots: bool = False

@@ -346,3 +346,20 @@ riêng (`ats.locations`); feed remote thì không có.
   `request` được đọc ngược từ `query` + key của `sites`, `limit` = không biết (mặc định).
 - **Lịch tự động đọc `crawl.queries`**; rỗng thì giữ query cũ ghép từ 3 stack đầu (config cũ chạy y
   như trước — dù query đó dài tới mức TopCV trả 0).
+
+## Nơi làm và hình thức làm (`scope.py`, `crawl.places` / `crawl.work_modes`)
+
+Chọn trên form crawl (theo lượt) hoặc lưu làm mặc định cho crawl tự động. `None` trong request =
+dùng mặc định đã lưu; `[]` = ở đâu/hình thức nào cũng được.
+
+- **Thu hẹp lúc tìm, rồi lọc sau khi chuẩn hoá.** Board VN nhận **một** thành phố trong URL:
+  chọn đúng một thành phố VN ⇒ thành phố đó; chọn nhiều, "Vietnam" hay nơi ngoài nước ⇒ cả nước
+  (`board_city() == ""`) rồi lọc. Board công ty nhận cả danh sách làm `ats.locations`. Không chọn
+  nơi nào ⇒ `crawl.city` / `ats.locations` giữ nguyên như cũ.
+- **Không biết ≠ không khớp.** Chỉ tin **ghi rõ** nơi/hình thức khác mới bị lọc (đếm vào
+  `filtered`); tin không nhãn địa điểm hay không nói hình thức thì giữ — phần lớn corpus không bao
+  giờ ghi "hybrid", lọc theo im lặng là xoá trắng lượt crawl mà báo "lọc theo ý bạn".
+- So nơi bằng `ats.place_matches` (nguyên từ + cách viết thành phố VN) — không viết bộ so thứ hai.
+  "Remote" trong danh sách nơi = nhận tin remote dù nhãn ghi thành phố nào.
+- Request của mỗi lượt ghi `places`/`work_modes` vào `Run.stats.request`, nên "Crawl lại" chạy đúng
+  phạm vi cũ; lượt ghi trước khi có hai trường này đọc ra `None` = mặc định.

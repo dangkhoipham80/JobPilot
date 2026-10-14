@@ -68,6 +68,24 @@ class CrawlCfg(BaseModel):
     #: Minh", "hcm", "Hà Nội". Empty = every city. Company boards have their
     #: own scope (``ats.locations``); remote feeds have none.
     city: str = ""
+    #: Where you want to work — "Ho Chi Minh", "Ha Noi", "Vietnam", "Remote", or
+    #: a place abroad. Narrows the search where a source can be narrowed and
+    #: then keeps only postings that are there (or say nothing about where).
+    #: Empty = anywhere, and `city` / `ats.locations` apply as before.
+    places: list[str] = Field(default_factory=list)
+    #: onsite / hybrid / remote. Empty = any. A posting that does not state its
+    #: work mode is always kept (crawler/scope.py).
+    work_modes: list[str] = Field(default_factory=list)
+
+    @field_validator("work_modes")
+    @classmethod
+    def _known_modes(cls, value: list[str]) -> list[str]:
+        from jobpilot.crawler.normalize import WORK_MODES
+
+        bad = [m for m in value if m not in WORK_MODES]
+        if bad:
+            raise ValueError(f"crawl.work_modes: {bad} — use {list(WORK_MODES)}")
+        return value
 
     @field_validator("city")
     @classmethod

@@ -57,6 +57,26 @@ export const runs = ns({
     limitSlow: "(slow)",
 
     crawlNow: "Crawl now",
+    placesTitle: "Where to work",
+    place_0: "Ho Chi Minh City",
+    place_1: "Ha Noi",
+    place_2: "Da Nang",
+    place_3: "Anywhere in Vietnam",
+    place_4: "Remote",
+    placeOther: "Another place, e.g. Singapore",
+    placeAdd: "Add",
+    placesHint:
+      "Boards that can be searched by city are asked for these; afterwards a posting that names another place is left out. One that names no place is kept.",
+    placesNone: "Anywhere.",
+    placesNoneCity: "Anywhere — the Vietnamese boards stay held to {city} (Settings).",
+    modesTitle: "How to work",
+    mode_onsite: "On-site",
+    mode_hybrid: "Hybrid",
+    mode_remote: "Remote",
+    modesHint:
+      "A posting that states another work mode is left out. Most postings don't say — those are kept.",
+    modesNone: "Any work mode.",
+    saveWhereHow: "Also save where and how as the default for scheduled crawls",
     crawlBlocked:
       "A crawl is already running. One at a time — a second would race the same sites and trip their rate limits.",
     crawlFailed: "Could not start the crawl",
@@ -136,6 +156,26 @@ export const runs = ns({
     limitSlow: "(chậm)",
 
     crawlNow: "Crawl ngay",
+    placesTitle: "Nơi làm việc",
+    place_0: "TP. Hồ Chí Minh",
+    place_1: "Hà Nội",
+    place_2: "Đà Nẵng",
+    place_3: "Toàn Việt Nam",
+    place_4: "Remote",
+    placeOther: "Nơi khác, vd. Singapore",
+    placeAdd: "Thêm",
+    placesHint:
+      "Trang nào tìm được theo thành phố thì hỏi đúng nơi này; sau đó tin ghi nơi khác bị lọc. Tin không ghi nơi làm thì vẫn giữ.",
+    placesNone: "Ở đâu cũng được.",
+    placesNoneCity: "Ở đâu cũng được — riêng ITviec/TopCV/VietnamWorks vẫn giới hạn ở {city} (Cài đặt).",
+    modesTitle: "Hình thức làm việc",
+    mode_onsite: "Tại văn phòng",
+    mode_hybrid: "Hybrid",
+    mode_remote: "Remote",
+    modesHint:
+      "Tin ghi rõ hình thức khác sẽ bị lọc. Phần lớn tin không ghi — những tin đó vẫn giữ.",
+    modesNone: "Hình thức nào cũng được.",
+    saveWhereHow: "Lưu nơi làm và hình thức này làm mặc định cho các lượt crawl tự động",
     crawlBlocked:
       "Đang có một crawl chạy rồi. Mỗi lần một cái thôi — chạy song song là hai bên đụng cùng site và dính rate limit.",
     crawlFailed: "Không khởi động được crawl",
