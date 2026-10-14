@@ -119,8 +119,15 @@ def _crawl_site(
         kept.append(nj)
 
     stats = persist_jobs(session, kept, dedup_days=dedup_days, now=now, run_id=run_id)
-    stats.fetched = len(raws)
-    stats.filtered = filtered
+    # Hits the scraper left out by title before spending the limit on them
+    # (`BaseScraper.search`). Counted in both, so the two numbers keep the
+    # meaning they had when this loop did all the filtering: `fetched` is every
+    # posting the crawl looked at, `filtered` is every one of those a rule
+    # dropped. Leaving them out would show the same board as "10 found, 0
+    # filtered" the day after it showed "10 found, 6 filtered".
+    early = scraper.titles_dropped
+    stats.fetched = len(raws) + early
+    stats.filtered = filtered + early
     log.info(
         "[%s] fetched=%d inserted=%d updated=%d dup=%d kept-for-jd=%d filtered=%d fresh=%d",
         scraper.source,

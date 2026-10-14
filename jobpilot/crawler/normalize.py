@@ -167,9 +167,19 @@ def title_excluded(title: str, exclude_keywords: list[str]) -> bool:
     Matched against the title only — matching full JD over-excludes (a Java role
     may list ".NET" as a nice-to-have). Seniority exclusions (Senior/Lead) live
     here too via ``config.crawl.exclude_keywords``.
+
+    A blank keyword is skipped. ``"" in title`` is true of every title, so one
+    empty entry in a hand-written ``config.local.yaml`` (Settings trims them
+    out) would exclude the whole crawl — and, now that scrapers ask this before
+    the limit, walk every board to its last page looking for a title that
+    passes.
+
+    Any other keyword is matched exactly as written, spaces included: ``"Java "``
+    excludes "Java Developer" and leaves "JavaScript Developer" alone, and
+    trimming it would quietly turn the one into the other.
     """
     t = (title or "").lower()
-    return any(kw.lower() in t for kw in exclude_keywords)
+    return any(kw.lower() in t for kw in exclude_keywords if kw and kw.strip())
 
 
 # --------------------------------------------------------------------------- #

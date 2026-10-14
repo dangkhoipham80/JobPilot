@@ -561,3 +561,54 @@ def test_the_page_memo_is_bounded(monkeypatch):
     # "a" fits and is served from memory; "b" would overflow, so it goes back
     # to the network every time — politely, but uncached.
     assert [e for e in net.events if e.startswith("GET")] == ["GET a", "GET b", "GET b"]
+
+
+def test_a_title_dropped_before_the_fetch_is_still_counted_as_seen_and_filtered(session_factory):
+    """The scraper now leaves an excluded title out before its detail page is
+    requested. ``fetched`` and ``filtered`` must say what they said when the
+    pipeline did that after the fetch: the same board, the same three postings
+    looked at, the same two dropped — not "2 found, 1 filtered" from one day to
+    the next. What changes is the request that is no longer made."""
+    pages = _pages()
+    asked: list[str] = []
+
+    def fetch(url: str) -> str:
+        asked.append(url)
+        return pages[url]
+
+    scraper = FixtureScraper(
+        pages, fetcher=fetch, rate_limiter=RateLimiter(0, 0), exclude_keywords=["Senior", "Lead"]
+    )
+    with session_factory() as db:
+        report = run_crawl([scraper], _cfg(), db, now=NOW)
+
+    assert "j/2" not in asked  # "Senior Java": ruled out by its listing title
+    assert report.totals.fetched == 3
+    assert report.totals.filtered == 2
+    assert report.totals.inserted == 1
+
+
+def test_the_pipeline_still_excludes_a_title_only_the_detail_page_shows(session_factory):
+    """The listing title is a first look, not the verdict. A card that reads
+    "Java Engineer" over a posting titled "Senior Java Engineer" passes the
+    scraper and is dropped here, as it always was."""
+    pages = {
+        SEARCH_URL: '<a class="job" href="j/1" data-id="1">Java Engineer</a>',
+        "j/1": _detail("Senior Java Engineer", "ACME", skills="Java"),
+    }
+    scraper = FixtureScraper(pages, rate_limiter=RateLimiter(0, 0), exclude_keywords=["Senior"])
+    with session_factory() as db:
+        report = run_crawl([scraper], _cfg(), db, now=NOW)
+    assert scraper.titles_dropped == 0
+    assert (report.totals.fetched, report.totals.filtered, report.totals.inserted) == (1, 1, 0)
+
+
+def test_the_exclude_list_reaches_every_scraper_the_registry_builds():
+    from jobpilot.config import SourceCfg
+    from jobpilot.crawler.registry import SCRAPERS, build_scrapers
+
+    cfg = _cfg()
+    cfg.sources = [SourceCfg(key=key, enabled=True) for key in SCRAPERS]
+    built = build_scrapers(cfg, respect_robots=False)
+    assert {s.source for s in built} == set(SCRAPERS)
+    assert all(s.exclude_keywords == ("Senior", "Lead") for s in built)

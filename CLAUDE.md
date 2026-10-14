@@ -208,9 +208,10 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | cv-import-text | **Dán text CV** vào cùng thẻ nhập: File *hoặc* text, text luôn được đối chiếu con số, nằm giữa thẻ `<cv_text>` để không bị đọc thành lệnh | `cv/reader.py`, `cv/importer.py`, `web/src/components/cv/ImportBox.tsx` |
 | ats-scope | **Board công ty lọc theo địa điểm** (`ats.locations`, nguyên từ, trước `limit`) + miễn cổng stack cho board đã khoanh vùng (`stack_gated`) | `crawler/ats.py`, `crawler/pipeline.py`, `jobpilot/crawler/CLAUDE.md` |
 | dedup-same-board | Dedup lớp 2 hết gộp hai tin **cùng board khác tiêu đề** (level/ngoặc chỉ được bỏ qua giữa hai board khác nhau) | `crawler/persist.py`, `crawler/text.py` |
+| title-before-limit | `crawl.exclude_keywords` lọc tiêu đề **trước** khi đếm `limit` và trước khi tải trang chi tiết; `fetched`/`filtered` giữ nguyên nghĩa | `crawler/base.py`, `crawler/pipeline.py`, `crawler/registry.py` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1213 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
+1226 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên
