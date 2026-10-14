@@ -2,8 +2,10 @@ import { useRef, useState } from "react";
 import {
   CircleCheck,
   CircleHelp,
+  ClipboardPaste,
   ExternalLink,
   FileUp,
+  Images,
   Loader2,
   TriangleAlert,
   X,
@@ -15,6 +17,7 @@ import { cn } from "@/lib/utils";
 import {
   IMPORT_TYPES,
   MAX_IMPORT_FILES,
+  MAX_IMPORT_TEXT_CHARS,
   UploadError,
   formatBytes,
   prepareImportFile,
@@ -22,11 +25,17 @@ import {
 } from "@/lib/upload";
 import type { CvImportResult } from "@/types";
 
-/** A draft that is sitting in the editor, with the files it was read from. */
+/** Where a reading came from. The draft notice words its claims by this: "in
+ *  the PDF's own text" is not a thing to say about a paste. */
+type ImportKind = "files" | "text";
+
+/** A draft that is sitting in the editor, with what it was read from. */
 export interface ImportedDraft {
   result: CvImportResult;
-  /** Object URLs of the uploaded files, so the original opens beside the draft.
-   *  Created here, revoked by CvStudio, which owns the draft's lifetime. */
+  kind: ImportKind;
+  /** Object URLs of the uploaded files — or of the pasted text, as one
+   *  nameless entry — so the original opens beside the draft. Created here,
+   *  revoked by CvStudio, which owns the draft's lifetime. */
   sources: { name: string; url: string }[];
 }
 
@@ -36,7 +45,8 @@ export function releaseDraft(draft: ImportedDraft): void {
 }
 
 /**
- * Read a CV off page images or a PDF into the editor (Master scope only).
+ * Read a CV off page images, a PDF or pasted text into the editor (Master
+ * scope only).
  *
  * This is the second place a model may put words on the Master CV, and the only
  * one with no text to hold them against: a photograph cannot be diffed. So the
@@ -45,6 +55,10 @@ export function releaseDraft(draft: ImportedDraft): void {
  * The three check states are worded as three different claims because they are:
  * "every number was found", "these were not", and "nothing could be checked".
  * Collapsing the last into silence would read as the first.
+ *
+ * A paste is the one source that always has text to compare with, so it never
+ * lands in the third state — but its numbers are all that is compared, and the
+ * notice says so: a model handed text can still file a line under the wrong job.
  */
 export function ImportBox({
   imported,
@@ -75,7 +89,9 @@ export function ImportBox({
 }) {
   const t = useT("cv");
   const input = useRef<HTMLInputElement>(null);
+  const [kind, setKind] = useState<ImportKind>("files");
   const [files, setFiles] = useState<File[]>([]);
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -109,19 +125,35 @@ export function ImportBox({
     }
   };
 
+  // Trimmed, as the server counts it — so the counter and the refusal agree.
+  const pasted = text.trim();
+  const tooLong = pasted.length > MAX_IMPORT_TEXT_CHARS;
+  const ready = kind === "text" ? pasted.length > 0 && !tooLong : files.length > 0;
+
   const read = async () => {
-    if (running.current || !files.length || blocked) return;
+    if (running.current || !ready || blocked) return;
     running.current = true;
     setBusy(true);
     setError(null);
     onStart();
     try {
+      if (kind === "text") {
+        const result = await api.importCv({ text: pasted });
+        // The paste as a file of its own, so "Original" opens it beside the
+        // draft exactly as it opens an upload. The charset is spelled out:
+        // without it a browser guesses, and guesses wrong for Vietnamese.
+        const blob = new Blob([pasted], { type: "text/plain;charset=utf-8" });
+        onDraft({ result, kind, sources: [{ name: "", url: URL.createObjectURL(blob) }] });
+        setText("");
+        return;
+      }
       const payload = await Promise.all(
         files.map(async (file) => ({ name: file.name, data: await readAsDataUri(file) })),
       );
-      const result = await api.importCv(payload);
+      const result = await api.importCv({ files: payload });
       onDraft({
         result,
+        kind,
         sources: files.map((file) => ({ name: file.name, url: URL.createObjectURL(file) })),
       });
       setFiles([]);
@@ -143,63 +175,120 @@ export function ImportBox({
         </CardTitle>
       </CardHeader>
       <CardBody className="pt-3">
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setOver(true);
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setOver(false);
-            if (!busy) void add(e.dataTransfer.files);
-          }}
-          className={cn(
-            "rounded-lg border border-dashed px-3 py-4 text-center transition-colors",
-            over ? "border-accent bg-accent/8" : "bg-surface",
-          )}
-        >
-          <input
-            ref={input}
-            type="file"
-            multiple
-            accept={IMPORT_TYPES.join(",")}
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) void add(e.target.files);
-              // Same file twice in a row must still fire `change`.
-              e.target.value = "";
-            }}
-          />
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
-            {t("importChoose")}
-          </Button>
-          <p className="mt-2 text-xs text-ink-muted">{t("importDropHint")}</p>
+        {/* Whatever is in the other tab stays there: switching is a way to
+            look, and losing six picked pages to it would be a punishment. */}
+        <div className="mb-3 inline-flex items-center gap-0.5 rounded-lg border p-0.5">
+          {(
+            [
+              { id: "files", label: t("importModeFiles"), icon: Images },
+              { id: "text", label: t("importModeText"), icon: ClipboardPaste },
+            ] as const
+          ).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={kind === id}
+              disabled={busy}
+              onClick={() => {
+                setKind(id);
+                setError(null);
+              }}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors disabled:opacity-60",
+                kind === id
+                  ? "bg-accent/12 text-ink"
+                  : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+              )}
+            >
+              <Icon size={14} /> {label}
+            </button>
+          ))}
         </div>
 
-        {files.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1">
-            {files.map((file, i) => (
-              <li
-                key={`${file.name}-${i}`}
-                className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs"
-              >
-                <span className="tabular-nums text-ink-muted">{i + 1}</span>
-                <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
-                <span className="shrink-0 tabular-nums text-ink-muted">{formatBytes(file.size)}</span>
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-label={t("importRemove", { name: file.name })}
-                  title={t("importRemove", { name: file.name })}
-                  onClick={() => setFiles(files.filter((_, j) => j !== i))}
-                  className="shrink-0 rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink disabled:opacity-50"
-                >
-                  <X size={13} />
-                </button>
-              </li>
-            ))}
-          </ul>
+        {kind === "text" ? (
+          <div>
+            <textarea
+              rows={9}
+              value={text}
+              disabled={busy}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={t("importTextPlaceholder")}
+              aria-label={t("importModeText")}
+              className="w-full resize-y rounded-lg border bg-surface px-3 py-2 text-sm leading-relaxed text-ink placeholder:text-ink-muted/70 focus:border-accent focus:outline-none disabled:opacity-60"
+            />
+            <p
+              className={cn(
+                "mt-1 text-xs tabular-nums",
+                tooLong ? "text-critical" : "text-ink-muted",
+              )}
+            >
+              {t(tooLong ? "importTextTooLong" : "importTextCount", {
+                count: pasted.length,
+                max: MAX_IMPORT_TEXT_CHARS,
+              })}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setOver(true);
+              }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOver(false);
+                if (!busy) void add(e.dataTransfer.files);
+              }}
+              className={cn(
+                "rounded-lg border border-dashed px-3 py-4 text-center transition-colors",
+                over ? "border-accent bg-accent/8" : "bg-surface",
+              )}
+            >
+              <input
+                ref={input}
+                type="file"
+                multiple
+                accept={IMPORT_TYPES.join(",")}
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) void add(e.target.files);
+                  // Same file twice in a row must still fire `change`.
+                  e.target.value = "";
+                }}
+              />
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>
+                {t("importChoose")}
+              </Button>
+              <p className="mt-2 text-xs text-ink-muted">{t("importDropHint")}</p>
+            </div>
+
+            {files.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1">
+                {files.map((file, i) => (
+                  <li
+                    key={`${file.name}-${i}`}
+                    className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs"
+                  >
+                    <span className="tabular-nums text-ink-muted">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
+                    <span className="shrink-0 tabular-nums text-ink-muted">{formatBytes(file.size)}</span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={t("importRemove", { name: file.name })}
+                      title={t("importRemove", { name: file.name })}
+                      onClick={() => setFiles(files.filter((_, j) => j !== i))}
+                      className="shrink-0 rounded p-0.5 text-ink-muted hover:bg-surface hover:text-ink disabled:opacity-50"
+                    >
+                      <X size={13} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
 
         <p className="mt-3 text-xs leading-relaxed text-ink-muted">
@@ -208,7 +297,7 @@ export function ImportBox({
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button onClick={read} disabled={!files.length || busy || blocked}>
+          <Button onClick={read} disabled={!ready || busy || blocked}>
             {busy && <Loader2 size={15} className="animate-spin" />}
             {busy ? t("importReading") : t("importRead")}
           </Button>
@@ -249,8 +338,9 @@ function DraftNotice({
   onDiscard: () => void;
 }) {
   const t = useT("cv");
-  const { result, sources } = draft;
+  const { result, sources, kind } = draft;
   const missing = result.unbacked_numbers;
+  const pasted = kind === "text";
 
   return (
     <div className="mt-4 rounded-lg border border-accent/40 bg-accent/5 p-3 text-xs leading-relaxed">
@@ -272,7 +362,8 @@ function DraftNotice({
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-ink underline decoration-ink-muted/50 underline-offset-2 hover:decoration-ink"
           >
-            {source.name || t("importPage", { n: i + 1 })} <ExternalLink size={11} />
+            {pasted ? t("importPastedName") : source.name || t("importPage", { n: i + 1 })}{" "}
+            <ExternalLink size={11} />
           </a>
         ))}
       </div>
@@ -287,14 +378,14 @@ function DraftNotice({
         <p className="mt-2.5 flex items-start gap-1.5 text-ink">
           <TriangleAlert size={14} className="mt-0.5 shrink-0 text-critical" />
           <span>
-            {t("importNumbersMissing")}{" "}
+            {t(pasted ? "importTextNumbersMissing" : "importNumbersMissing")}{" "}
             <span className="font-medium tabular-nums">{missing.join(", ")}</span>
           </span>
         </p>
       ) : (
         <p className="mt-2.5 flex items-start gap-1.5 text-ink">
           <CircleCheck size={14} className="mt-0.5 shrink-0 text-good" />
-          <span>{t("importNumbersFound")}</span>
+          <span>{t(pasted ? "importTextNumbersFound" : "importNumbersFound")}</span>
         </p>
       )}
 

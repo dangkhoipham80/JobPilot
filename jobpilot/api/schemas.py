@@ -272,9 +272,14 @@ class CvImportFileIn(BaseModel):
 
 
 class CvImportIn(BaseModel):
-    """Page images or a PDF of one CV, in reading order."""
+    """One CV: page images or a PDF in reading order, **or** its text pasted in.
 
-    files: list[CvImportFileIn]
+    One or the other. A draft read from both could not be checked against
+    either, which is the reason the route refuses the mix rather than merging.
+    """
+
+    files: list[CvImportFileIn] = Field(default_factory=list)
+    text: str = ""
 
 
 class CvImportFileOut(BaseModel):
@@ -296,10 +301,11 @@ class CvImportOut(BaseModel):
 
     document: CvDocument
     unreadable: list[str] = Field(default_factory=list)
-    #: True only when the upload was a PDF whose text layer could be compared
-    #: with the draft. False means "nothing was checked", never "nothing wrong".
+    #: True only when there was text to compare the draft with: a PDF's own text
+    #: layer, or a CV that was pasted as text. False means "nothing was
+    #: checked", never "nothing wrong".
     checked: bool = False
-    #: Numbers in the draft that the PDF's own text never states.
+    #: Numbers in the draft that that text never states.
     unbacked_numbers: list[str] = Field(default_factory=list)
     #: Stretches of the draft that the PDF will render as formatting (``~x~``,
     #: backticks, ``**x**``, ``[label](url)``) instead of printing as written.

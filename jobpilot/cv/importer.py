@@ -1,4 +1,4 @@
-"""Turn an uploaded CV — page images or a PDF — into a draft ``CvDocument``.
+"""Turn an uploaded CV — page images, a PDF or pasted text — into a draft ``CvDocument``.
 
 The model reads the file (``cv/reader.py``); everything here is what can be done
 *without* a model: deciding whether the upload is something a provider will
@@ -23,6 +23,9 @@ for refusal: text extraction has its own failures, and a tool that rewrote a
 right answer to match a wrong extraction would be inventing the error it claims
 to catch. An image has no such layer, so the answer there is ``checked=False`` —
 "nothing was checked", which must never be shown as "nothing was wrong".
+
+A CV pasted as text is the same check with nothing in between: the text *is* the
+second reading, so its numbers are always compared (``import_text``).
 """
 
 from __future__ import annotations
@@ -68,6 +71,14 @@ MAX_PDF_PAGES = 10
 
 IMAGE_TYPES: tuple[str, ...] = ("image/png", "image/jpeg", "image/webp")
 PDF_TYPE = "application/pdf"
+TEXT_TYPE = "text/plain"
+
+#: A pasted CV. The ceiling is the page limit above in characters — a dense page
+#: is about four thousand — and past it the paste is something else: a whole
+#: thread, a portfolio, the wrong tab. The floor is there because a read takes a
+#: minute and a model: a name and an email is under it, and no CV is.
+MAX_TEXT_CHARS = 40_000
+MIN_TEXT_CHARS = 100
 
 
 class CvImportRefused(ValueError):
@@ -132,7 +143,8 @@ def load_files(files: list[tuple[str, bytes]]) -> list[Attachment]:
         if kind is None:
             raise CvImportRefused(
                 f"{label} is not a PNG, JPEG, WebP or PDF — convert it first "
-                "(an iPhone HEIC photo, a Word file and a screenshot in TIFF all land here)"
+                "(an iPhone HEIC photo, a Word file and a screenshot in TIFF all land here; "
+                "a CV that is already text is pasted, or read with `cv read --text`)"
             )
         limit = MAX_PDF_BYTES if kind == PDF_TYPE else MAX_IMAGE_BYTES
         if len(data) > limit:
@@ -155,6 +167,41 @@ def load_files(files: list[tuple[str, bytes]]) -> list[Attachment]:
             f"the files add up to {_mb(total)}; the limit per import is {_mb(MAX_TOTAL_BYTES)}"
         )
     return out
+
+
+#: Every way a paste ends a line or a page. A form feed becomes a newline, not
+#: nothing: dropped, it would weld the last word of one page to the first of
+#: the next — and "2024" to "2025", which the number check would then miss.
+_LINE_BREAK = re.compile(r"\r\n|[\r\x0b\x0c\u0085\u2028\u2029]")
+
+#: What is left below U+0020 except tab and newline, plus DEL. None of it is
+#: text, and a NUL is refused outright by Postgres if it ever reached a saved CV.
+#: Replaced by a space rather than removed, for the reason a form feed becomes a
+#: newline: whatever stood between two numbers must go on standing between them.
+_CONTROL = re.compile(r"[\x00-\x08\x0e-\x1f\x7f]")
+
+
+def load_text(text: str) -> str:
+    """Validate a pasted CV and hand back what the model will be shown.
+
+    Line endings are made one kind and control characters dropped; nothing else
+    is touched. This string is also what the draft's numbers are checked
+    against, so it has to stay what the user pasted.
+    """
+    cleaned = _CONTROL.sub(" ", _LINE_BREAK.sub("\n", text)).strip()
+    if not cleaned:
+        raise CvImportRefused("no text was pasted")
+    if len(cleaned) > MAX_TEXT_CHARS:
+        raise CvImportRefused(
+            f"the text is {len(cleaned):,} characters; a CV import takes at most "
+            f"{MAX_TEXT_CHARS:,} — paste the CV alone"
+        )
+    if len(cleaned) < MIN_TEXT_CHARS:
+        raise CvImportRefused(
+            f"the text is {len(cleaned)} characters — too short to be a CV "
+            f"(at least {MIN_TEXT_CHARS})"
+        )
+    return cleaned
 
 
 # --------------------------------------------------------------------------- #
@@ -465,39 +512,80 @@ class CvImportResult:
     document: CvDocument
     #: The model's own notes on what it could not read.
     unreadable: list[str] = field(default_factory=list)
-    #: True when every file was a PDF with text on every page and that text was
-    #: compared with the draft. See ``text_layer`` for what this cannot rule out.
+    #: True when the draft's numbers were compared with a second reading: every
+    #: file a PDF with text on every page (see ``text_layer`` for what that
+    #: cannot rule out), or the source was pasted text.
     checked: bool = False
     unbacked_numbers: list[str] = field(default_factory=list)
     #: Stretches the PDF will render as formatting rather than print as written.
     markup: list[str] = field(default_factory=list)
-    #: What was actually sent, after sniffing: name, media type, size.
+    #: What was actually sent, after sniffing: name, media type, size. A pasted
+    #: CV is one nameless ``text/plain`` entry.
     files: list[dict] = field(default_factory=list)
 
 
-def import_cv(files: list[tuple[str, bytes]], reader: CvReader, base: CvDocument) -> CvImportResult:
-    """Read an uploaded CV into a draft document. Saves nothing."""
-    attachments = load_files(files)
-    read = reader.read(attachments)
+def _draft(read: CvRead, base: CvDocument) -> CvDocument:
     document = to_document(read, base)
     if not document.sections:
-        # A photo of something else, a blank scan, a page too blurred to read.
-        # Refusing beats handing back an empty editor that looks like a result.
+        # A photo of something else, a blank scan, a page too blurred to read, a
+        # paste that was a job advert. Refusing beats handing back an empty
+        # editor that looks like a result.
         raise CvImportRefused(
-            "nothing that reads as a CV was found in this upload"
+            "nothing that reads as a CV was found"
             + (f" — {'; '.join(read.unreadable)}" if read.unreadable else "")
         )
+    return document
 
-    layer = text_layer(attachments)
-    draft_chars = len(_draft_text(document))
-    checked = layer is not None and len(layer.strip()) >= draft_chars * _MIN_LAYER_SHARE
+
+def _result(
+    read: CvRead, document: CvDocument, *, layer: str | None, files: list[dict]
+) -> CvImportResult:
+    """``layer`` is the second reading the numbers are held against, or None."""
+    checked = layer is not None
     return CvImportResult(
         document=document,
         unreadable=_lines(read.unreadable),
         checked=checked,
         unbacked_numbers=unbacked_numbers(document, layer or "") if checked else [],
         markup=markup_hits(document),
+        files=files,
+    )
+
+
+def import_cv(files: list[tuple[str, bytes]], reader: CvReader, base: CvDocument) -> CvImportResult:
+    """Read an uploaded CV into a draft document. Saves nothing."""
+    attachments = load_files(files)
+    read = reader.read(attachments)
+    document = _draft(read, base)
+
+    layer = text_layer(attachments)
+    if layer is not None and len(layer.strip()) < len(_draft_text(document)) * _MIN_LAYER_SHARE:
+        layer = None
+    return _result(
+        read,
+        document,
+        layer=layer,
         files=[
             {"name": a.name, "media_type": a.media_type, "bytes": len(a.data)} for a in attachments
         ],
+    )
+
+
+def import_text(text: str, reader: CvReader, base: CvDocument) -> CvImportResult:
+    """Read a CV pasted as text into a draft document. Saves nothing.
+
+    Always ``checked``: the paste is itself the text the draft's numbers are
+    looked up in, so there is no share-of-the-draft threshold to pass — that one
+    exists for a PDF layer that may not be where the draft came from, and this
+    text is, by construction. What it still cannot tell is the same as for a
+    PDF: a number that is in the text but was moved to the wrong entry.
+    """
+    source = load_text(text)
+    read = reader.read_text(source)
+    document = _draft(read, base)
+    return _result(
+        read,
+        document,
+        layer=source,
+        files=[{"name": "", "media_type": TEXT_TYPE, "bytes": len(source.encode("utf-8"))}],
     )

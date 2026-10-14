@@ -124,11 +124,21 @@ export const cv = ns({
     // words on the Master CV with no text to check them against. The three
     // `importNumbers*` / `importUnchecked` lines are three different claims;
     // do not let a translation soften "nothing was checked" into reassurance.
-    importTitle: "Import from an image or PDF",
+    importTitle: "Import from an image, PDF or text",
+    importModeFiles: "Image / PDF",
+    importModeText: "Paste text",
+    importTextPlaceholder:
+      "Paste the whole CV here — copied out of Word, Google Docs, LinkedIn or a PDF. Layout is lost in a copy; the words are what matter.",
+    importTextCount: "{count} / {max} characters",
+    importTextTooLong: "{count} / {max} characters — too long for one CV. Paste the CV alone.",
+    importPastedName: "the text you pasted",
+    importTextNumbersFound:
+      "Every number in the draft also appears in the text you pasted. Words were not checked, and neither was which entry each line was filed under.",
+    importTextNumbersMissing: "Not found in the text you pasted — check these numbers in the draft:",
     importChoose: "Choose files",
     importDropHint: "or drop them here — PNG, JPEG, WebP or PDF. For photos, one file per page, in order.",
     importRemove: "Remove {name}",
-    importLead: "The AI copies the file into the fields below.",
+    importLead: "The AI copies it into the fields below.",
     importLeadEmphasis: "Nothing is saved",
     importLeadRest:
       "until you press Save version — a misread date or number would otherwise become a fact every tailored CV repeats.",
@@ -144,14 +154,14 @@ export const cv = ns({
     importDraftTitle: "A draft is in the editor — it is not saved.",
     importDraftBody:
       "Read it against the original, line by line, and fix what is wrong. Save version keeps it; your current Master CV stays in History either way.",
-    importHeldTitle: "The file has been read — but you edited while it was being read.",
+    importHeldTitle: "The reading is done — but you edited while it was being made.",
     importHeldBody:
       "Your edits were kept and the reading was not applied. Loading it replaces everything in the editor, including those edits.",
     importHeldLoad: "Load the reading",
     importHeldDrop: "Throw it away",
     importMarkup:
       "The PDF will treat these as formatting, not print them as written — the symbols disappear and the words between them are restyled. Edit them if the original means the symbol:",
-    importSameTitle: "The file reads the same as your saved Master CV.",
+    importSameTitle: "It reads the same as your saved Master CV.",
     importSameBody: "Nothing differs, so there is nothing to save. The notes below still apply to what is saved.",
     importDismiss: "Dismiss",
     importOriginals: "Original:",
@@ -356,34 +366,44 @@ export const cv = ns({
     tagsHint: "cách nhau bằng dấu phẩy, giữ nguyên thứ tự",
 
     // --- Nhập từ file -----------------------------------------------------
-    importTitle: "Nhập từ ảnh hoặc PDF",
+    importTitle: "Nhập từ ảnh, PDF hoặc văn bản",
+    importModeFiles: "Ảnh / PDF",
+    importModeText: "Dán văn bản",
+    importTextPlaceholder:
+      "Dán toàn bộ CV vào đây — copy từ Word, Google Docs, LinkedIn hay một file PDF. Copy thì mất bố cục; quan trọng là chữ.",
+    importTextCount: "{count} / {max} ký tự",
+    importTextTooLong: "{count} / {max} ký tự — quá dài cho một CV. Chỉ dán riêng CV thôi.",
+    importPastedName: "văn bản bạn đã dán",
+    importTextNumbersFound:
+      "Mọi con số trong bản nháp đều có trong văn bản bạn dán. Phần chữ thì chưa được kiểm, và dòng nào được xếp vào mục nào cũng chưa được kiểm.",
+    importTextNumbersMissing: "Không thấy trong văn bản bạn dán — hãy kiểm các con số này trong bản nháp:",
     importChoose: "Chọn file",
     importDropHint: "hoặc thả vào đây — PNG, JPEG, WebP hay PDF. Ảnh chụp thì mỗi trang một file, đúng thứ tự.",
     importRemove: "Bỏ {name}",
-    importLead: "AI chép nội dung file vào các ô bên dưới.",
+    importLead: "AI chép nội dung vào các ô bên dưới.",
     importLeadEmphasis: "Chưa có gì được lưu",
     importLeadRest:
       "cho tới khi bạn bấm Lưu version — đọc nhầm một ngày tháng hay một con số là mọi CV tailor về sau lặp lại đúng chỗ sai đó.",
     importRead: "Đọc vào editor",
     importReading: "Đang đọc…",
     importReadingHint: "Một lượt gọi model — khoảng một phút, có khi hai.",
-    importBlocked: "Bạn đang có chỉnh sửa chưa lưu. Lưu trước đã — nhập file sẽ thay toàn bộ nội dung trong editor.",
+    importBlocked: "Bạn đang có chỉnh sửa chưa lưu. Lưu trước đã — nhập vào sẽ thay toàn bộ nội dung trong editor.",
     importUnsupported: "{name} không phải PNG, JPEG, WebP hay PDF. Hãy đổi định dạng trước (ảnh HEIC của iPhone rơi vào đây).",
     importTooLarge: "{name} quá lớn, kể cả sau khi thu nhỏ. PDF tối đa 10 MB, ảnh tối đa 3,5 MB.",
     importUndecodable: "Không mở được {name} như một tấm ảnh.",
     importTooMany: "Mỗi lần nhập tối đa {max} file.",
-    importFailed: "Nhập file thất bại",
+    importFailed: "Nhập thất bại",
     importDraftTitle: "Bản nháp đang nằm trong editor — chưa lưu.",
     importDraftBody:
       "Hãy đối chiếu từng dòng với bản gốc và sửa chỗ sai. Bấm Lưu version thì nó mới được giữ; Master CV hiện tại vẫn còn trong Lịch sử dù bạn chọn thế nào.",
-    importHeldTitle: "Đã đọc xong file — nhưng bạn đã sửa trong lúc nó đang đọc.",
+    importHeldTitle: "Đã đọc xong — nhưng bạn đã sửa trong lúc nó đang đọc.",
     importHeldBody:
       "Phần bạn sửa được giữ nguyên, bản đọc chưa được áp vào. Nạp nó sẽ thay toàn bộ nội dung trong editor, kể cả phần bạn vừa sửa.",
     importHeldLoad: "Nạp bản đọc",
     importHeldDrop: "Bỏ đi",
     importMarkup:
       "PDF sẽ coi những chỗ này là định dạng chứ không in nguyên văn — ký hiệu biến mất, chữ ở giữa bị đổi kiểu. Nếu bản gốc thật sự có ký hiệu đó thì hãy sửa lại:",
-    importSameTitle: "File đọc ra giống hệt Master CV đang lưu.",
+    importSameTitle: "Bản đọc ra giống hệt Master CV đang lưu.",
     importSameBody: "Không có gì khác nên không có gì để lưu. Các ghi chú bên dưới vẫn đúng với bản đang lưu.",
     importDismiss: "Đóng",
     importOriginals: "Bản gốc:",

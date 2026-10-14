@@ -55,7 +55,7 @@ Mười một trang, ở `localhost:5173` khi dev (hoặc ở `:8000`, do API ph
 |---|---|
 | **Deck** | Phễu và các con số trong ngày |
 | **Jobs** | Mọi tin đã crawl, lọc được; chọn hoặc bỏ qua ngay trên từng dòng |
-| **CV Studio** | Trình sửa có cấu trúc cho Master CV, lịch sử version, so sánh hai version bất kỳ; nhập CV có sẵn từ ảnh hoặc PDF thành bản nháp để bạn soát rồi mới lưu |
+| **CV Studio** | Trình sửa có cấu trúc cho Master CV, lịch sử version, so sánh hai version bất kỳ; nhập CV có sẵn từ ảnh, PDF hoặc text dán vào thành bản nháp để bạn soát rồi mới lưu |
 | **Applications** | Bảng các đơn đã gửi theo từng giai đoạn; nhắc follow-up và gợi ý từ hộp thư |
 | **Companies** | Nhà tuyển dụng và liên hệ HR; email HR có thể trở thành nơi nhận đơn của một tin |
 | **Runs** | Bắt đầu một lượt crawl, xem hàng đợi, đọc lịch sử chạy |
@@ -107,6 +107,7 @@ python -m jobpilot.cli run --every 60                 # vòng lặp đơn giản
 python -m jobpilot.cli backfill --force               # tính lại facet sau khi sửa parser
 python -m jobpilot.cli cv seed                        # tạo Master CV rỗng nếu chưa có
 python -m jobpilot.cli cv read scan.png -o my-cv.local.json   # AI đọc ảnh/PDF thành bản nháp (không lưu gì)
+python -m jobpilot.cli cv read --text cv.txt -o my-cv.local.json   # như trên, từ một file text
 python -m jobpilot.cli cv import my-cv.local.json     # nạp một CV vào DB
 python -m jobpilot.cli cv export my-cv.local.json     # backup ra file (đã gitignore)
 python -m jobpilot.cli cv build                       # render JSON → .tex → PDF
