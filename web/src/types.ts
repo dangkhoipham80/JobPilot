@@ -801,6 +801,8 @@ export interface Settings {
     exclude_keywords: string[];
     /** What the scheduled crawl searches for, one search each. Empty = the old single query. */
     queries: string[];
+    /** One Vietnamese city to hold ITviec/TopCV/VietnamWorks to. "" = every city. */
+    city: string;
     rate_limit_seconds: [number, number];
   };
   sources: SourceSetting[];

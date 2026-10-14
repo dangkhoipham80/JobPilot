@@ -12,6 +12,7 @@ from jobpilot.config import Config
 from jobpilot.crawler.base import BaseScraper, Fetcher
 from jobpilot.crawler.arbeitnow import ArbeitnowScraper
 from jobpilot.crawler.ats import GreenhouseScraper, LeverScraper
+from jobpilot.crawler.cityscope import CityScopedScraper
 from jobpilot.crawler.itviec import ITViecScraper
 from jobpilot.crawler.linkedin import LinkedInAlertsScraper
 from jobpilot.crawler.ratelimit import RateLimiter
@@ -87,5 +88,9 @@ def build_scrapers(
         if src.key in ATS_SOURCES:
             kwargs["boards"] = cfg.ats.boards_for(src.key)
             kwargs["locations"] = cfg.ats.locations
+        # The boards that can be searched within one city take `crawl.city`;
+        # the rest (feeds, alerts, company boards) have their own scoping or none.
+        if issubclass(cls, CityScopedScraper):
+            kwargs["city"] = cfg.crawl.city
         scrapers.append(cls(**kwargs))
     return scrapers

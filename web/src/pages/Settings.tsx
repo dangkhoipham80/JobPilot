@@ -127,6 +127,12 @@ export function Settings() {
           value={draft.crawl.queries ?? []}
           onChange={(queries) => set({ crawl: { ...draft.crawl, queries } })}
         />
+        <TextField
+          label={t("crawlCity")}
+          hint={t("crawlCityHint")}
+          value={draft.crawl.city ?? ""}
+          onChange={(city) => set({ crawl: { ...draft.crawl, city } })}
+        />
         <TagField
           label={t("stacks")}
           hint={t("stacksHint")}

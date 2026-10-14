@@ -36,6 +36,16 @@ crawl:
   # slug and answers a long one with nothing. Empty = the first three stacks
   # joined into one query (the old behaviour).
   queries: []
+  # Hold ITviec, TopCV and VietnamWorks to one city: "Ho Chi Minh", "Ha Noi",
+  # "Da Nang" (any usual spelling — "hcm", "Hà Nội", "Saigon"). Empty = every
+  # city, and then the per-site limit is spent on the whole country: on a
+  # board where most postings are in another city, so is most of each crawl.
+  # Each board is asked in its own URL form, and a card that names another
+  # city is left out whatever the URL did. A city a board has no URL form for
+  # (anything but the three above, today) is searched nationwide on that board
+  # and kept by card label alone, with a warning in the log. Company boards
+  # are scoped separately, by `ats.locations` below.
+  city: ""
   # Drop jobs whose title/JD scream out-of-scope.
   exclude_keywords:
     - "Senior"

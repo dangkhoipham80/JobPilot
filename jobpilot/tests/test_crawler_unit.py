@@ -212,6 +212,15 @@ def test_robots_disallow_and_allow():
     assert policy.allowed("https://x.com/private/page") is False
 
 
+def test_a_robots_file_that_starts_with_a_bom_is_still_obeyed():
+    """With the mark left in, "User-agent" is not seen on line one, the group
+    under it is dropped, and the whole host reads as allowed."""
+    robots_txt = "\ufeffUser-agent: *\nDisallow: /private\n"
+    policy = RobotsPolicy("bot", fetch=lambda url: robots_txt)
+    assert policy.allowed("https://x.com/public/page") is True
+    assert policy.allowed("https://x.com/private/page") is False
+
+
 def test_robots_missing_file_allows():
     policy = RobotsPolicy("bot", fetch=lambda url: None, allow_on_error=True)
     assert policy.allowed("https://x.com/anything") is True

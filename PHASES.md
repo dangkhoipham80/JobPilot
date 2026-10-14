@@ -2724,3 +2724,57 @@ một `POST /jobs`, dòng báo hiện, đóng được, Back/Forward không hi�
 - Repo không có test frontend, nên phần này chỉ được giữ bởi `tsc` và lượt chạy tay ở trên.
 - Master CV rỗng vẫn bấm tailor được; lượt đó sẽ cho ra một CV vô nghĩa. Chưa chặn.
 
+## Phase vn-city-scope — một thành phố cho ITviec / TopCV / VietnamWorks (2026-10-14)
+
+Đòn bẩy lớn nhất từ lượt đánh giá crawl: ba board VN được tìm trên cả nước, nên phần lớn `limit`
+của mỗi lượt là tin ở thành phố user không làm được. Thêm `crawl.city` (rỗng = như cũ), chỉnh
+được ở trang Settings.
+
+Mỗi board được hỏi bằng dạng URL của chính nó, và **card trả về được kiểm lại**: tin ghi thành phố
+khác thì bị loại trước `limit`, dù URL có làm gì. Luật + số đo: `jobpilot/crawler/CLAUDE.md`
+§ "Một thành phố cho ba board VN".
+
+Hai thứ chỉ lộ ra khi chạy thật — cả hai đều là "tham số bị bỏ qua, vẫn trả 200":
+
+- **ITviec `?query=…&city=…&page=2` trả lại trang 1.** Dạng URL "hiển nhiên" (đúng thứ ô tìm kiếm
+  của site gửi) lọc đúng thành phố nên bản đầu dùng nó; chỉ khi so id của trang 2 với trang 1 mới
+  thấy 20/20 trùng. Vòng `search()` có guard cho ca này nên không sai dữ liệu, nhưng lượt tìm có
+  phạm vi sẽ kẹt ở 20 card. Đổi sang dạng path mà link phân trang của site dùng.
+- **Trang 2 của VietnamWorks là 20 tin "gợi ý".** Với phạm vi HCM, trang 2 trả về chủ yếu tin Hà
+  Nội — không phải vì `l=29` bị bỏ qua mà vì lượt tìm chỉ có một trang kết quả và trang sau đó là
+  khối "không có việc nào khớp, đây là gợi ý" (đo: nó trả **cùng 20 id** với trang 1 của một lượt
+  tìm 0 kết quả ở thành phố khác). Parser đọc khối đó thành hit **từ trước tới giờ**, có phạm vi
+  hay không. Suy ra chứ không đo lại: con số "9 → 29 job, trang 3 lặp lại trang 2" từng ghi ở
+  `crawler/CLAUDE.md` khớp đúng với 9 tin thật + 20 gợi ý. Đã sửa trong `parse_search`.
+
+Chạy thật (code của worktree, có assert `getsourcefile`):
+- So trang có/không phạm vi trên cả ba board, ba thành phố — số ở `crawler/CLAUDE.md`.
+- `search()` thật có phạm vi HCM, từ khoá `developer`: ITviec đi 2 trang dạng path, 0/40 card ghi
+  thành phố khác; TopCV 0/50.
+- VietnamWorks `ai engineer` + HCM qua `run_crawl` vào Postgres **rồi rollback**: 2 trang listing
+  (trang 2 rỗng, dừng) + 5 trang chi tiết, cả 5 ghi Hồ Chí Minh; row được ghi trong transaction có
+  `payload.city = "Hồ Chí Minh"`; số row sau rollback không đổi.
+- Đột biến (tắt lọc card; nhãn không đọc hết = nơi khác; Remote = nơi khác; ITviec dùng dạng query
+  có `page`; ITviec tự chế slug; bỏ token TopCV/VietnamWorks; registry không truyền; tắt validator;
+  bỏ từng nửa ngưỡng cảnh báo; đoán token; đọc khối gợi ý) mỗi cái đỏ đúng test của nó.
+
+Chưa kiểm / còn lại: xem "Nợ" và "Chưa kiểm" ở `crawler/CLAUDE.md`. `config.local.yaml` trên máy
+chạy thật **chưa đặt** `crawl.city` — phase này không tự bật phạm vi cho ai.
+
+### Review gate (vn-city-scope) — APPROVE, sửa trước khi push
+
+Reviewer kiểm cả ba dạng URL bằng nội dung trên trang thật (10 request listing), kể cả hai chỗ
+implementer ghi "chưa đo": ITviec dạng path cho Hà Nội, và **trang 2 thật** của VietnamWorks (không
+có khối "không có kết quả", 9 hit — sửa parser không biến trang thật thành "hết kết quả").
+
+- **ITviec: card ghi hai thành phố không tới được bộ lọc card** — đúng ca mà nửa "card" sinh ra để
+  chặn, và docs gọi nó là "vô hại". Test ghim dạng nhãn đó qua board giả. Đã sửa + test qua parser
+  thật + phát lại 8 trang thật.
+- **Cả trang bị loại vì thành phố ⇒ log "selectors no longer match".** Đã sửa (`left_out`).
+- **(Có từ trước) robots.txt có BOM bị đọc thành "cho phép tất cả".** Commit riêng trong cùng PR,
+  ngoài phạm vi approval; giữ bởi một test và một đột biến.
+- Nit đã sửa: "Hà Nội +2" bị đọc thành một mình Hà Nội; docstring còn ghi "~9-20 card".
+- Để lại: `crawl.city` viết tay sai trong YAML làm `get_config()` ném lỗi (cùng kiểu với
+  `crawl.queries`, thông báo có nêu tên key); từ khoá 0 kết quả trên ITviec trả 404 nên site hiện
+  "failed" chứ không phải "0 found" — có từ trước, phạm vi hẹp thì dễ gặp hơn.
+

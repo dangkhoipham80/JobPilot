@@ -34,7 +34,7 @@ from urllib.parse import quote_plus, urlsplit
 from bs4 import BeautifulSoup, NavigableString
 from bs4.element import Tag
 
-from jobpilot.crawler.base import BaseScraper
+from jobpilot.crawler.cityscope import CityScopedScraper
 from jobpilot.crawler.jsonld import parse_job_posting
 from jobpilot.crawler.text import clean_text, el_text, first_match, leaf_texts, strip_query
 from jobpilot.crawler.types import RawJob, SearchHit
@@ -46,6 +46,12 @@ BASE_URL = "https://www.vietnamworks.com"
 # `sc-*` styling classes these are named for what they are, so they survive
 # restyles — and if they ever go, the `<a href="…-jv">` fallback still finds jobs.
 CARD_SELECTOR = ".new-job-card, .view_job_item, .search_list"
+
+# The block VietnamWorks renders *instead of* results — "Hiện chưa có công việc
+# nào theo tiêu chí bạn tìm" — and fills with twenty suggestions "you might
+# like". They are job cards in every respect except the one that matters: they
+# did not match the search. Asking for the page after the last one lands here.
+NO_RESULT_SELECTOR = ".noResultBlock, .wrapper-no-job"
 
 # Job URLs end `-<id>-jv`, e.g. /solution-architect-finance-2077038-jv
 _JV_ID_RE = re.compile(r"-(\d+)-jv(?:[/?#]|$)")
@@ -95,19 +101,34 @@ def _leaves(root: Tag, max_len: int = 80) -> list[str]:
     return [t for t in leaf_texts(root, max_len=max_len) if not is_noise(t)]
 
 
-class VietnamWorksScraper(BaseScraper):
+class VietnamWorksScraper(CityScopedScraper):
     source = "vietnamworks"
+
+    #: VietnamWorks' numeric location ids, the ``l`` parameter of its search.
+    city_tokens = {
+        "Hồ Chí Minh": "29",
+        "Hà Nội": "24",
+        "Đà Nẵng": "17",
+    }
 
     def search_url(self, query: str, page: int = 1) -> str:
         """``/viec-lam?q=…&page=N``.
 
         Paging is the answer to this site's lazy loading, not a bonus: one fetch
-        renders only ~9-20 cards and the rest are skeletons awaiting a scroll,
+        renders only ~9 cards and the rest are skeletons awaiting a scroll,
         so ``jobs_per_site`` above that used to come back short with a warning.
         Asking for the next page keeps ``PlaywrightFetcher`` a plain
         ``(url) -> html`` function, which scrolling inside it would not.
+
+        What paging does not do is reach the cards a page left as skeletons:
+        ``page=2`` is the *next* page of results, and for a search with no next
+        page it is the no-result block ``parse_search`` now ignores.
+
+        A city is the site's numeric location id, ``&l=<id>``.
         """
         url = f"{BASE_URL}/viec-lam?q={quote_plus(query or 'java')}"
+        if self.city_token:
+            url += f"&l={self.city_token}"
         return url if page <= 1 else f"{url}&page={page}"
 
     def _native_id(self, url: str) -> str:
@@ -115,7 +136,20 @@ class VietnamWorksScraper(BaseScraper):
         return m.group(1) if m else urlsplit(url).path.strip("/") or url
 
     def parse_search(self, html: str) -> list[SearchHit]:
+        """Read the result cards — and only the result cards.
+
+        A page past the end of the results is not empty: it says no job matches
+        and then lists twenty suggestions, unrelated to the query and from any
+        city. Read as hits they made a search look twenty jobs deeper than it
+        was, and under a city scope they were most of what page 2 returned —
+        for the wrong cities (measured: the same twenty ids as page 1 of a
+        search with no results at all, in another city). Dropping the
+        block makes that page what it is, empty, which is how the walk in
+        ``BaseScraper.search`` knows the results have ended.
+        """
         soup = BeautifulSoup(html, "html.parser")
+        for block in soup.select(NO_RESULT_SELECTOR):
+            block.decompose()
         hits: list[SearchHit] = []
         seen: set[str] = set()
 

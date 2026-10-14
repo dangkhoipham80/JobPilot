@@ -54,7 +54,13 @@ class RobotsPolicy:
         parser: RobotFileParser | None = None
         if content is not None:
             parser = RobotFileParser()
-            parser.parse(content.splitlines())
+            # A file served with a byte-order mark starts its first line with
+            # U+FEFF, so "User-agent: *" is not recognised and every rule under
+            # it is dropped: the parser ends up with no entries and answers
+            # "allowed" for the whole host. One of the three Vietnamese boards
+            # serves its robots.txt that way — every check against it was a
+            # no-op until this was read with the mark removed.
+            parser.parse(content.lstrip("\ufeff").splitlines())
         self._cache[host_key] = parser
         return parser
 

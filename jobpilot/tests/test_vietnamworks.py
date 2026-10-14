@@ -205,6 +205,51 @@ def test_paging_is_how_this_site_gets_past_lazy_loading():
     assert scraper.search_url("java", 1) == scraper.search_url("java")
 
 
+NO_RESULT_HTML = """
+<div class="noResultBlock mtBlock">
+  <h2>Hiện chưa có công việc nào theo tiêu chí bạn tìm</h2>
+  <div class="wrapper-no-job">
+    <h3>Dưới đây là một số gợi ý mà chúng tôi nghĩ có thể bạn quan tâm</h3>
+    <div class="view_job_item">
+      <h3><a href="/ky-su-co-dien-2090001-jv">Kỹ Sư Cơ Điện</a></h3>
+      <a href="/nha-tuyen-dung/example-works-c1">Example Works</a><span>Hà Nội</span>
+    </div>
+    <div class="view_job_item">
+      <h3><a href="/chuyen-vien-tuyen-dung-2090002-jv">Chuyên Viên Tuyển Dụng</a></h3>
+      <a href="/nha-tuyen-dung/sample-foods-c2">Sample Foods</a><span>Đà Nẵng</span>
+    </div>
+  </div>
+</div>
+"""
+
+
+def test_suggestions_under_an_empty_result_are_not_results():
+    """The page after the last one is not empty: it says nothing matches and
+    lists twenty jobs "you might like" — any trade, any city. Read as hits they
+    made a 9-card search look 29 deep, and under a city scope they were most of
+    page 2, for the wrong cities. With the block ignored the page is what it
+    is, empty, and that is how the walk knows the results have ended."""
+    assert VietnamWorksScraper().parse_search(NO_RESULT_HTML) == []
+    # A real result list is untouched by the same rule.
+    assert len(VietnamWorksScraper().parse_search(SEARCH_HTML)) == 3
+
+
+def test_paging_past_the_last_result_ends_the_walk_instead_of_collecting_suggestions():
+    pages = {1: SEARCH_HTML, 2: NO_RESULT_HTML}
+    asked: list[str] = []
+
+    def fetch(url: str) -> str:
+        asked.append(url)
+        return pages[2 if "page=2" in url else 1]
+
+    from jobpilot.crawler.ratelimit import RateLimiter
+
+    scraper = VietnamWorksScraper(fetcher=fetch, rate_limiter=RateLimiter(0, 0))
+    hits = scraper.search("java", limit=10)
+    assert [h.native_id for h in hits] == ["2085932", "2077038", "2088154"]
+    assert len(asked) == 2  # page 2 was empty; page 3 is not requested
+
+
 def test_title_survives_being_wrapped_in_an_element():
     """Reading only the anchor's bare text nodes returns nothing once the title
     is wrapped (`<strong>…</strong>`), and the old fallback then handed back the

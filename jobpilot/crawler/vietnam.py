@@ -408,3 +408,61 @@ def canonical_city(text: str | None) -> str | None:
             if _fold_city(city) == folded or _fold_place(city) == folded:
                 return city
     return cleaned
+
+
+#: What :func:`canonical_city` can answer that is a place in Vietnam. "Remote"
+#: is in the city table because boards print it where a city goes; it is not one.
+VIETNAMESE_CITIES: frozenset[str] = frozenset(canonical_city(c) for c in CITIES) - {"Remote"}
+
+# "Hồ Chí Minh, Hà Nội" (VietnamWorks) / "Hà Nội & Ninh Bình" (TopCV) /
+# "Ho Chi Minh - Ha Noi" (ITviec).
+_LABEL_SPLIT_RE = re.compile(r"[,;/|&]| và | and | - ", re.I)
+
+#: A part that says there are more places than it names.
+_MORE_PLACES_RE = re.compile(r"\+\s*\d|…|\.\.\.")
+
+
+def scope_city(text: str | None) -> str | None:
+    """A city setting as the canonical Vietnamese city it names, or None.
+
+    ``"hcm"``, ``"Saigon"`` and ``"Ho Chi Minh City"`` are all "Hồ Chí Minh";
+    ``"Remote"``, a country and a typo are None.
+    """
+    city = canonical_city(text)
+    return city if city in VIETNAMESE_CITIES else None
+
+
+def named_cities(label: str | None) -> frozenset[str] | None:
+    """Every city a location label names, canonical — or None when unknown.
+
+    None, not the cities that *could* be read, whenever any part of the label
+    is something this table does not know: "Hà Nội & 2 nơi khác" names Hà Nội
+    and two places it does not say, and a caller asking "is this posting in Ho
+    Chi Minh City?" must hear "cannot tell", not "no".
+    """
+    cities: set[str] = set()
+    for part in _LABEL_SPLIT_RE.split(clean_text(label)):
+        part = part.strip()
+        if not part or _is_only_filler(part):
+            continue
+        # "Hà Nội +2", "Hà Nội …": more places than the label spells out. The
+        # city table folds the digits and dots away and would answer "Hà Nội",
+        # which is the one reading this function must never give.
+        if _MORE_PLACES_RE.search(part):
+            return None
+        city = canonical_city(part)
+        if city not in VIETNAMESE_CITIES and city != "Remote":
+            return None
+        cities.add(city)
+    return frozenset(cities) or None
+
+
+def is_elsewhere(label: str | None, city: str) -> bool:
+    """True only when ``label`` is known to name other cities and not ``city``.
+
+    Every doubt is a no: no label, a label that cannot be read in full, and a
+    label that says "Remote" — a remote job is one that can be done from the
+    city being searched.
+    """
+    cities = named_cities(label)
+    return cities is not None and city not in cities and "Remote" not in cities

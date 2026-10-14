@@ -191,7 +191,17 @@ nằm trong CV. Viết tỉ lệ thay cho số đếm, loại vị trí thay cho
 
 - **Nguồn đang chạy**: ITviec + TopCV + VietnamWorks + LinkedIn(alerts) + WeWorkRemotely + Arbeitnow chạy thật; chỉ TopDev còn chưa có scraper (disabled trong config). Trang Runs chỉ cho chọn nguồn `enabled && ready` — `ready` = có scraper đăng ký trong `registry.SCRAPERS`, vì bật trong Settings không có nghĩa là đã implement. Cần `pip install -e '.[crawler]' && playwright install chromium` để crawl (2 nguồn tier-2 **không cần** Playwright).
 - **Bật nguồn trên máy đã dùng Settings**: `config.local.yaml` merge **theo key** nên nguồn mới trong `config.yaml` luôn hiện ra; nhưng key nào overlay từng ghi `enabled: false` thì vẫn tắt. Bật lại trong Settings, hoặc xoá `config.local.yaml`.
-- **VietnamWorks lazy-load — xử lý bằng phân trang, không phải scroll**: 1 fetch chỉ render ~9–20 card, nhưng `search()` đi tiếp `?page=N` nên `jobs_per_site` > 9 vẫn đủ hàng (verify thật: 9 → **29 job**; trang 3 lặp lại trang 2 và bị guard bắt). Giữ `PlaywrightFetcher` là `(url) -> html` thuần — scroll sẽ đổi contract dùng chung cho mọi site, phân trang thì không.
+- **VietnamWorks lazy-load: một fetch chỉ render ~9 card, và trang SAU trang cuối không rỗng**
+  (sửa 2026-10-14). Ghi chú cũ ở đây nói phân trang đưa 9 → **29 job** và "trang 3 lặp lại trang
+  2"; cả hai khớp với 9 tin thật + **khối gợi ý** 20 tin (suy ra, không đo lại lượt đó). Trang vượt
+  quá kết quả hiện "Hiện chưa có công việc nào theo tiêu chí bạn tìm" rồi liệt
+  kê 20 tin "có thể bạn quan tâm" — ngành nào cũng có, thành phố nào cũng có — và parser đọc chúng
+  thành hit (đo: trang 2 của một lượt tìm 39 kết quả và trang 1 của một lượt tìm 0 kết quả trả
+  **cùng 20 id**). `parse_search` giờ bỏ `.noResultBlock` / `.wrapper-no-job` trước khi đọc card,
+  nên trang đó là rỗng và vòng `search()` dừng. **Nợ**: card thứ 10 trở đi của một trang vẫn là
+  skeleton chờ scroll, tức VietnamWorks thực tế cho ~9 tin mỗi từ khoá mỗi lượt. Chưa đo trang 2
+  của một lượt tìm có nhiều hơn một trang kết quả. Giữ `PlaywrightFetcher` là `(url) -> html`
+  thuần — scroll sẽ đổi contract dùng chung cho mọi site.
 - **TopCV thực tế chỉ ~50 job/lần crawl**: request thứ 2 trong cùng session bị Cloudflare chặn (403). Không phải bug — mặc định `jobs_per_site: 10` không chạm tới, và khi chạm thì báo "blocked — anti-bot" rồi giữ 50 hit của trang 1. **Query dài cũng làm TopCV trả 0 job**: keyword vào *path* nên "Java Spring Boot Backend" thành slug 4 từ; `default_query` = 3 stack đầu nên đổi thứ tự `crawl.stacks` là đổi chất lượng search.
 - **Nguồn tier-2 là remote/toàn cầu** (WWR: US/worldwide; Arbeitnow: Đức/EU) và **thiên về senior**, nên `exclude_keywords: [Senior, Lead, ...]` mặc định lọc đi khá nhiều. Tắt trong Settings nếu chỉ muốn job Việt Nam.
 - **TopDev**: robots `Allow: /` cho `*` nhưng chặn riêng `ClaudeBot` + `Content-Signal: ai-train=no`. Chưa làm — cần một quyết định rõ, không mặc định làm.
@@ -240,6 +250,73 @@ nằm trong CV. Viết tỉ lệ thay cho số đếm, loại vị trí thay cho
 - **Nợ: `title_excluded` khớp SUBSTRING** — "Lead" loại cả "Leading …", và "Sr."/"Principal"/"Staff"
   không bị loại trừ khi user thêm vào danh sách. Đổi sang nguyên từ là đổi luật lọc cho mọi nguồn,
   việc riêng.
+
+### Một thành phố cho ba board VN — `crawl.city` (2026-10-14)
+
+Code: `crawler/cityscope.py` (`CityScopedScraper`), helper thuần ở `vietnam.py` (`scope_city`,
+`named_cities`, `is_elsewhere`). Rỗng = mọi nơi, hành vi cũ không đổi. Board công ty có phạm vi
+riêng (`ats.locations`); feed remote thì không có.
+
+- **Hai nửa, và nửa sau tồn tại vì nửa đầu.** *URL*: mỗi board được hỏi bằng dạng URL của chính nó
+  (`city_tokens`), để `limit` không tiêu vào cả nước. *Card*: hit mà nhãn trên card ghi **thành phố
+  khác và không ghi thành phố đang tìm** thì bị loại trong `matches_query`, tức trước `limit`. Tham
+  số bị site bỏ qua thì không báo lỗi — nó trả 200 kèm listing cả nước — nên chỉ nội dung nói được
+  là phạm vi có hiệu lực hay không. Có card thì kết quả vẫn đúng vào ngày URL thôi chạy — **trong
+  phạm vi những gì card ghi**: card không ghi địa điểm, hoặc ghi không đọc hết được, vẫn được giữ.
+  Bộ lọc đọc `place_label(hit)`, không phải `hit.location` trần: xem bullet ITviec bên dưới.
+- **Dạng URL của từng board, đều đọc từ trang của chính board rồi đối chiếu bằng card trả về:**
+  - **ITviec: `/it-jobs/<slug>/<city>?page=N`, KHÔNG phải `?query=…&city=…`.** Dạng query là thứ ô
+    tìm kiếm của site gửi đi và nó có lọc theo thành phố — nhưng **chỉ ở trang 1**: thêm `&page=2`
+    thì trả lại đúng trang 1 (20/20 id trùng). Dạng path là dạng link phân trang của site dùng, và
+    nó phân trang thật (0 id trùng). Slug = từ khoá với dấu cách thành gạch nối, và **chỉ thế mới
+    được kiểm**: từ khoá không phải chữ/số ASCII (`c++`, `.net`, có dấu) giữ dạng query và là
+    **một trang** (mọi trang trả cùng URL) thay vì một slug tự chế. Token: `ho-chi-minh-hcm`,
+    `ha-noi`, `da-nang`.
+  - **TopCV: `/tim-viec-lam-<slug>-tai-<city>-kl<id>`** — `kl<id>` là id của thành phố trong bộ lọc
+    địa điểm của site (`ho-chi-minh-kl2`, `ha-noi-kl1`, `da-nang-kl8`); tiêu đề trang echo lại
+    "tại <thành phố>".
+  - **VietnamWorks: `&l=<id>`** (29 HCM, 24 Hà Nội, 17 Đà Nẵng); tiêu đề trang echo lại thành phố.
+- **Đo thật 2026-10-14, từ khoá `ai engineer`, đếm theo nhãn trên card** (không tính card không ghi
+  nhãn): ITviec 10/17 → **16/17** ở HCM (card còn lại là Remote); TopCV 12/50 → **18/18** (vế không
+  phạm vi là trang lưu hôm 13-10, TopCV chặn request thứ hai trong một session); VietnamWorks 1/9 →
+  **9/9**. Hà Nội và Đà Nẵng cũng được kiểm trên cả ba board; riêng
+  VietnamWorks–Đà Nẵng chỉ có 3 card để đối chiếu (cộng tiêu đề trang echo đúng thành phố).
+- **Thành phố mà board không có token ⇒ tìm cả nước + WARNING, không bao giờ đoán token.** Token sai
+  hoặc là 404, hoặc tệ hơn là một listing khác trả 200. Nửa "card" vẫn chạy nên kết quả vẫn chỉ gồm
+  tin không ghi thành phố khác; chỉ là `limit` không được tiêu hiệu quả. Thêm thành phố = thêm một
+  dòng vào `city_tokens` của **từng** board, sau khi kiểm bằng card.
+- **Mọi nghi ngờ đều GIỮ tin** (`is_elsewhere`): không có nhãn, nhãn không đọc hết được ("Hà Nội & 2
+  nơi khác" — một trong hai nơi kia có thể là thành phố đang tìm), nước ngoài bảng city không biết,
+  và **"Remote"**. Không biết ở đâu ≠ biết là ở chỗ khác.
+- **Cảnh báo "site đang bỏ qua thành phố"** khi board có token mà hơn 1/10 số card (và ít nhất 2)
+  ghi thành phố khác. Ngưỡng lấy từ số đo: trang có phạm vi 0/127 card ghi nơi khác, trang không
+  phạm vi 22–78%. Cả hai nửa của ngưỡng đều cần (có test): chỉ tỉ lệ thì trang 4 card báo động,
+  chỉ số đếm thì trang dài nào cũng báo động.
+- **`crawl.city` sai bị từ chối lúc LƯU** (`CrawlCfg._known_city` → `PUT /settings` 422), không phải
+  thành một dòng log lúc 08:30 dưới một lượt crawl vẫn chạy cả nước. Một thành phố, không phải danh
+  sách: mỗi thành phố thêm là thêm một lượt tìm trên mỗi board.
+- **Card ITviec ghi nhiều thành phố ("Da Nang - Ha Noi") ra `location = None`** (`find_city` chỉ
+  nhận một thành phố mỗi nhãn) — khoảng 1/5 số card. Bản đầu ghi đây là "vô hại với phạm vi", và
+  sai: review gate đưa một trang Hà Nội thật cho scraper đang khoanh HCM, cảnh báo có bắn nhưng
+  các card ghi rõ hai thành phố khác **vẫn được giữ**, vì bộ lọc không thấy nhãn nào. Test của mình
+  ghim đúng dạng nhãn đó qua một board giả chứ không qua `parse_search` thật — xanh trên con đường
+  production không đi. Giờ parser để nhãn nhiều-thành-phố ở `hit.extra["place_label"]` (thứ được
+  *lưu* không đổi: trang chi tiết vẫn là nơi ghi địa điểm), và có test đi qua parser thật. Phát lại
+  8 trang listing thật đã lưu: mỗi trang 1–4 nhãn như vậy, không tin nào chỉ ghi nơi khác còn lọt.
+- **Cả trang bị loại vì thành phố thì KHÔNG phải parser hỏng.** `crawl()` từng báo "selectors no
+  longer match" ngay sau dòng "2 of 2 card(s) name another city" — đúng lý do PR lọc tiêu đề đã
+  miễn cảnh báo đó cho tin bị loại theo tiêu đề. Scraper giờ báo số tin nó chủ động bỏ qua
+  `left_out`. (Board công ty với `ats.locations` có cùng cảnh báo sai và **chưa** dùng `left_out`.)
+- **Nhãn nói "còn nơi khác" bằng số hay dấu chấm ("Hà Nội +2", "Hà Nội …") là KHÔNG ĐỌC HẾT** ⇒
+  giữ. Bảng thành phố gấp số và dấu đi, nên trước đó nó đọc thành đúng một mình "Hà Nội".
+- **robots.txt mở đầu bằng BOM từng bị đọc thành "cho phép tất cả".** `RobotFileParser` không nhận
+  dòng `User-agent` đứng sau U+FEFF nên bỏ cả nhóm luật bên dưới; một trong ba board VN phục vụ
+  file kiểu đó, tức mọi lần "đã kiểm robots" trên host ấy là no-op (review gate phát hiện; các URL
+  crawler đang dùng vẫn được phép khi đọc đúng). `RobotsPolicy` giờ bỏ BOM trước khi parse.
+- **Nợ: tin bị loại vì ghi thành phố khác không vào `fetched`/`filtered`** — chỉ có trong log, giống
+  tin ngoài `ats.locations`.
+- **Chưa kiểm**: lượt crawl đủ nguồn theo lịch với `crawl.city` đã đặt; token của ITviec ở dạng path
+  cho Hà Nội/Đà Nẵng (hai token đó kiểm ở dạng query; dạng path chỉ chạy thật với HCM).
 
 ### Nhiều từ khoá + crawl lại (2026-10-04)
 

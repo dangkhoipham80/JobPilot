@@ -37,6 +37,9 @@ export const settings = ns({
     stacksHint: "what a good job looks like",
     crawlQueries: "Scheduled keywords",
     crawlQueriesHint: "one search each at 08:30 / 18:30 — keep them short; empty = stacks joined",
+    crawlCity: "City",
+    crawlCityHint:
+      "one city for ITviec, TopCV and VietnamWorks — Ho Chi Minh, Ha Noi or Da Nang; empty = every city",
     excludeKeywords: "Exclude keywords",
     excludeKeywordsHint: "drop jobs whose title or JD matches",
     commaSeparated: "comma-separated",
@@ -98,6 +101,9 @@ export const settings = ns({
     stacksHint: "job hợp gu trông như thế nào",
     crawlQueries: "Từ khoá crawl tự động",
     crawlQueriesHint: "mỗi từ một lượt tìm lúc 08:30 / 18:30 — giữ thật ngắn; để trống = ghép từ stacks",
+    crawlCity: "Thành phố",
+    crawlCityHint:
+      "một thành phố cho ITviec, TopCV và VietnamWorks — Ho Chi Minh, Ha Noi hoặc Da Nang; để trống = mọi nơi",
     excludeKeywords: "Từ khoá loại trừ",
     excludeKeywordsHint: "tiêu đề hoặc JD khớp thì bỏ job đó",
     commaSeparated: "ngăn cách bằng dấu phẩy",

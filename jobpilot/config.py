@@ -61,6 +61,29 @@ class CrawlCfg(BaseModel):
     #: boards (TopCV puts it in the URL path) answer it with nothing.
     queries: list[str] = Field(default_factory=list)
 
+    #: One Vietnamese city to hold ITviec, TopCV and VietnamWorks to — "Ho Chi
+    #: Minh", "hcm", "Hà Nội". Empty = every city. Company boards have their
+    #: own scope (``ats.locations``); remote feeds have none.
+    city: str = ""
+
+    @field_validator("city")
+    @classmethod
+    def _known_city(cls, value: str) -> str:
+        """Refused at save time. A city the crawler cannot read would otherwise
+        be dropped with a log line at 08:30, and the crawl would go on
+        nationwide under a setting that says it does not."""
+        value = (value or "").strip()
+        if not value:
+            return ""
+        from jobpilot.crawler.vietnam import scope_city
+
+        if scope_city(value) is None:
+            raise ValueError(
+                f"crawl.city {value!r} is not a Vietnamese city the crawler knows — "
+                'write one city, e.g. "Ho Chi Minh", "Ha Noi" or "Da Nang"'
+            )
+        return value
+
     @field_validator("queries")
     @classmethod
     def _bounded_queries(cls, value: list[str]) -> list[str]:

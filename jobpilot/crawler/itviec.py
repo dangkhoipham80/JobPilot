@@ -10,15 +10,16 @@ than as a crawl that silently returns nothing.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import quote_plus, urlsplit
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from jobpilot.crawler.base import BaseScraper
+from jobpilot.crawler.cityscope import CityScopedScraper
 from jobpilot.crawler.text import el_text, first_match, leaf_texts
 from jobpilot.crawler.types import RawJob, SearchHit
-from jobpilot.crawler.vietnam import CITIES, find_city, find_posted, find_salary
+from jobpilot.crawler.vietnam import CITIES, find_city, find_posted, find_salary, named_cities
 
 BASE_URL = "https://itviec.com"
 
@@ -26,6 +27,9 @@ BASE_URL = "https://itviec.com"
 # `data-search--job-selection-job-url` (which held a full href) to a slug value;
 # keeping the name in one constant means the next rename is a one-line fix.
 SLUG_ATTR = "data-search--job-selection-job-slug-value"
+
+# A query ITviec's path form is known to take as-is: ASCII words and spaces.
+_PLAIN_QUERY_RE = re.compile(r"[a-z0-9]+(?: [a-z0-9]+)*")
 
 __all__ = ["ITViecScraper", "BASE_URL", "SLUG_ATTR", "CITIES"]
 
@@ -58,6 +62,23 @@ def _location(card: Tag) -> str | None:
     return find_city(leaf_texts(card, max_len=40))
 
 
+def _place_label(card: Tag) -> str | None:
+    """A card's location when it lists several cities ("Da Nang - Ha Noi").
+
+    ``_location`` recognises one city per label and returns nothing for these —
+    about a fifth of the cards on a listing page. That is right for what gets
+    *stored* (the detail page states the location properly), and wrong for the
+    city scope, which must be able to see that a card names two cities and
+    neither is the one asked for. Only a leaf that reads, in full, as two or
+    more known cities: anything else is not a location label.
+    """
+    for text in leaf_texts(card, max_len=40):
+        cities = named_cities(text)
+        if cities and len(cities) > 1:
+            return text
+    return None
+
+
 def _posted(card: Tag) -> str | None:
     """ "Posted 8 hours ago" / "3 days ago" — again matched on shape, not class."""
     return find_posted(leaf_texts(card, max_len=40))
@@ -73,12 +94,41 @@ def _salary(root: Tag) -> str | None:
     return find_salary(leaf_texts(root, max_len=60))
 
 
-class ITViecScraper(BaseScraper):
+class ITViecScraper(CityScopedScraper):
     source = "itviec"
 
+    #: The values of the ``city`` field in ITviec's own search form. The site
+    #: has a fourth, ``others``, that names no city and so has no entry here.
+    city_tokens = {
+        "Hồ Chí Minh": "ho-chi-minh-hcm",
+        "Hà Nội": "ha-noi",
+        "Đà Nẵng": "da-nang",
+    }
+
     def search_url(self, query: str, page: int = 1) -> str:
-        q = quote_plus(query or "java spring boot")
-        url = f"{BASE_URL}/it-jobs?query={q}"
+        """``/it-jobs?query=…&page=N``, or within a city ``/it-jobs/<slug>/<city>?page=N``.
+
+        Two forms, because the obvious one does not page. ITviec's search box
+        submits ``/it-jobs?query=…&city=…``, and that URL is honoured — for
+        page 1. Add ``&page=2`` and it answers 200 with page 1 again (measured:
+        20 of 20 ids repeated), the ignored-parameter failure once more. The
+        form its own pagination links use, ``/it-jobs/<slug>/<city>?page=2``,
+        does page: no id shared with page 1.
+
+        The slug is the query with spaces as hyphens, which is all that was
+        checked. A query that is not plain words ("c++", ".net", anything
+        accented) keeps the search-box form rather than a slug made up for it,
+        and is then a single page: every page answers with the same URL, which
+        is how a source says it has no page two.
+        """
+        q = query or "java spring boot"
+        if self.city_token:
+            words = " ".join(q.lower().split())
+            if not _PLAIN_QUERY_RE.fullmatch(words):
+                return f"{BASE_URL}/it-jobs?query={quote_plus(q)}&city={self.city_token}"
+            url = f"{BASE_URL}/it-jobs/{words.replace(' ', '-')}/{self.city_token}"
+            return url if page <= 1 else f"{url}?page={page}"
+        url = f"{BASE_URL}/it-jobs?query={quote_plus(q)}"
         return url if page <= 1 else f"{url}&page={page}"
 
     def _native_id(self, url: str) -> str:
@@ -117,6 +167,7 @@ class ITViecScraper(BaseScraper):
                     title=el_text(first_match(card, "h3", "h2", "h4"))[:200],
                     company=_company(card),
                     location=_location(card),
+                    extra={"place_label": _place_label(card)},
                     posted_raw=_posted(card),
                 )
             )
