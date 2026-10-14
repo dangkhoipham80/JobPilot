@@ -1,4 +1,5 @@
 import type {
+  CvCritique,
   CrawlRequest,
   CrawlSetupInfo,
   RecentCrawl,
@@ -167,6 +168,14 @@ export const api = {
   saveCvTex: (scope: string, files: Record<string, string>) =>
     req<CvTex>(`${cvPath(scope)}/tex`, { method: "PUT", body: JSON.stringify({ files }) }),
   resetCvTex: (scope: string) => req<CvTex>(`${cvPath(scope)}/tex`, { method: "DELETE" }),
+
+  /* CV critique: advisory, synchronous (one model call, ~1 min on the CLI). */
+  latestCritique: () => req<CvCritique | null>("/cv/master/critique"),
+  critiqueCv: (role: string, lang: string) =>
+    req<CvCritique>("/cv/master/critique", {
+      method: "POST",
+      body: JSON.stringify({ role, lang }),
+    }),
 
   /** Fetch the compiled PDF as an object URL (the <iframe> can't send the token). */
   cvPdfUrl: async (scope: string): Promise<string> => {

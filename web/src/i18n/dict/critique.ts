@@ -1,0 +1,135 @@
+import { ns } from "../ns";
+
+/**
+ * The CV critique panel in CV Studio.
+ *
+ * Two kinds of statement sit side by side here and the copy keeps them apart:
+ * figures ("72 of 195 jobs") are counted from the crawl, and verdicts ("trim",
+ * "stretch") are a model's opinion. Like the fit card, every verdict is worded
+ * about the CV, never about the person, and the corpus line says it is the
+ * crawled ads, not the market.
+ */
+export const critique = ns({
+  en: {
+    title: "CV review against the market",
+    intro:
+      "AI reads your Master CV beside what the crawled ads for a role ask for: what to improve, what is fine, what to cut, and which roles it reads as.",
+    roleLabel: "Target role",
+    roleAny: "Any role",
+    role_backend: "Backend",
+    role_fullstack: "Full-stack",
+    role_frontend: "Frontend",
+    role_mobile: "Mobile",
+    role_ai: "AI / ML",
+    role_devops: "DevOps / Cloud",
+    role_data: "Data",
+    role_game: "Game",
+    run: "Review my CV",
+    rerun: "Review again",
+    busy: "Reading your CV against the market… this takes about a minute.",
+    failed: "Could not review the CV",
+    dirty: "Save your edits first — the review reads the saved Master CV.",
+    madeAt: "Reviewed v{version} · {when}",
+    stale: "Your CV is at v{current} now — this review is of v{version}.",
+    corpus:
+      "Compared with {jobs} crawled ads for this role (of {total}). This is the crawl, not the whole market.",
+    smallSample: "Too few ads for this role — read the counts as a hint, not a trend.",
+    advisory:
+      "Advisory only. Nothing here is written to your CV, and the tailor doesn't read it. Never add a skill you don't have — learn it, or let it go.",
+    dropped: "{n} of the model's verdicts pointed at nothing on the CV and were dropped.",
+
+    readsAs: "Reads as",
+    strengths: "What already works",
+    priorities: "Do these first",
+    roles: "Role fit",
+    fit_strong: "Strong",
+    fit_possible: "Possible",
+    fit_stretch: "Stretch",
+
+    sections: "Sections",
+    entries: "Experience and projects",
+    v_ok: "Fine",
+    v_improve: "Improve",
+    v_trim: "Trim",
+    v_keep: "Keep",
+    v_cut: "Cut",
+    groupImprove: "Improve",
+    groupTrim: "Trim or cut",
+    groupKeep: "Fine as it is",
+
+    market: "What the ads ask for",
+    marketHint: "{covered} of {jobs} ads list skills. Count = ads listing it.",
+    onCv: "On your CV",
+    notOnCv: "Not on your CV",
+    cvSkills: "Your listed skills, by demand",
+    cvSkillsHint: "Lines no ad asks for are candidates to shorten.",
+    noDemand: "no ad asks",
+    levels: "Seniority asked for",
+    levelsHint: "{covered} of {jobs} ads state one.",
+    gaps: "Skills worth considering",
+    a_learn: "Learn",
+    a_optional: "Optional",
+    a_skip: "Skip",
+  },
+  vi: {
+    title: "Đánh giá CV so với thị trường",
+    intro:
+      "AI đọc Master CV cạnh những gì tin tuyển của một vai trò đòi hỏi: mục nào cần cải thiện, mục nào ổn, mục nào nên lược bớt, và CV đang đọc ra vai trò gì.",
+    roleLabel: "Vai trò mục tiêu",
+    roleAny: "Mọi vai trò",
+    role_backend: "Backend",
+    role_fullstack: "Full-stack",
+    role_frontend: "Frontend",
+    role_mobile: "Mobile",
+    role_ai: "AI / ML",
+    role_devops: "DevOps / Cloud",
+    role_data: "Data",
+    role_game: "Game",
+    run: "Đánh giá CV",
+    rerun: "Đánh giá lại",
+    busy: "Đang đọc CV cạnh dữ liệu thị trường… mất khoảng một phút.",
+    failed: "Không đánh giá được CV",
+    dirty: "Lưu thay đổi trước — phần đánh giá đọc bản Master đã lưu.",
+    madeAt: "Đánh giá bản v{version} · {when}",
+    stale: "CV đang ở bản v{current} — đánh giá này là của bản v{version}.",
+    corpus:
+      "So với {jobs} tin đã crawl cho vai trò này (trên tổng {total}). Đây là dữ liệu crawl, không phải toàn bộ thị trường.",
+    smallSample: "Quá ít tin cho vai trò này — xem các con số như gợi ý, không phải xu hướng.",
+    advisory:
+      "Chỉ để tham khảo. Không có gì ở đây được ghi vào CV, và bước tailor không đọc nó. Đừng thêm kỹ năng bạn chưa có — học nó, hoặc bỏ qua.",
+    dropped: "{n} nhận xét của AI trỏ vào mục không có trên CV nên đã bị bỏ.",
+
+    readsAs: "CV đang đọc ra",
+    strengths: "Điểm đã tốt",
+    priorities: "Nên làm trước",
+    roles: "Hợp với vai trò nào",
+    fit_strong: "Rất hợp",
+    fit_possible: "Có thể",
+    fit_stretch: "Còn xa",
+
+    sections: "Từng phần của CV",
+    entries: "Kinh nghiệm và project",
+    v_ok: "Ổn",
+    v_improve: "Cần cải thiện",
+    v_trim: "Lược bớt",
+    v_keep: "Giữ",
+    v_cut: "Bỏ",
+    groupImprove: "Cần cải thiện",
+    groupTrim: "Lược bớt hoặc bỏ",
+    groupKeep: "Ổn, giữ nguyên",
+
+    market: "Tin tuyển đang hỏi gì",
+    marketHint: "{covered} trên {jobs} tin có ghi kỹ năng. Số = số tin nhắc tới.",
+    onCv: "CV đã có",
+    notOnCv: "CV chưa có",
+    cvSkills: "Kỹ năng trên CV, theo mức được hỏi",
+    cvSkillsHint: "Dòng không tin nào hỏi là ứng viên để rút gọn.",
+    noDemand: "không tin nào hỏi",
+    levels: "Cấp bậc tin tuyển yêu cầu",
+    levelsHint: "{covered} trên {jobs} tin có ghi cấp bậc.",
+    gaps: "Kỹ năng nên cân nhắc",
+    a_learn: "Nên học",
+    a_optional: "Tùy chọn",
+    a_skip: "Bỏ qua",
+  },
+});

@@ -366,6 +366,27 @@ class CvVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CvCritique(Base):
+    """An advisory review of one Master CV version against the crawled market.
+
+    Its own table rather than ``cv_versions.meta``: versions are immutable
+    records, and a critique is made *after* a version exists, possibly several
+    times with different target roles. ``cv_version`` is what makes a critique
+    honest about its age — the page compares it with the current version.
+    ``market`` is the exact snapshot the model was given, kept beside its answer.
+    """
+
+    __tablename__ = "cv_critiques"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cv_version: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(64), default="")
+    lang: Mapped[str] = mapped_column(String(8), default="vi")
+    report: Mapped[dict] = mapped_column(JSONType, default=dict)
+    market: Mapped[dict] = mapped_column(JSONType, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class LlmCall(Base):
     """One round-trip to a model, priced and timed (Phase 20b).
 

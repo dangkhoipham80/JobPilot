@@ -10,6 +10,7 @@ import { applications } from "./applications";
 import { backup } from "./backup";
 import { common } from "./common";
 import { companies } from "./companies";
+import { critique } from "./critique";
 import { cv } from "./cv";
 import { dashboard } from "./dashboard";
 import { fit } from "./fit";
@@ -31,6 +32,7 @@ export const dict = {
   backup,
   common,
   companies,
+  critique,
   cv,
   dashboard,
   fit,
