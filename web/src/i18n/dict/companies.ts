@@ -8,6 +8,14 @@ import { ns } from "../ns";
  */
 export const companies = ns({
   en: {
+    website: "Website & logo",
+    saveWebsite: "Save",
+    websiteHint:
+      "Its own site, e.g. acme.com. When no job board supplied a logo, JobPilot looks for one there.",
+    logoFromBoard: "Logo from a job board's listing of this employer.",
+    logoFromSite: "Logo from the employer's own website.",
+    logoNotFound: "No logo found on that site — initials are shown instead. JobPilot tries again weekly.",
+    domainFailed: "Could not save the website",
     title: "Companies",
     intro:
       "Every employer in your corpus, and the people you know at them. Rows appear on their own as jobs arrive — you only add the contacts.",
@@ -69,6 +77,14 @@ export const companies = ns({
     offerManage: "Manage contacts",
   },
   vi: {
+    website: "Website & logo",
+    saveWebsite: "Lưu",
+    websiteHint:
+      "Trang web của công ty, vd. acme.com. Khi không trang tuyển dụng nào có logo, JobPilot sẽ tìm ở đó.",
+    logoFromBoard: "Logo lấy từ trang tuyển dụng đăng tin của công ty này.",
+    logoFromSite: "Logo lấy từ trang web của chính công ty.",
+    logoNotFound: "Không tìm thấy logo trên trang đó — đang hiện chữ cái đầu. JobPilot sẽ thử lại mỗi tuần.",
+    domainFailed: "Không lưu được website",
     title: "Công ty",
     intro:
       "Mọi nhà tuyển dụng trong kho tin của bạn, kèm những người bạn quen ở đó. Dòng công ty tự xuất hiện khi có job mới — bạn chỉ cần thêm người liên hệ.",

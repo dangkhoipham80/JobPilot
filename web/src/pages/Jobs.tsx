@@ -11,6 +11,7 @@ import { useLabels } from "@/lib/labels";
 import { useStatuses } from "@/lib/statuses";
 import { StatusPill } from "@/components/StatusPill";
 import { MatchMeter, QualityFlags } from "@/components/MatchMeter";
+import { CompanyLogo } from "@/components/CompanyLogo";
 import { FreshBeacon } from "@/components/FreshBeacon";
 import { sourceColor } from "@/components/charts/palette";
 import { Button, Card, Input, Select, Skeleton } from "@/components/ui";
@@ -355,7 +356,9 @@ function Row({
           two postings apart — and `overflow-wrap: anywhere` lets a long
           unbroken token wrap too rather than widen the column. */}
       <td className="w-[38%] min-w-[12rem] px-4 py-3">
-        <Link to={`/jobs/${encodeURIComponent(job.id)}`} className="group block">
+        <Link to={`/jobs/${encodeURIComponent(job.id)}`} className="group flex items-start gap-2.5">
+          <CompanyLogo name={job.company} logo={job.company_logo} size={32} className="mt-0.5" />
+          <div className="min-w-0">
           <div className="flex items-start gap-1.5">
             {/* Pinned to the first line now that the title can run to two. */}
             {isFresh && <FreshBeacon className="mt-1.5 shrink-0" />}
@@ -387,6 +390,7 @@ function Row({
             {job.company}
             {job.location ? ` · ${job.location}` : ""}
             {job.salary ? ` · ${job.salary}` : ""}
+          </div>
           </div>
         </Link>
       </td>

@@ -40,6 +40,8 @@ export interface Job {
   run_id: number | null;
   /** Advisory: why the score, and whether the posting looks live. */
   quality: JobQuality | null;
+  /** The employer's cached logo, or null (initials are shown). */
+  company_logo?: string | null;
   /** Newest copy of this posting when its board re-listed it; null = this is it. */
   latest_id?: string | null;
   /** How many older listings of this posting point at this row. */
@@ -99,6 +101,12 @@ export interface Company {
   /** The fold that decides "GitLab" and "gitlab" are one employer. Shown,
    *  because a merge you cannot see is a merge you cannot argue with. */
   normalized_name: string;
+  /** The employer's own site, when a source or the user knows it. */
+  domain?: string | null;
+  /** Cached logo URL (`/api/logos/…`), or null — shown as initials. */
+  logo?: string | null;
+  /** Where a board said the logo is. */
+  logo_url?: string | null;
   job_count: number;
   /** Distinct jobs here with an application that actually went out — not the
    *  number of attempts, and never a dry run. */

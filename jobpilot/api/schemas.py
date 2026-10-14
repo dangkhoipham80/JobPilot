@@ -87,6 +87,9 @@ class JobOut(BaseModel):
     # Why the score is what it is, and whether the posting looks worth
     # answering. Advisory only — nothing here filters a job out.
     quality: dict | None = None
+    #: The employer's cached logo (``/api/logos/…``), or null — the page then
+    #: shows initials. Filled by the routes, not read off the row.
+    company_logo: str | None = None
     #: The newest copy of this posting when its board re-listed it under a new
     #: id (``crawler/reposts.py``); null when this row is the newest.
     latest_id: str | None = None
@@ -542,6 +545,12 @@ class CompanyOut(BaseModel):
     #: "GitLab" and "gitlab" are one row, and a merge you cannot see is a merge
     #: you cannot argue with.
     normalized_name: str
+    #: The employer's own site, when a source or the user knows it.
+    domain: str | None = None
+    #: The cached logo's URL, or null (the page shows initials).
+    logo: str | None = None
+    #: Where a board said the logo is — shown so a wrong picture can be traced.
+    logo_url: str | None = None
     #: Postings from this employer currently in the corpus.
     job_count: int = 0
     #: Distinct jobs here with an application that actually went out
@@ -570,15 +579,19 @@ class CompanyIn(BaseModel):
 
 
 class CompanyPatch(BaseModel):
-    """Rename an employer.
+    """Rename an employer, or tell JobPilot its website.
 
     Cosmetic by design: identity lives in ``normalized_name``, which is derived
     from the *original* strings on the jobs and is not touched here. So a rename
     cannot orphan a company's jobs or move its contacts somewhere else — the
     worst it can do is display the wrong words.
+
+    ``domain`` ("acme.com", or a URL) is where the logo is looked for when no
+    board supplied one; "" clears it. Setting it fetches the logo right away.
     """
 
-    name: str
+    name: str | None = None
+    domain: str | None = Field(None, max_length=255)
 
 
 class IntakeIn(BaseModel):

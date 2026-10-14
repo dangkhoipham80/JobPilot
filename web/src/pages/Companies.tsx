@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import { Pagination } from "@/components/Pagination";
+import { CompanyLogo } from "@/components/CompanyLogo";
 import { HrContactList } from "@/components/HrContactList";
 import { Button, Card, CardBody, CardHeader, CardTitle, Input, Select, Skeleton } from "@/components/ui";
 import { useT } from "@/i18n";
@@ -178,8 +179,9 @@ function CompanyRow({
     <div className={cn("rounded-lg border", open && "border-accent/40 bg-surface-2/40")}>
       <button
         onClick={onToggle}
-        className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2.5 text-left"
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left"
       >
+        <CompanyLogo name={company.name} logo={company.logo} size={28} />
         <span className="font-medium text-ink">{company.name}</span>
         <span className="text-xs text-ink-muted">{t(company.job_count === 1 ? "jobsCountOne" : "jobsCount", { count: company.job_count })}</span>
         {company.applied_count > 0 && (
@@ -208,6 +210,7 @@ function CompanyRow({
           {shown && (
             <>
               <RenameCompany company={shown} onRenamed={(next) => { setLocal(next); onChanged(); }} />
+              <CompanyDomain company={shown} onSaved={(next) => { setLocal(next); onChanged(); }} />
 
               <section className="flex flex-col gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
@@ -302,6 +305,61 @@ function RenameCompany({
       </Button>
       <span className="text-xs text-ink-muted">{error ?? t("renameHint")}</span>
     </div>
+  );
+}
+
+/** The employer's website — where the logo is looked for when no board gave one. */
+function CompanyDomain({
+  company,
+  onSaved,
+}: {
+  company: CompanyDetail;
+  onSaved: (next: CompanyDetail) => void;
+}) {
+  const t = useT("companies");
+  const [domain, setDomain] = useState(company.domain ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await api.setCompanyDomain(company.id, domain.trim());
+      onSaved(next);
+      if (domain.trim() && !next.logo) setError(t("logoNotFound"));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : t("domainFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{t("website")}</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <CompanyLogo name={company.name} logo={company.logo} size={36} />
+        <Input
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+          placeholder="acme.com"
+          className="w-64"
+        />
+        <Button size="sm" variant="outline" onClick={save} disabled={busy || domain.trim() === (company.domain ?? "")}>
+          {t("saveWebsite")}
+        </Button>
+      </div>
+      <p className="text-xs text-ink-muted">
+        {error ??
+          (company.logo
+            ? company.logo_url
+              ? t("logoFromBoard")
+              : t("logoFromSite")
+            : t("websiteHint"))}
+      </p>
+    </section>
   );
 }
 

@@ -19,6 +19,7 @@ from jobpilot.api.schemas import JobDetailOut, JobIn, JobOut, JobPatch, Page, Re
 # that reads it.
 from jobpilot.apply.dispatcher import EMAIL
 from jobpilot.apply.email import recipient_of
+from jobpilot.companies.logos import logo_path
 from jobpilot.companies.service import link_job
 # Imported by name, not as a module: `jobpilot.crawler` re-exports a *function*
 # called `normalize`, so `from jobpilot.crawler import normalize` binds that and
@@ -35,7 +36,7 @@ from jobpilot.crawler.text import normalize_company, normalize_title
 from jobpilot.crawler.types import HAND_ID_PREFIX, is_hand_added, make_job_id
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
-from jobpilot.store.models import Job, JobStatus
+from jobpilot.store.models import Company, Job, JobStatus
 from jobpilot.timeutil import vn_now
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_token)])
@@ -370,10 +371,12 @@ def list_jobs(
             select(Job.latest_id, func.count()).where(Job.latest_id.in_(ids)).group_by(Job.latest_id)
         ).all()
     ) if ids else {}
+    logos = _logos_for(db, rows)
     items = []
     for r in rows:
         out = JobOut.model_validate(r)
         out.reposts = counts.get(r.id, 0)
+        out.company_logo = logos.get(r.company_id)
         items.append(out)
     return page_list(items, total, limit, offset)
 
@@ -603,9 +606,21 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailOut:
     # taken down" two alert emails later. Never looked for is not gone.
     passes = [] if is_hand_added(job.id) else crawl_passes(db, [job.source]).get(job.source, [])
     out = JobDetailOut.from_job(job, passes)
+    out.company_logo = _logos_for(db, [job]).get(job.company_id)
     out.copies = [RepostOut.model_validate(c) for c in _copies(db, job)]
     out.reposts = sum(1 for c in out.copies if c.id != job.latest_id)
     return out
+
+
+def _logos_for(db: Session, jobs: list[Job]) -> dict[int, str]:
+    """company_id → cached logo URL, in one query for the whole page."""
+    ids = {j.company_id for j in jobs if j.company_id is not None}
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Company.id, Company.logo_file).where(Company.id.in_(ids), Company.logo_file.is_not(None))
+    ).all()
+    return {cid: url for cid, name in rows if (url := logo_path(name))}
 
 
 def _copies(db: Session, job: Job) -> list[Job]:

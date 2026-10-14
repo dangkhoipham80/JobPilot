@@ -13,6 +13,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from jobpilot.crawler.jsonld import find_job_posting, org_logo
 from jobpilot.crawler.normalize import title_excluded
 from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.robots import RobotsPolicy
@@ -378,7 +379,17 @@ class BaseScraper(ABC):
                 detail = ""
                 if self.needs_detail:
                     detail = self._fetch(hit.url)
-                results.append(self.parse_detail(detail, hit))
+                raw = self.parse_detail(detail, hit)
+                # The employer's logo, wherever the detail page carries the
+                # JSON-LD posting — one place for every board, not one per
+                # scraper. Used for the company row (companies/logos.py).
+                # Substring first: parsing a 1.6 MB TopCV page a second time just
+                # to learn it has no JSON-LD would double the crawl's CPU.
+                if "ld+json" in detail and not raw.extra.get("company_logo"):
+                    logo = org_logo(find_job_posting(detail))
+                    if logo:
+                        raw.extra["company_logo"] = logo
+                results.append(raw)
             except Exception as exc:
                 log.warning("[%s] skip %s: %s", self.source, hit.url, exc)
                 continue

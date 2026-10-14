@@ -18,6 +18,7 @@ import { useFormat } from "@/lib/format";
 import { skillLabel, useLabels } from "@/lib/labels";
 import { StatusPill } from "@/components/StatusPill";
 import { MatchMeter, QualityFlags } from "@/components/MatchMeter";
+import { CompanyLogo } from "@/components/CompanyLogo";
 import { FreshBeacon } from "@/components/FreshBeacon";
 import { sourceColor } from "@/components/charts/palette";
 import { Badge, Button, Card, CardBody, Skeleton } from "@/components/ui";
@@ -79,6 +80,8 @@ export function JobDetail({ version }: { version: number }) {
           <Card>
             <CardBody className="space-y-4">
               <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-4">
+                <CompanyLogo name={job.company} logo={job.company_logo} size={56} className="mt-1" />
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     {job.is_fresh && <FreshBeacon withLabel />}
@@ -128,6 +131,7 @@ export function JobDetail({ version }: { version: number }) {
                     />
                     {job.id} · {t("posted")} {fmt.relativeTime(job.posted_at)}
                   </div>
+                </div>
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-3">

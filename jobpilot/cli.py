@@ -44,6 +44,17 @@ def _redact_url(url: str) -> str:
         return "(set, redacted)"
 
 
+def cmd_logos(args: argparse.Namespace) -> int:
+    """Fetch employer logos that are due (companies/logos.py), ``--limit`` at a time."""
+    from jobpilot.companies.logos import refresh_due
+    from jobpilot.store.db import session_scope
+
+    with session_scope() as db:
+        result = refresh_due(db, limit=args.limit)
+    print(f"logos: found {result.found} of {result.tried} tried")
+    return 0
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     """Attach quality signals and analytics facets to jobs crawled earlier.
 
@@ -705,6 +716,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("config", help="validate & print resolved config").set_defaults(func=cmd_config)
+    p_logos = sub.add_parser("logos", help="fetch employer logos that are due")
+    p_logos.add_argument("--limit", type=int, default=50)
+    p_logos.set_defaults(func=cmd_logos)
+
     p_backfill = sub.add_parser(
         "backfill", help="add quality signals + analytics facets to older jobs"
     )

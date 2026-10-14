@@ -487,6 +487,20 @@ def crawl_body(
                 on_progress=progress,
                 sources=sources,
             )
+            # Logos for employers this crawl brought in, a bounded batch per run
+            # (companies/logos.py). After the jobs are safe: a logo failure must
+            # never cost a crawl its results, so it is caught and only logged.
+            try:
+                from jobpilot.companies.logos import refresh_due
+
+                db.commit()
+                found = refresh_due(db, limit=25)
+                db.commit()
+                if found.tried:
+                    progress(f"logos: {found.found} of {found.tried} found")
+            except Exception as exc:  # pragma: no cover - network
+                db.rollback()
+                progress(f"logos: skipped ({exc})")
 
             sites = [
                 {
