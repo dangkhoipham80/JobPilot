@@ -102,6 +102,8 @@ class CareerFeedScraper(AtsScraper):
         root = ElementTree.fromstring(text.strip())
         if root.tag != "source":
             raise ValueError(f"expected an XML job feed <source>, got <{root.tag}>")
+        # The employer's own site, for its logo (companies/logos.py).
+        publisher = urlsplit(clean_text(root.findtext("publisherUrl") or "")).hostname or ""
         hits: list[SearchHit] = []
         for job in root.iter("job"):
             field = lambda name: clean_text(job.findtext(name) or "")  # noqa: E731
@@ -122,6 +124,7 @@ class CareerFeedScraper(AtsScraper):
                         "tags": [t for t in (field("category"), field("jobtype")) if t],
                         "description": job.findtext("description") or "",
                         "work_mode": _remote_word(field("remotetype")),
+                        "domain": publisher,
                     },
                 )
             )
@@ -140,7 +143,11 @@ class CareerFeedScraper(AtsScraper):
             description_html=str(hit.extra.get("description") or ""),
             apply_channel="external",
             apply_target=hit.url,
-            extra={"ats": "careerfeed", "work_mode_stated": hit.extra.get("work_mode")},
+            extra={
+                "ats": "careerfeed",
+                "work_mode_stated": hit.extra.get("work_mode"),
+                "company_domain": hit.extra.get("domain") or None,
+            },
         )
 
 
@@ -368,6 +375,15 @@ class EightfoldScraper(AtsScraper):
     def detail_url(self, hit: SearchHit) -> str:
         return str(hit.extra.get("api") or hit.url)
 
+    @staticmethod
+    def _board_of(hit: SearchHit) -> str:
+        """``host/domain`` again, from the detail API URL the hit carries."""
+        from urllib.parse import parse_qs
+
+        api = urlsplit(str(hit.extra.get("api") or ""))
+        domain = (parse_qs(api.query).get("domain") or [""])[0]
+        return f"{api.netloc}/{domain}" if api.netloc and domain else "x/"
+
     def parse_detail(self, text: str, hit: SearchHit) -> RawJob:
         data = load_json(text)
         info = (data or {}).get("data") if isinstance(data, dict) else None
@@ -387,6 +403,7 @@ class EightfoldScraper(AtsScraper):
             apply_target=clean_text(str(info.get("publicUrl") or "")) or hit.url,
             extra={
                 "ats": "eightfold",
+                "company_domain": _eightfold_parts(self._board_of(hit))[1],
                 "work_mode_stated": _remote_word(str(info.get("workLocationOption") or ""))
                 or hit.extra.get("work_mode"),
             },
@@ -454,7 +471,7 @@ class GoogleCareersScraper(AtsScraper):
             description_html="".join(f"<div>{p}</div>" for p in parts if p),
             apply_channel="external",
             apply_target=hit.url,
-            extra={"ats": "googlecareers"},
+            extra={"ats": "googlecareers", "company_domain": "google.com"},
         )
 
 

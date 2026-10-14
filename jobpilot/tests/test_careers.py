@@ -30,6 +30,7 @@ NO_WAIT = RateLimiter(0, 0)
 FEED = """<?xml version="1.0" encoding="utf-8"?>
 <source>
   <publisher>Acme</publisher>
+  <publisherUrl>https://www.acme.example/sg/</publisherUrl>
   <job>
     <title><![CDATA[Backend Engineer, Payments]]></title>
     <date><![CDATA[Wed, 14 Oct 2026 10:42:02 GMT]]></date>
@@ -73,6 +74,7 @@ def test_xml_feed_reads_every_posting_and_keeps_the_scope():
     assert (first.company, first.location) == ("Acme", "HCMC, Vietnam")
     assert "Build Java services" in first.description_html
     assert first.extra["work_mode_stated"] == "hybrid"
+    assert first.extra["company_domain"] == "www.acme.example"  # for the logo
     assert first.apply_channel == "external"
 
 
@@ -230,6 +232,7 @@ def test_eightfold_warms_up_the_session_before_the_api():
     assert job.location == "Vietnam, Multiple Locations"
     assert job.extra["work_mode_stated"] == "onsite"
     assert job.url.endswith("/careers/job/555")
+    assert job.extra["company_domain"] == "acme.example"
 
 
 # --------------------------------------------------------------------------- #
