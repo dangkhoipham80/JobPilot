@@ -65,6 +65,13 @@ the summary, so most of your work is deciding what to promote and what to hide.
     * `type=bullets` holds **items** → `item_order`
     * `type=paragraph` holds neither → leave both empty
   Dropping an index removes that entry entirely.
+- Projects: the Master CV keeps every project the candidate has done, so the
+  projects section is a pool, not a list to print. Give it an `entry_order` that
+  keeps only the projects that speak to this job ({max_projects} at most), most
+  relevant first, and drops the rest. Judge relevance by shared technologies
+  and by the kind of work: a game says little to a backend role, and a Spring
+  Boot service says little to a game studio. Name the projects you left out in
+  `changes`.
 - `entries`: within an entry, `bullet_order` promotes the bullets that match the
   job (and may drop the least relevant ones), and `tech_stack_order` puts the
   technologies the job asks for at the front.
@@ -133,9 +140,16 @@ def render_job(job: Job) -> str:
     return "\n".join(parts)
 
 
-def system_prompt(master: CvDocument) -> str:
-    """Stable across jobs — rules plus the Master CV outline."""
-    return f"{RULES}\n\n{render_master(master)}"
+def system_prompt(master: CvDocument, max_projects: int = 3) -> str:
+    """Stable across jobs — rules plus the Master CV outline.
+
+    ``max_projects <= 0`` means no limit; the rule then only asks for relevance.
+    ``replace`` rather than ``format``: a literal brace added to RULES later must
+    not become a KeyError at request time.
+    """
+    limit = str(max_projects) if max_projects > 0 else "as many as fit on one page"
+    rules = RULES.replace("{max_projects}", limit)
+    return f"{rules}\n\n{render_master(master)}"
 
 
 def user_prompt(

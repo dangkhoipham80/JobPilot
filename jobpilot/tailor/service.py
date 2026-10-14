@@ -35,6 +35,7 @@ from jobpilot.tailor.edit import (
 )
 from jobpilot.tailor.engine import TailorEngine, TailorError
 from jobpilot.tailor.guard import GuardrailViolation
+from jobpilot.tailor.projects import limit_projects
 from jobpilot.tailor.schema import TailorPlan
 from jobpilot.timeutil import vn_now
 
@@ -137,6 +138,10 @@ def tailor_job(
     try:
         say("re-planning with your instruction" if instruction else "planning against the JD")
         result = engine.tailor(master, job, instruction=instruction, previous=previous)
+        # The Master holds every project; this job's CV shows the ones that fit it.
+        result.plan = limit_projects(
+            result.plan, master, job, get_config().app.tailor_max_projects
+        )
         tailored = apply_plan(master, result.plan)
     except (TailorError, GuardrailViolation) as exc:
         job.status = JobStatus.FAILED

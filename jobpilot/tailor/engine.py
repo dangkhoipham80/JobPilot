@@ -69,6 +69,8 @@ class ModelTailorEngine:
     """
 
     client: StructuredClient
+    #: Told to the model; the hard cut is ``tailor/projects.py`` in the service.
+    max_projects: int = 3
 
     def _ask(self, system: str, messages: list[dict]) -> Completion[TailorPlan]:
         try:
@@ -83,7 +85,7 @@ class ModelTailorEngine:
         instruction: str | None = None,
         previous: TailorPlan | None = None,
     ) -> TailorResult:
-        system = prompts.system_prompt(master)
+        system = prompts.system_prompt(master, max_projects=self.max_projects)
         user = prompts.user_prompt(job, instruction=instruction, previous=previous)
         messages: list[dict] = [{"role": "user", "content": user}]
 
@@ -131,6 +133,9 @@ class FixtureEngine:
 
 def default_engine() -> TailorEngine:
     """The engine `llm.tailor` (or `llm.provider`) asks for."""
+    from jobpilot.config import get_config
     from jobpilot.llm.registry import client_for
 
-    return ModelTailorEngine(client_for("tailor"))
+    return ModelTailorEngine(
+        client_for("tailor"), max_projects=get_config().app.tailor_max_projects
+    )
