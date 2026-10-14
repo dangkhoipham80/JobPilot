@@ -4,6 +4,9 @@
 app:
   timezone: Asia/Ho_Chi_Minh
   edit_max_rounds: 3          # max CV re-tailor rounds per job (K in SKILL.md)
+  # Most projects a tailored CV shows (0 = no limit). The Master CV keeps every
+  # project; each tailored CV keeps only the ones that fit that job.
+  tailor_max_projects: 3
 
 crawl:
   jobs_per_site: 10           # "crawl ~10 job/site" per the MVP spec

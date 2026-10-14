@@ -124,6 +124,18 @@ Model không sửa `.tex` và không viết lại bullet. Nó điền các trư�
 
 Không có trường nào để đổi tiêu đề, ngày tháng, công ty hay nội dung một bullet.
 
+**Project là một kho, không phải danh sách để in hết.** Master CV giữ **mọi** project (CV Studio
+là kho); CV tailored chỉ giữ những project hợp job, nhiều nhất `app.tailor_max_projects` (mặc định
+3, `0` = không giới hạn). Prompt dặn model chọn bằng `entry_order` của section projects; sau khi
+guard qua, `tailor/projects.py:limit_projects` là lớp sàn tất định:
+- model đã chọn mà dài quá trần → giữ `cap` cái đầu **theo thứ tự của model**, không xếp lại;
+- model để trống → xếp theo số tech trong `tech_stack` mà JD nhắc tới (khớp nguyên từ: "Java"
+  không khớp trong "JavaScript"), hoà điểm thì theo thứ tự trong Master (thứ tự ưu tiên của user).
+
+Phần bị cắt ghi thành một dòng `changes[]` nêu tên các project bị bỏ, và `EntryPlan` của chúng bị
+gỡ. Bước này chỉ rút ngắn danh sách chỉ số nên plan vẫn qua `check_plan`. Muốn một project luôn
+đứng đầu khi hoà điểm thì xếp nó lên trước trong Master.
+
 **Rule độ dài**: giữ CV **1 trang** bằng cách ẩn phần ít liên quan. Build xong sẽ đếm trang và
 cảnh báo nếu khác 1; hiện **chưa** có vòng tự cắt (đó là ô 23 của `PLAN.md §9.1`).
 

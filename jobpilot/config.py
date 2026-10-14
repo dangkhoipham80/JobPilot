@@ -36,6 +36,9 @@ LOCAL_CONFIG_PATH = PACKAGE_DIR / "config.local.yaml"
 class AppCfg(BaseModel):
     timezone: str = "Asia/Ho_Chi_Minh"
     edit_max_rounds: int = 3
+    #: Most projects a tailored CV shows. The Master keeps them all (it is the
+    #: store); a tailored CV keeps the ones that fit the job. 0 = no limit.
+    tailor_max_projects: int = 3
 
 
 class CrawlCfg(BaseModel):
