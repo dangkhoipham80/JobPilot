@@ -87,6 +87,19 @@ class HttpFetcher:
 
     __call__ = get
 
+    def post_json(self, url: str, body: dict) -> str:
+        """POST ``body`` as JSON — for search APIs that take no GET (Workday)."""
+        if self._client is None:
+            self.start()
+        assert self._client is not None
+        try:
+            resp = self._client.post(url, json=body, headers={"Accept": "application/json"})
+        except Exception as exc:  # pragma: no cover - network dependent
+            raise FetchError(f"failed to post {url}: {exc}") from exc
+        if resp.status_code >= 400:
+            raise FetchError(f"{url} returned HTTP {resp.status_code}")
+        return resp.text
+
     def close(self) -> None:
         try:
             if self._client is not None:

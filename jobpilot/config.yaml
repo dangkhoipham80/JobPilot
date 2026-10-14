@@ -78,6 +78,11 @@ sources:
   # Off by default: which companies you follow is a choice only you can make.
   - { key: greenhouse,     tier: 3, enabled: false }
   - { key: lever,          tier: 3, enabled: false }
+  # Career sites on other platforms, or the company's own (crawler/careers.py).
+  - { key: careerfeed,     tier: 3, enabled: false }  # Indeed-style XML feed
+  - { key: workday,        tier: 3, enabled: false }
+  - { key: eightfold,      tier: 3, enabled: false }
+  - { key: googlecareers,  tier: 3, enabled: false }
 
 # Company boards to read for the tier-3 ATS sources above. A token is the
 # company's slug in its careers-page URL — the `gitlab` in
@@ -93,6 +98,16 @@ ats:
   lever:
     - palantir        # 302 jobs
     - spotify         # 105 jobs
+  # Other platforms. Formats only — put the companies you follow in
+  # config.local.yaml, which is not committed: this repo is public.
+  #   careerfeed: the site's XML feed URL      https://careers.example.com/jobs/xml/?rss=true
+  #   workday:    <tenant>.wdN.myworkdayjobs.com/<site>   (from the careers page URL)
+  #   eightfold:  <careers host>/<company domain>         e.g. apply.careers.example.com/example.com
+  #   googlecareers: [google]
+  careerfeed: []
+  workday: []
+  eightfold: []
+  googlecareers: []
   # Keep only postings in these places, e.g. ["Ho Chi Minh"] or ["Vietnam"].
   # Matched as whole words against the posting's own location label, accents
   # and case ignored, and by city for Vietnamese spellings ("HCMC", "Saigon",

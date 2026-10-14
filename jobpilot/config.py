@@ -120,6 +120,14 @@ class AtsCfg(BaseModel):
 
     greenhouse: list[str] = Field(default_factory=list)
     lever: list[str] = Field(default_factory=list)
+    #: Full URL of a careers site's Indeed-style XML feed.
+    careerfeed: list[str] = Field(default_factory=list)
+    #: ``<tenant>.wdN.myworkdayjobs.com/<site>``.
+    workday: list[str] = Field(default_factory=list)
+    #: ``<careers host>/<company domain>``.
+    eightfold: list[str] = Field(default_factory=list)
+    #: ``google`` to read Google's own careers site (it has one board).
+    googlecareers: list[str] = Field(default_factory=list)
     #: Keep only postings in these places ("Ho Chi Minh", "Vietnam"). Matched
     #: against the posting's own location label. Vietnamese cities are known by
     #: their spellings ("HCMC", "Saigon") and "Vietnam" by its cities; any other

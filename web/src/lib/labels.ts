@@ -25,6 +25,10 @@ const SOURCE_NAMES: Record<string, string> = {
   arbeitnow: "Arbeitnow",
   greenhouse: "Greenhouse",
   lever: "Lever",
+  careerfeed: "Career site feed",
+  workday: "Workday",
+  eightfold: "Eightfold",
+  googlecareers: "Google Careers",
   topdev: "TopDev",
   // Not boards anyone crawls: where a job added by hand was found.
   facebook: "Facebook",
@@ -49,6 +53,9 @@ const SOURCE_HOMES: Record<string, string> = {
   arbeitnow: "https://www.arbeitnow.com",
   greenhouse: "https://www.greenhouse.io",
   lever: "https://www.lever.co",
+  workday: "https://www.workday.com",
+  eightfold: "https://eightfold.ai",
+  googlecareers: "https://www.google.com/about/careers/applications/",
   topdev: "https://topdev.vn",
 };
 

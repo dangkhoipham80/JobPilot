@@ -121,17 +121,33 @@ class AtsScraper(FeedScraper):
         if locations is not None:
             self.locations = tuple(t.strip() for t in locations if t and t.strip())
         self._out_of_scope = 0
-        # One page per company: the config ceiling is about unbounded boards,
-        # and this list is already bounded by whoever typed it.
-        self.max_pages = max(1, len(self.boards))
+        self._board = ""
+
+    #: Listing pages to walk per company. One for an API that returns the whole
+    #: board at once (Greenhouse, Lever, a feed); more for paged ones (Workday,
+    #: Google), where `crawl.max_pages` does not apply — this list is already
+    #: bounded by whoever typed it.
+    pages_per_board: int = 1
 
     def board_url(self, board: str) -> str:  # pragma: no cover - overridden
         raise NotImplementedError
 
+    def board_page_url(self, board: str, query: str, page: int) -> str:
+        """URL of listing page ``page`` of one company. Empty = no such page."""
+        return self.board_url(board) if page == 1 else ""
+
+    def board_page_body(self, board: str, query: str, page: int) -> dict | None:
+        """JSON body when the company's listing is a POST (Workday)."""
+        return None
+
+    def warmup(self, board: str) -> None:
+        """Anything a company's site needs before its API answers (a cookie)."""
+
     def search_url(self, query: str, page: int = 1) -> str:
-        if not 1 <= page <= len(self.boards):
-            return ""
-        return self.board_url(self.boards[page - 1])
+        return self.board_page_url(self._board, query, page) if self._board else ""
+
+    def search_body(self, query: str, page: int) -> dict | None:
+        return self.board_page_body(self._board, query, page) if self._board else None
 
     def search(self, query: str = "", limit: int | None = None) -> list[SearchHit]:
         """Say "no companies configured" plainly instead of "0 hits".
@@ -149,7 +165,33 @@ class AtsScraper(FeedScraper):
             )
             return []
         self._out_of_scope = 0
-        hits = super().search(query, limit)
+        # One listing walk per company, not one page per company. A company
+        # with no postings used to end the shared loop ("empty page = end of
+        # results") and every company listed after it went unread.
+        hits: list[SearchHit] = []
+        dropped = 0
+        for board in self.boards:
+            remaining = None if limit is None else limit - len(hits)
+            if remaining is not None and remaining <= 0:
+                break
+            self._board = board
+            self.max_pages = max(1, self.pages_per_board)
+            try:
+                self.warmup(board)
+                found = super().search(query, remaining)
+            except Exception as exc:
+                if not hits and board == self.boards[-1]:
+                    raise  # every company failed: let the pipeline isolate the source
+                # One company's site failing is that company's problem; the
+                # others are still worth reading. Logged with the reason.
+                log.warning("[%s] board %r failed (%s), continuing", self.source, board, exc)
+                continue
+            finally:
+                self._board = ""
+            dropped += self.titles_dropped
+            known = {h.native_id for h in hits}
+            hits += [h for h in found if h.native_id not in known]
+        self.titles_dropped = dropped
         if self._out_of_scope:
             # Said out loud: a board that yields nothing because every posting
             # is elsewhere must not read like a board with no matching jobs.
