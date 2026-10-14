@@ -74,6 +74,8 @@ def start_crawl(
             respect_robots=not (req.no_robots or no_robots),
             sources=req.sources,
             limit=req.limit,
+            places=req.places,
+            work_modes=req.work_modes,
         ),
         label=_crawl_label(resolved_query, req.sources),
     )
@@ -113,7 +115,15 @@ def _request_of(run: Run) -> dict | None:
         if isinstance(sources, list) and sources
         else None,
         "limit": limit if isinstance(limit, int) and limit > 0 else None,
+        # None for runs recorded before these existed: "the saved default",
+        # which is also what they ran with.
+        "places": _strings(req.get("places")) if isinstance(req, dict) else None,
+        "work_modes": _strings(req.get("work_modes")) if isinstance(req, dict) else None,
     }
+
+
+def _strings(value) -> list[str] | None:
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else None
 
 
 @router.get("/crawl/recent")
@@ -184,6 +194,10 @@ def crawl_setup(db: Session = Depends(get_db)) -> dict:
         "stacks": list(cfg.crawl.stacks),
         "default_query": default_query(cfg),
         "jobs_per_site": cfg.crawl.jobs_per_site,
+        # The saved "where and how" defaults the form starts from.
+        "places": list(cfg.crawl.places),
+        "work_modes": list(cfg.crawl.work_modes),
+        "city": cfg.crawl.city,
         "sources": [
             {"key": s.key, "enabled": s.enabled, "ready": s.key in SCRAPERS} for s in cfg.sources
         ],

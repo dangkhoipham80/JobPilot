@@ -8,6 +8,15 @@ import { SourceIcon } from "@/components/SourceIcon";
 import { useT } from "@/i18n";
 import { sourceHome, sourceLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
+import type { CrawlRequest, Settings, WorkMode } from "@/types";
+
+/** Places offered as one click. Anything else is typed in. */
+const PLACE_PRESETS = ["Ho Chi Minh", "Ha Noi", "Da Nang", "Vietnam", "Remote"];
+const MODES: WorkMode[] = ["onsite", "hybrid", "remote"];
+
+function toggled<T>(list: T[], item: T): T[] {
+  return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+}
 
 /** Keywords per crawl; mirrors `MAX_QUERIES` in `crawler/pipeline.py`. */
 export const MAX_KEYWORDS = 8;
@@ -51,7 +60,7 @@ export function CrawlSetup({
   busy: boolean;
   /** A crawl is already running — one at a time, or they race the same sites. */
   blocked: boolean;
-  onCrawl: (body: { query?: string; sources?: string[]; limit?: number }) => Promise<void>;
+  onCrawl: (body: CrawlRequest) => Promise<void>;
 }) {
   const t = useT("runs");
   const nav = useT("nav");
@@ -60,7 +69,28 @@ export function CrawlSetup({
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState<number | "">("");
   const [picked, setPicked] = useState<string[] | null>(null);
+  const [places, setPlaces] = useState<string[] | null>(null);
+  const [modes, setModes] = useState<WorkMode[] | null>(null);
+  const [otherPlace, setOtherPlace] = useState("");
+  const [saveDefault, setSaveDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Start from the saved preference, once it has arrived.
+  useEffect(() => {
+    if (setup && places === null) setPlaces(setup.places ?? []);
+    if (setup && modes === null) setModes(setup.work_modes ?? []);
+  }, [setup, places, modes]);
+  const chosenPlaces = places ?? [];
+  const chosenModes = modes ?? [];
+  const placeChips = [...PLACE_PRESETS, ...chosenPlaces.filter((p) => !PLACE_PRESETS.includes(p))];
+
+  function addPlace() {
+    const p = otherPlace.trim();
+    if (p && !chosenPlaces.some((x) => x.toLowerCase() === p.toLowerCase())) {
+      setPlaces([...chosenPlaces, p]);
+    }
+    setOtherPlace("");
+  }
 
   // Only sources that are both switched on *and* actually implemented can be
   // picked. Offering the rest would produce a crawl that does nothing.
@@ -102,7 +132,16 @@ export function CrawlSetup({
   async function start() {
     setError(null);
     try {
+      if (saveDefault) {
+        // A partial section: the server deep-merges it into config.local.yaml.
+        await api.saveSettings({
+          crawl: { places: chosenPlaces, work_modes: chosenModes },
+        } as unknown as Partial<Settings>);
+        setSaveDefault(false);
+      }
       await onCrawl({
+        places: chosenPlaces,
+        work_modes: chosenModes,
         query: keywords.length ? keywords.join(", ") : undefined,
         // Sending every source is the same as sending none, and an empty body
         // reads better in the run label ("all sources").
@@ -250,6 +289,89 @@ export function CrawlSetup({
             </p>
           )}
         </div>
+
+        {/* Where + how */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <Label>{t("placesTitle")}</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {placeChips.map((p) => {
+                const on = chosenPlaces.includes(p);
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPlaces(toggled(chosenPlaces, p))}
+                    aria-pressed={on}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      on
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                    )}
+                  >
+                    {PLACE_PRESETS.includes(p)
+                      ? t(`place_${PLACE_PRESETS.indexOf(p)}` as Parameters<typeof t>[0])
+                      : p}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex gap-1.5">
+              <Input
+                value={otherPlace}
+                onChange={(e) => setOtherPlace(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addPlace()}
+                placeholder={t("placeOther")}
+                className="h-8 text-xs"
+              />
+              <Button size="sm" variant="outline" onClick={addPlace} disabled={!otherPlace.trim()}>
+                {t("placeAdd")}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-ink-muted">
+              {chosenPlaces.length
+                ? t("placesHint")
+                : setup?.city
+                  ? t("placesNoneCity", { city: setup.city })
+                  : t("placesNone")}
+            </p>
+          </div>
+          <div>
+            <Label>{t("modesTitle")}</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {MODES.map((m) => {
+                const on = chosenModes.includes(m);
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setModes(toggled(chosenModes, m))}
+                    aria-pressed={on}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                      on
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "text-ink-muted hover:bg-surface-2 hover:text-ink",
+                    )}
+                  >
+                    {t(`mode_${m}`)}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-[11px] text-ink-muted">
+              {chosenModes.length ? t("modesHint") : t("modesNone")}
+            </p>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-ink-muted">
+          <input
+            type="checkbox"
+            checked={saveDefault}
+            onChange={(e) => setSaveDefault(e.target.checked)}
+            className="accent-accent"
+          />
+          {t("saveWhereHow")}
+        </label>
 
         {/* Depth + go */}
         <div className="flex flex-wrap items-end gap-3">

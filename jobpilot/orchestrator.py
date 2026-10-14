@@ -449,8 +449,13 @@ def crawl_body(
     respect_robots: bool = True,
     sources: list[str] | None = None,
     limit: int | None = None,
+    places: list[str] | None = None,
+    work_modes: list[str] | None = None,
 ) -> TaskBody:
     """A crawl over the enabled sources, summarised per site and per keyword.
+
+    ``places`` / ``work_modes`` are where and how you want to work for this run;
+    ``None`` = the saved defaults (``crawl.places`` / ``crawl.work_modes``).
 
     ``query`` may hold several comma-separated keywords, each searched on every
     site. ``sources`` and ``limit`` scope one run only; none of it is written
@@ -463,8 +468,14 @@ def crawl_body(
         from jobpilot.crawler.registry import build_scrapers
         from jobpilot.store.db import session_scope
 
+        from jobpilot.crawler.scope import Scope
+
         cfg = get_config()
-        scrapers = build_scrapers(cfg, respect_robots=respect_robots, only=sources)
+        scope = Scope.of(
+            cfg.crawl.places if places is None else places,
+            cfg.crawl.work_modes if work_modes is None else work_modes,
+        )
+        scrapers = build_scrapers(cfg, respect_robots=respect_robots, only=sources, scope=scope)
         if not scrapers:
             asked = f" matching {sources}" if sources else ""
             raise RuntimeError(
@@ -486,6 +497,7 @@ def crawl_body(
                 limit=limit,
                 on_progress=progress,
                 sources=sources,
+                scope=scope,
             )
             # Logos for employers this crawl brought in, a bounded batch per run
             # (companies/logos.py). After the jobs are safe: a logo failure must

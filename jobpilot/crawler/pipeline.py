@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from jobpilot.config import Config
 from jobpilot.crawler.base import BaseScraper
 from jobpilot.crawler.normalize import normalize, title_excluded, vn_now
+from jobpilot.crawler.scope import Scope
 from jobpilot.crawler.persist import CrawlStats, persist_jobs
 from jobpilot.store.models import Run
 
@@ -103,6 +104,7 @@ def _crawl_site(
     dedup_days: int,
     run_id: int | None = None,
     limit_override: int | None = None,
+    scope: Scope | None = None,
 ) -> SiteReport:
     limit = limit_override or cfg.crawl.jobs_per_site
     raws = scraper.crawl(query, limit=limit)
@@ -113,7 +115,12 @@ def _crawl_site(
         nj = normalize(raw, cfg, now)
         excluded = title_excluded(raw.title, cfg.crawl.exclude_keywords)
         no_stack = scraper.stack_gated and bool(cfg.crawl.stacks) and nj.match_score <= 0.0
-        if excluded or no_stack:
+        # Where/how the user wants to work. Only a posting that *states* a
+        # mismatch is left out — silence about it is kept (crawler/scope.py).
+        elsewhere = scope.keeps(nj) if scope else None
+        if excluded or no_stack or elsewhere:
+            if elsewhere:
+                log.debug("[%s] %s left out: %s", scraper.source, nj.id, elsewhere)
             filtered += 1
             continue
         kept.append(nj)
@@ -154,6 +161,7 @@ def run_crawl(
     limit: int | None = None,
     on_progress: Callable[[str], None] | None = None,
     sources: list[str] | None = None,
+    scope: Scope | None = None,
 ) -> RunReport:
     """Crawl every scraper into ``session`` and return a :class:`RunReport`.
 
@@ -218,7 +226,7 @@ def run_crawl(
                     # remaining searches — and the Run row — down too.
                     with session.begin_nested():
                         site = _crawl_site(
-                            scraper, cfg, session, q, now, dedup_days, report.run_id, limit
+                            scraper, cfg, session, q, now, dedup_days, report.run_id, limit, scope
                         )
                 except Exception as exc:
                     log.exception("[%s] crawl failed for %r", scraper.source, q)
@@ -261,7 +269,13 @@ def run_crawl(
             "query": ", ".join(queries),
             "queries": queries,
             # Exactly what was asked, so the run can be repeated as it was.
-            "request": {"queries": queries, "sources": sources, "limit": limit},
+            "request": {
+                "queries": queries,
+                "sources": sources,
+                "limit": limit,
+                "places": list(scope.places) if scope else [],
+                "work_modes": list(scope.work_modes) if scope else [],
+            },
             "by_query": {q: st.as_dict() for q, st in report.by_query.items()},
             "totals": report.totals.as_dict(),
             "sites": {
