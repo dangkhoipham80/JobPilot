@@ -130,7 +130,13 @@ def tailored_pdf(job_id: str, db: Session = Depends(get_db)) -> FileResponse:
     pdf = build_dir(job_id) / "cv.pdf"
     if not pdf.is_file():
         raise HTTPException(status_code=404, detail="not tailored yet")
-    return FileResponse(pdf, media_type="application/pdf", filename=f"cv-{job_id}.pdf")
+    # Same URL after every re-tailor: revalidate, never serve a cached build.
+    return FileResponse(
+        pdf,
+        media_type="application/pdf",
+        filename=f"cv-{job_id}.pdf",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.post("/{job_id:path}/approve", response_model=JobDetailOut)

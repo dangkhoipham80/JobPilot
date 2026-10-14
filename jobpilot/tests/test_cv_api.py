@@ -253,6 +253,8 @@ def test_pdf_served_after_compile(client, monkeypatch, tmp_path):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF")
+    # Same URL after every build: a cached copy would show the CV from before the save.
+    assert r.headers["cache-control"] == "no-cache"
 
 
 # --------------------------------------------------------------------------- #

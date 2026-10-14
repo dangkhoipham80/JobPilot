@@ -89,7 +89,8 @@ export function PdfPreview({
 
   // Fetch on mount as well as after every compile — a build survives a reload,
   // and an empty pane next to a CV that is already on disk reads as "broken".
-  // `compiledAt` is the cache-buster for subsequent builds.
+  // `compiledAt` re-runs the fetch after each build; the fetch itself bypasses the
+  // HTTP cache (`cache: "no-cache"` in api.cvPdfUrl), since the URL never changes.
   //
   // The old object URL is revoked only once its replacement has arrived. The
   // previous version revoked it on effect *cleanup*, i.e. the moment a compile

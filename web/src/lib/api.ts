@@ -170,7 +170,12 @@ export const api = {
 
   /** Fetch the compiled PDF as an object URL (the <iframe> can't send the token). */
   cvPdfUrl: async (scope: string): Promise<string> => {
-    const res = await fetch(`${BASE}${cvPath(scope)}/pdf`, { headers: { "X-API-Token": TOKEN } });
+    // Same URL after every build: `no-cache` makes the browser revalidate instead
+    // of handing back the PDF from before the last save.
+    const res = await fetch(`${BASE}${cvPath(scope)}/pdf`, {
+      headers: { "X-API-Token": TOKEN },
+      cache: "no-cache",
+    });
     if (!res.ok) throw new ApiError(res.status, "PDF not available");
     return URL.createObjectURL(await res.blob());
   },
@@ -283,7 +288,10 @@ export const api = {
     req<Settings>("/settings", { method: "PUT", body: JSON.stringify(patch) }),
 
   tailoredPdfUrl: async (id: string): Promise<string> => {
-    const res = await fetch(`${BASE}${jobPath(id)}/cv`, { headers: { "X-API-Token": TOKEN } });
+    const res = await fetch(`${BASE}${jobPath(id)}/cv`, {
+      headers: { "X-API-Token": TOKEN },
+      cache: "no-cache",
+    });
     if (!res.ok) throw new ApiError(res.status, "PDF not available");
     return URL.createObjectURL(await res.blob());
   },

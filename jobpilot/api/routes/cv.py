@@ -313,7 +313,15 @@ def get_pdf(scope: str) -> FileResponse:
     pdf = build_dir(scope) / "cv.pdf"
     if not pdf.is_file():
         raise HTTPException(status_code=404, detail="not compiled yet — POST /cv/{scope}/compile")
-    return FileResponse(pdf, media_type="application/pdf", filename=f"{scope}-cv.pdf")
+    # The URL never changes between builds, and without Cache-Control a browser
+    # may serve the old file from cache by heuristic — the preview then shows the
+    # CV from before the save. no-cache = revalidate by ETag (304 when unchanged).
+    return FileResponse(
+        pdf,
+        media_type="application/pdf",
+        filename=f"{scope}-cv.pdf",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/{scope}/versions", response_model=Page[CvVersionOut])
