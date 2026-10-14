@@ -11,6 +11,7 @@ import { AddJobForm } from "@/components/AddJobForm";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
+import { CritiquePanel } from "@/components/cv/CritiquePanel";
 import { MarkupLegend } from "@/components/cv/fields";
 import { HeaderEditor } from "@/components/cv/HeaderEditor";
 import { ImportBox, releaseDraft, type ImportedDraft } from "@/components/cv/ImportBox";
@@ -486,6 +487,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
               </CardBody>
             </Card>
           )}
+          {scope === "master" && mode === "fields" && <CritiquePanel dirty={dirty} />}
           {mode === "latex" ? (
             <RawLatexEditor
               scope={scope}

@@ -399,6 +399,36 @@ class CvVersionDiffOut(BaseModel):
     diff: CvDiff
 
 
+class CritiqueIn(BaseModel):
+    #: A preset from ``critique.market.ROLE_PATTERNS`` or a phrase the job title
+    #: must contain; empty = every crawled job.
+    role: str = Field(default="", max_length=64)
+    #: Language the model writes its free text in. The figures are numbers.
+    lang: str = Field(default="vi", pattern="^(vi|en)$")
+
+
+class CritiqueOut(BaseModel):
+    """An advisory review of the Master CV — see ``jobpilot/critique/``.
+
+    ``report`` and ``market`` stay plain dicts for the reason ``FitOut`` keeps
+    ``requirements`` loose: they read a JSONB column, and a row written by an
+    older build must still display rather than 500.
+    """
+
+    id: int
+    cv_version: int
+    #: The Master's version now. Different from ``cv_version`` = the CV changed
+    #: since this was judged, and the page says so.
+    current_version: int
+    role: str
+    lang: str
+    report: dict
+    market: dict
+    created_at: datetime
+    #: The role presets, so the picker and the server cannot disagree.
+    roles: list[str]
+
+
 class CvCompileOut(BaseModel):
     scope: str
     version: int

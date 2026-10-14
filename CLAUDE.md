@@ -24,6 +24,7 @@ Hai lớp:
 | `jobpilot/crawler/CLAUDE.md` | thêm site mới, robots, nguồn tier-2 đã loại, LinkedIn alerts, bẫy selector/fetch |
 | `jobpilot/cv/CLAUDE.md` | thêm template mới (thư mục + `template.json`), macro bắt buộc, bẫy Jinja/LaTeX; nhập CV từ ảnh/PDF (không tự lưu, 3 trạng thái kiểm) |
 | `jobpilot/intake/CLAUDE.md` | dán JD → AI đọc + chấm độ khớp; JD lưu là bản của user, 3 loại `match_score` |
+| `jobpilot/critique/CLAUDE.md` | đánh giá Master CV so với job đã crawl: số liệu đếm vs ý kiến model, không bao giờ ghi vào CV |
 | `jobpilot/companies/CLAUDE.md` | fold tên nhà tuyển dụng (hướng gộp nhầm là hướng nguy hiểm), HR contact, `apply_target` ai nói ra thì thắng |
 | `jobpilot/llm/CLAUDE.md` | chọn provider/model theo việc, schema từng provider, đo chi phí, scrub key |
 | `jobpilot/api/CLAUDE.md` | hợp đồng phân trang `Page{items,total,…}`, `ORDER BY` unique, cap 200 |

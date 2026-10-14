@@ -1087,3 +1087,60 @@ export interface MarketReport {
   calendar: Facet;
   sources: Facet;
 }
+
+/* CV critique — an advisory review of the Master CV against the crawled market.
+   `market` is counted from crawled jobs (every figure on the panel comes from
+   it); `report` is the model's opinion, never written to the CV. */
+export interface MarketFacet {
+  rows: { key: string; count: number; on_cv?: boolean }[];
+  covered: number;
+  total: number;
+  note: string;
+}
+
+export interface CritiqueMarket {
+  role: string;
+  jobs: number;
+  total_jobs: number;
+  min_sample: number;
+  skills: MarketFacet;
+  levels: MarketFacet;
+  cv_skills: { name: string; key: string | null; count: number }[];
+}
+
+export interface CritiqueReport {
+  headline: string;
+  summary: string;
+  strengths: string[];
+  role_fits: { role: string; verdict: "strong" | "possible" | "stretch"; reason: string }[];
+  sections: {
+    key: string;
+    title: string;
+    verdict: "ok" | "improve" | "trim";
+    reason: string;
+    suggestions: string[];
+  }[];
+  entries: {
+    section_key: string;
+    entry_index: number;
+    title: string;
+    verdict: "keep" | "improve" | "trim" | "cut";
+    reason: string;
+    suggestion: string;
+  }[];
+  skills: { skill: string; advice: "learn" | "optional" | "skip"; reason: string }[];
+  priorities: string[];
+  dropped?: number;
+}
+
+export interface CvCritique {
+  id: number;
+  cv_version: number;
+  current_version: number;
+  role: string;
+  lang: string;
+  report: CritiqueReport;
+  market: CritiqueMarket;
+  created_at: string;
+  roles: string[];
+}
