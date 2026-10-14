@@ -184,8 +184,21 @@ class WorkdayScraper(AtsScraper):
         host, tenant, site = _workday_parts(board)
         return f"https://{host}/wday/cxs/{tenant}/{site}"
 
+    def warmup(self, board: str) -> None:
+        self._totals = getattr(self, "_totals", {})
+        self._totals.pop(board, None)
+
     def board_page_url(self, board: str, query: str, page: int) -> str:
-        return f"{self._api(board)}/jobs" if page <= self.pages_per_board else ""
+        if page > self.pages_per_board:
+            return ""
+        # Stop at the board's own count. Past it Workday answers with the last
+        # page again, which the shared loop reports as "the site ignores the
+        # page parameter" — a false alarm that sends a reader to fix a parser
+        # that works.
+        total = getattr(self, "_totals", {}).get(board)
+        if page > 1 and total is not None and (page - 1) * WORKDAY_PAGE >= total:
+            return ""
+        return f"{self._api(board)}/jobs"
 
     def board_page_body(self, board: str, query: str, page: int) -> dict:
         # The place goes in the free-text search, which matches location names;
@@ -208,6 +221,10 @@ class WorkdayScraper(AtsScraper):
         base = self._api(self._board) if self._board else ""
         host = urlsplit(base).netloc
         _, _, site = _workday_parts(self._board) if self._board else ("", "", "")
+        total = data.get("total")
+        totals = getattr(self, "_totals", None)
+        if totals is not None and isinstance(total, int) and total > 0:
+            totals.setdefault(self._board, total)  # page 1 states it; later pages say 0
         hits: list[SearchHit] = []
         for job in data.get("jobPostings") or []:
             path = clean_text(str(job.get("externalPath") or ""))
@@ -237,19 +254,23 @@ class WorkdayScraper(AtsScraper):
         if not info:
             raise ValueError("Workday posting without jobPostingInfo")
         org = clean_text(str(((data or {}).get("hiringOrganization") or {}).get("name") or ""))
-        places = [clean_text(str(info.get("location") or ""))] + [
+        places = [p for p in [clean_text(str(info.get("location") or ""))] + [
             clean_text(str(p)) for p in info.get("additionalLocations") or []
-        ]
+        ] if p]
+        # The list said "4 Locations" and the posting was kept unread; only now
+        # are its places known, so scope is decided again here. Seen live: a
+        # posting remote in four European countries, none in the scope.
+        place = _scoped_place(places, self.locations)
+        if self.locations and places and place is None:
+            raise ValueError(f"outside ats.locations {list(self.locations)}: {places}")
+        tenant = _workday_parts(self._board_of(hit))[1]
         return RawJob(
             source=self.source,
             native_id=hit.native_id,
             url=clean_text(str(info.get("externalUrl") or "")) or hit.url,
             title=clean_text(str(info.get("title") or "")) or hit.title,
-            company=_company_from_legal(org) or _workday_parts(self._board_of(hit))[1].title(),
-            location=next(
-                (p for p in places if p and any(_matches(p, t) for t in self.locations)),
-                places[0] or hit.location,
-            ),
+            company=_employer(org, tenant),
+            location=place or (places[0] if places else hit.location),
             posted_raw=clean_text(str(info.get("startDate") or "")) or None,
             description_html=str(info.get("jobDescription") or ""),
             apply_channel="external",
@@ -271,6 +292,38 @@ def _matches(place: str, term: str) -> bool:
     from jobpilot.crawler.ats import place_matches
 
     return place_matches(place, term)
+
+
+def _scoped_place(places: list[str], terms: tuple[str, ...]) -> str | None:
+    """The first place in scope; a remote role in the scope's country counts.
+
+    "Vietnam, Remote" is in scope for someone looking in Ho Chi Minh City: the
+    work happens wherever they are. "Spain, Remote" is not.
+    """
+    if not terms:
+        return places[0] if places else None
+    for place in places:
+        if any(_matches(place, t) for t in terms):
+            return place
+    country = _search_place(terms)
+    for place in places:
+        if "remote" in place.lower() and country and _matches(place, country):
+            return place
+    return None
+
+
+def _employer(org: str, tenant: str) -> str:
+    """The employer behind a Workday legal entity.
+
+    The tenant (the ``acme`` in ``acme.wd5.myworkdayjobs.com``) is the brand; when
+    the entity name contains it as a word, that word is the employer as the
+    company writes it — "ES01 Acme Computing Spain, S.L.U." → "Acme" — however
+    many legal forms and countries follow. Otherwise the legal tail is folded.
+    """
+    for word in re.findall(r"[\w&.-]+", _ENTITY_CODE.sub("", clean_text(org))):
+        if word.strip(".,").lower() == tenant.lower():
+            return word.strip(".,")
+    return _company_from_legal(org) or tenant.title()
 
 
 #: "VN01 Acme Vietnam Company Limited" — a legal entity, prefixed by an
