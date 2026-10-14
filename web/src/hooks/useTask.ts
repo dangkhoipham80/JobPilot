@@ -56,11 +56,31 @@ export function useTask(taskId: string | null, version: number): Task | null {
           // sentence is the frontend's own, not the server's, so it has to be
           // translatable — and a data hook has no business reaching into the
           // i18n context to do that. `TaskProgress` renders the copy per kind.
-          setTask((prev) =>
-            prev && isActive(prev)
-              ? { ...prev, status: "failed", error: "", error_kind: "Evicted" }
-              : prev,
-          );
+          setTask((prev) => {
+            if (prev) {
+              return isActive(prev)
+                ? { ...prev, status: "failed", error: "", error_kind: "Evicted" }
+                : prev;
+            }
+            // Never seen at all: an id handed over from another page whose
+            // task the queue no longer has (it restarted in between). Without
+            // a task object the caller's "landed" effect never fires and its
+            // buttons stay disabled for good, with nothing on screen to say why.
+            return {
+              id: taskId,
+              kind: "",
+              label: "",
+              job_id: null,
+              status: "failed",
+              progress: "",
+              result: {},
+              error: "",
+              error_kind: "Evicted",
+              created_at: null,
+              started_at: null,
+              finished_at: null,
+            };
+          });
           return;
         }
         // Anything else is transient — a blip while the API restarts, say. Keep

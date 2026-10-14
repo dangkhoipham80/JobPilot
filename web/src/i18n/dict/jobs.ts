@@ -111,6 +111,13 @@ export const jobs = ns({
     addJobTitle: "Add a job by hand",
     addJobIntro:
       "For postings JobPilot can't crawl — LinkedIn's robots.txt forbids it, and a post in a Facebook or Zalo group is nobody's to crawl. Paste the description, or upload a screenshot of it; without one the tailor has nothing to work from.",
+    afterSaveFailed: "The next step failed",
+    savedAnyway: "the job itself was saved and is in Jobs.",
+    tailorJdOpen: "Paste a job description…",
+    tailorJdIntro:
+      "Paste a posting (or a screenshot of one). It is saved as a job, shortlisted, and your Master CV is tailored to it — you review the result before anything is sent.",
+    tailorJdSubmit: "Save & tailor my CV",
+    tailorJdNext: "Opens the CV Review page while the tailor runs — about a minute.",
     foundOn: "Found on",
     foundElsewhere: "Somewhere else",
     readFile: "From an image / PDF",
@@ -264,6 +271,13 @@ export const jobs = ns({
     addJobTitle: "Thêm job bằng tay",
     addJobIntro:
       "Dành cho tin JobPilot không crawl được — robots.txt của LinkedIn chặn, còn bài đăng trong group Facebook hay Zalo thì không ai được crawl. Dán mô tả, hoặc tải ảnh chụp tin lên; thiếu mô tả thì tailor chẳng có gì để làm.",
+    afterSaveFailed: "Bước tiếp theo bị lỗi",
+    savedAnyway: "job thì đã được lưu, nằm trong Việc làm.",
+    tailorJdOpen: "Dán một JD…",
+    tailorJdIntro:
+      "Dán một tin tuyển dụng (hoặc ảnh chụp tin). Tin được lưu thành job, đưa vào shortlist, rồi Master CV được tailor theo nó — bạn duyệt kết quả trước khi bất cứ thứ gì được gửi đi.",
+    tailorJdSubmit: "Lưu & tailor CV",
+    tailorJdNext: "Mở trang CV Review trong lúc tailor chạy — khoảng một phút.",
     foundOn: "Tìm thấy ở",
     foundElsewhere: "Nơi khác",
     readFile: "Từ ảnh / PDF",

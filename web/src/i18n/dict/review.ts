@@ -22,6 +22,9 @@ export const review = ns({
     backToJob: "Back to job",
     loadJobFailed: "Couldn't load this job.",
     requestFailed: "Request failed",
+    tailorSkipped:
+      "This job already has a tailored CV, so no new round was started. The posting you pasted was saved on the job — press Re-tailor if the CV should follow it.",
+    dismiss: "Dismiss",
     applicationsBoard: "Applications board →",
 
     // Header actions
@@ -87,6 +90,9 @@ export const review = ns({
     backToJob: "Quay lại job",
     loadJobFailed: "Không tải được job này.",
     requestFailed: "Request thất bại",
+    tailorSkipped:
+      "Job này đã có CV tailor từ trước nên không chạy vòng mới. Tin bạn vừa dán đã được lưu vào job — bấm Tailor lại nếu muốn CV đi theo nó.",
+    dismiss: "Đóng",
     applicationsBoard: "Bảng đơn ứng tuyển →",
 
     openInStudio: "Mở trong CV Studio",

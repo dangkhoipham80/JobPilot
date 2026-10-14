@@ -45,6 +45,37 @@ bản không-tham-số-ngôn-ngữ của chúng đã bị xoá nên call-site c�
   một nhãn đang nói là đã lọc, đúng loại lỗi trông-như-đúng. Nên hai thứ lên cùng nhau (`deploy/macos/update.sh` làm đúng vậy); verify thì dựng backend
   của worktree ở cổng khác chứ đừng trỏ Vite vào service đang chạy.
 
+### "Tailor theo một JD" trong CV Studio — task khởi động ở cú click, không ở lúc trang tải
+
+Thẻ này là `AddJobForm` ở `mode="tailor"` (cùng form với `/jobs`, không fork): lưu job → shortlist →
+`api.tailor()` → sang `/jobs/:id/review` kèm `state: { tailorTask }`.
+
+- **Task được tạo ở CV Studio, lúc bấm nút**, rồi *trao* id cho trang review theo dõi. Đừng đổi
+  thành "trang review tự tailor khi mở kèm cờ": một lượt gọi model sẽ thành tác dụng phụ của điều
+  hướng — và của nút Back, của StrictMode chạy effect hai lần.
+- **`CvReview` đọc `location.state.tailorTask` đúng một lần rồi xoá nó khỏi history entry**
+  (`navigate(pathname, { replace: true, state: null })`). State của router sống qua reload; không
+  xoá thì F5 sau khi server restart sẽ chờ mãi một task mà queue đã quên — `useTask` không phân
+  biệt được 404 ở lần fetch đầu với "chưa có".
+- **Job đã có bản CV tailor thì chỉ mở trang review, không chạy vòng mới — và trang review NÓI ra
+  điều đó** (`state: { tailorSkipped }`). Hỏi **CV** (`api.review(id).version > 0`), đừng hỏi
+  status: `FAILED` vừa là "tailor hỏng" vừa là "apply hỏng sau khi CV đã được duyệt", và bản đầu
+  xét theo status đã tailor đè lên một CV đã duyệt (review gate đo được: v2 → v3, mất trạng thái
+  duyệt). `POST /jobs` là upsert: dán lại một tin rơi vào row cũ, ở bất kỳ đâu trong funnel — không
+  có dòng báo thì user bấm "Lưu & tailor" và nhận về một CV cũ tailor theo JD khác, không lời nào.
+- **Thẻ nằm NGOÀI nhánh đổi tab và bị ẩn bằng CSS ở tab LaTeX, không unmount.** Form đang giữ một
+  tin đã dán — có khi là bản chép từ ảnh đã tốn một lượt model.
+- **`useTask` trả một task `Evicted` cả khi nó chưa từng thấy task đó** (404 ngay lần fetch đầu).
+  Trước đó nó chỉ làm vậy khi đã có `prev`, nên một id được trao sang mà queue đã quên để lại
+  `busy="tailor"` mãi mãi: mọi nút khoá, không dòng nào giải thích.
+- **Editor đang có chỉnh sửa chưa lưu thì nút bị khoá và nói lý do** (`blocked`): tailor đọc Master
+  CV **đã lưu**, và rời trang là mất phần chưa lưu.
+- **Bước sau khi lưu mà hỏng thì form nói "job đã được lưu"** (`savedAnyway`) — chỉ báo "lỗi" là
+  mời user thêm job lần hai. Ở `mode="tailor"` thì mô tả là bắt buộc: tailor không JD là tailor
+  theo không gì cả.
+- Shortlist tự động ở đây **là** quyết định của user (họ dán tin và bấm "tailor"), và tailor không
+  gửi gì ra ngoài: nó dừng ở trang review, trước đúng cổng Duyệt của mọi job khác.
+
 ### Bẫy React đã trả giá
 
 - **Guard double-click phải là `useRef`, không phải state.** Hai click cùng một tick đều đọc
