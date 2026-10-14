@@ -323,3 +323,44 @@ def test_a_stated_work_mode_beats_the_label():
     raw = _raw("eightfold", "9", location="Vietnam", extra={"work_mode_stated": "remote"})
     job = normalize(raw, cfg, NOW)
     assert job.payload["work_mode"] == "remote" and job.payload["is_remote"] is True
+
+
+def test_workday_rechecks_scope_once_the_postings_places_are_known():
+    """The list said "N Locations"; the posting turned out to be elsewhere."""
+    listing = {
+        "total": 2,
+        "jobPostings": [
+            {"title": "Solution Architect", "externalPath": "/job/Spain-Remote/SA_JR200", "locationsText": "4 Locations"},
+            {"title": "AI Engineer", "externalPath": "/job/Vietnam-Remote/AI_JR201", "locationsText": "2 Locations"},
+        ],
+    }
+
+    def routes(url, body):
+        if url.endswith("/jobs"):
+            return json.dumps(listing if body["offset"] == 0 else {"total": 0, "jobPostings": []})
+        if url.endswith("_JR200"):
+            return _wd_detail("Solution Architect", "Spain, Remote", ["UK, Remote", "Germany, Remote"])
+        return _wd_detail("AI Engineer", "Vietnam, Remote", ["Singapore"])
+
+    fetch = _PostingFetcher(routes)
+    s = WorkdayScraper(boards=[WD_BOARD], locations=["Ho Chi Minh"], fetcher=fetch, rate_limiter=NO_WAIT)
+    jobs = s.crawl("engineer", limit=10)
+
+    # Remote in the scope's country is in scope; remote in Spain is not.
+    assert [(j.native_id, j.location) for j in jobs] == [("acme:JR201", "Vietnam, Remote")]
+    # The board said there are 2: no second page was asked for.
+    assert [c for c in fetch.calls if c[0] == "POST"] == [fetch.calls[0]]
+
+
+@pytest.mark.parametrize(
+    ("org", "employer"),
+    [
+        ("ES01 Acme Computing Spain, S.L.U.", "Acme"),
+        ("VN01 ACME Vietnam Company Limited", "ACME"),
+        ("Globex Pte. Ltd.", "Globex"),  # tenant not in the name: fold the legal tail
+    ],
+)
+def test_workday_employer_is_the_tenant_as_the_company_writes_it(org, employer):
+    from jobpilot.crawler.careers import _employer
+
+    assert _employer(org, "acme" if "cme" in org.lower() else "initech") == employer
