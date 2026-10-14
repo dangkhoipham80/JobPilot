@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+from urllib.parse import parse_qs, urlsplit
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,13 +31,15 @@ from jobpilot.crawler.normalize import (
 )
 from jobpilot.crawler.persist import STATED_TARGET, target_is_stated
 from jobpilot.crawler.quality import crawl_passes
-from jobpilot.crawler.types import make_job_id
+from jobpilot.crawler.text import normalize_company, normalize_title
+from jobpilot.crawler.types import HAND_ID_PREFIX, is_hand_added, make_job_id
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
 from jobpilot.store.models import Job, JobStatus
 from jobpilot.timeutil import vn_now
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_token)])
+
 
 _SLUG_UNSAFE = re.compile(r"[^a-z0-9]+")
 
@@ -44,15 +48,116 @@ def _slug(text: str) -> str:
     return _SLUG_UNSAFE.sub("-", text.lower()).strip("-")[:80] or "job"
 
 
-def _native_id(url: str) -> str:
-    """A stable id from a posting URL. LinkedIn ids are the useful case:
-    /jobs/view/4012345678 -> linkedin-4012345678, so re-pasting updates."""
+#: Where Facebook keeps the identity of a post: in the query for a photo viewer,
+#: a permalink.php or a notification link, in the path for everything else.
+_FACEBOOK_QUERY = ("fbid", "story_fbid", "multi_permalinks")
+_FACEBOOK_PATH = re.compile(r"/(?:posts|permalink|videos|share/p)/([\w.-]+)")
+
+#: Hosts whose addresses name a place — a group, a feed — rather than a posting
+#: unless one of the patterns above says otherwise.
+_SOCIAL_HOSTS = ("facebook.com", "fb.com", "fb.me", "zalo.me")
+
+
+#: A scheme at the very start. Not ``"://" in url``: a schemeless address can
+#: carry another address in its query (``facebook.com/l.php?u=https://…``).
+_HAS_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
+
+
+def _on(host: str, *domains: str) -> bool:
+    return any(host == d or host.endswith(f".{d}") for d in domains)
+
+
+def _native_id(url: str) -> tuple[str, bool]:
+    """A stable id from a posting URL, and whether it names *one posting*.
+
+    Only a LinkedIn job number is strong: it belongs to exactly one posting, so
+    re-pasting that address lands on its row whatever the form now says. It is
+    read from ``/jobs/view/<n>`` and from ``currentJobId=<n>``, which is what
+    the address bar shows while browsing search results.
+
+    Everything else is a guess that ``create_job`` checks against the row it
+    finds. A Facebook post number names one *post* — and a recruiter's post
+    lists several roles. A last path segment names less still:
+    ``https://acme.example/careers`` is every job ACME has.
+
+    A social address with no post in it yields nothing at all. Its last segment
+    is the *group* (``/groups/<id>/?multi_permalinks=…`` once the query is cut
+    off, ``zalo.me/g/<id>``), or the word ``photo``, or ``permalink.php`` — the
+    same for every posting ever made there.
+    """
+    url = url.strip()
     if not url:
-        return ""
-    linkedin = re.search(r"linkedin\.com/(?:comm/)?jobs/view/(\d+)", url, re.I)
-    if linkedin:
-        return f"linkedin-{linkedin.group(1)}"
-    return _slug(url.split("?")[0].rstrip("/").rsplit("/", 1)[-1])
+        return "", False
+    # Copied without its scheme, an address has no host for `urlsplit` to find,
+    # and every rule below that asks "is this Facebook" would answer no.
+    if not _HAS_SCHEME.match(url):
+        url = f"https://{url.lstrip('/')}"
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return "", False
+    query = parse_qs(parts.query)
+
+    if _on(host, "linkedin.com"):
+        viewed = re.search(r"/(?:comm/)?jobs/view/(\d+)", parts.path)
+        number = viewed.group(1) if viewed else (query.get("currentJobId") or [""])[0].strip()
+        # ASCII digits only: `str.isdigit` also says yes to "٣٤" and "12²".
+        if re.fullmatch(r"[0-9]+", number):
+            return f"linkedin-{number}", True
+    if _on(host, "facebook.com", "fb.com", "fb.me"):
+        in_path = _FACEBOOK_PATH.search(parts.path)
+        # `multi_permalinks` can list several; the first is the one linked.
+        candidates = [(query.get(key) or [""])[0].split(",")[0] for key in _FACEBOOK_QUERY]
+        candidates.append(in_path.group(1) if in_path else "")
+        for value in candidates:
+            # Through the slug first: a value that is all punctuation is not an id.
+            post = _SLUG_UNSAFE.sub("-", value.lower()).strip("-")
+            if post:
+                return f"facebook-{post[:80]}", False
+    if _on(host, *_SOCIAL_HOSTS):
+        return "", False
+    return _slug(parts.path.rstrip("/").rsplit("/", 1)[-1] or host), False
+
+
+def _as_listed(company: str | None, title: str | None) -> str:
+    """Company and title as one posting states them — level and parenthetical kept.
+
+    The strict comparison, not ``dedup_key``: that one forgives "Junior" and
+    "(Java)" because two *boards* word one role differently. Here both sides
+    came through the same form about the same address, so "Junior Backend
+    Engineer" and "Senior Backend Engineer" are two jobs — the same reasoning
+    ``persist._same_posting`` applies to two listings on one board.
+    """
+
+    def part(raw: str | None, normalised: str) -> str:
+        # The normalisers keep Latin letters and digits, so a title written
+        # wholly in another script comes out empty — and two empty strings are
+        # equal. Where nothing survived, the text itself is compared.
+        return normalised or " ".join((raw or "").casefold().split())
+
+    return "|".join(
+        (
+            part(company, normalize_company(company)),
+            part(title, normalize_title(title, strip_level=False, keep_parens=True)),
+        )
+    )
+
+
+def _fallback_id(company: str, title: str, *, crowded: bool) -> str:
+    """The id of a job no address identifies: a slug of its company and title.
+
+    ``crowded`` is for the case the slug cannot tell two jobs apart — it keeps
+    80 characters of Latin letters and digits, so a long legal name fills it
+    before the title starts, and a title in another script adds nothing. Then a
+    digest of the *exact* company and title is appended: the same job pasted
+    again still finds its row, and no id that already exists changes.
+    """
+    slug = _slug(f"{company}-{title}")
+    if not crowded:
+        return slug
+    digest = hashlib.sha1(f"{company}|{title}".casefold().encode("utf-8")).hexdigest()[:10]
+    return f"{slug[:69]}-{digest}"
 
 
 # Statuses from which a user may still shortlist/skip (before the tailor stage).
@@ -250,11 +355,17 @@ def list_jobs(
 
 @router.post("", response_model=JobDetailOut, status_code=201)
 async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut:
-    """Add a job by hand (source ``manual``).
+    """Add a job by hand.
 
     The escape hatch for postings no crawler can reach — LinkedIn above all,
-    whose robots.txt disallows automated access to job pages. Paste the JD and
-    the rest of the pipeline treats it like any other job.
+    whose robots.txt disallows automated access to job pages, and anything
+    posted in a Facebook or Zalo group. Paste the JD and the rest of the
+    pipeline treats it like any other job.
+
+    ``source`` is where the user says they found it (``manual`` when they do
+    not). The id stays ``manual:<native>`` whatever the source: it is what makes
+    re-pasting a posting land on its own row, and it is how the app tells a
+    hand-added job from a crawled one that happens to share its source name.
     """
     if not body.title.strip() or not body.company.strip():
         raise HTTPException(status_code=422, detail="title and company are required")
@@ -262,13 +373,38 @@ async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut
     now = vn_now()
     # Stable id from the URL when there is one, so pasting the same posting
     # twice updates it instead of creating a duplicate.
-    native = _native_id(body.url) or _slug(f"{body.company}-{body.title}")
-    job_id = make_job_id("manual", native)
+    native, strong = _native_id(body.url)
+    job = db.get(Job, make_job_id(HAND_ID_PREFIX, native)) if native else None
+    if (
+        job is not None
+        and not strong
+        and _as_listed(job.company, job.title) != _as_listed(body.company, body.title)
+    ):
+        # The address led to a row that is some other job: it named a page (a
+        # careers index, a board's search) or a post that lists several roles,
+        # rather than one posting. Writing this job over that one would hand its
+        # status, its tailored CV and its application to a different job — and
+        # answer 201. A second row is the cheap mistake; that is the expensive
+        # one. The price: retitle a job whose address is not a LinkedIn job
+        # number, paste it again, and it becomes a second row.
+        native, job = "", None
+    if not native:
+        # Where every address that named no single posting ends up, so the same
+        # question is asked here: is the row under this id the job being saved?
+        native = _fallback_id(body.company, body.title, crowded=False)
+        job = db.get(Job, make_job_id(HAND_ID_PREFIX, native))
+        if job is not None and _as_listed(job.company, job.title) != _as_listed(
+            body.company, body.title
+        ):
+            native = _fallback_id(body.company, body.title, crowded=True)
+            job = db.get(Job, make_job_id(HAND_ID_PREFIX, native))
+    job_id = make_job_id(HAND_ID_PREFIX, native)
 
-    job = db.get(Job, job_id)
     if job is None:
-        job = Job(id=job_id, source="manual", crawled_at=now)
+        job = Job(id=job_id, source=body.source or HAND_ID_PREFIX, crawled_at=now)
         db.add(job)
+    elif body.source is not None:
+        job.source = body.source
 
     # This endpoint upserts — re-pasting the same posting updates it — so a
     # second paste with different text lands on a row still carrying the first
@@ -337,6 +473,10 @@ async def create_job(body: JobIn, db: Session = Depends(get_db)) -> JobDetailOut
             # text stays the evidence, so storing only the buckets would throw
             # away the thing every guardrail downstream checks against.
             **({"sections": body.sections.model_dump()} if body.sections else {}),
+            # `normalize()` writes this for a crawled job and `/market` counts
+            # sources from the payload, not the column. Without it every job
+            # added by hand was one bar labelled "?".
+            "source": job.source,
         },
         signals,
         body.work_mode,
@@ -361,6 +501,12 @@ async def patch_job(job_id: str, body: JobPatch, db: Session = Depends(get_db)) 
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise HTTPException(status_code=422, detail="nothing to change")
+    if "source" in patch and not is_hand_added(job.id):
+        raise HTTPException(
+            status_code=422,
+            detail="this job was crawled, so its source is where it was crawled from; "
+            "only a job added by hand has one to choose",
+        )
 
     payload = dict(job.payload or {})
     # Before the pops below, which mutate `patch` — it has to see the body as
@@ -410,7 +556,7 @@ async def patch_job(job_id: str, body: JobPatch, db: Session = Depends(get_db)) 
     # for, and leaving the old link would make the fix invisible on the only
     # page that groups by employer.
     link_job(db, job)
-    job.payload = _merged_payload(payload, signals, body.work_mode)
+    job.payload = {**_merged_payload(payload, signals, body.work_mode), "source": job.source}
 
     db.commit()
     db.refresh(job)
@@ -426,7 +572,11 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailOut:
     # Detail view only. This is the page read before spending an LLM call and
     # half an hour on a posting, so it is where "nobody has seen this lately"
     # earns a query; the list would pay for it on every row.
-    passes = crawl_passes(db, [job.source]).get(job.source, [])
+    # A job added by hand was never in any crawl pass, whatever board the user
+    # filed it under: its `last_seen_at` is the moment it was pasted. Measuring
+    # it against LinkedIn's passes would flag it "not seen lately — possibly
+    # taken down" two alert emails later. Never looked for is not gone.
+    passes = [] if is_hand_added(job.id) else crawl_passes(db, [job.source]).get(job.source, [])
     return JobDetailOut.from_job(job, passes)
 
 

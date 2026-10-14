@@ -623,10 +623,10 @@ def test_a_text_pdf_plus_a_scanned_one_is_not_checked():
 
 def test_a_page_with_no_text_is_a_scan_wherever_it_sits():
     # pdfminer closes each page with a form feed; the last one is not a page.
-    assert importer._pages("page one\fpage two\f") == ["page one", "page two"]
-    assert importer._pages("page one\f \n\f") == ["page one", " \n"]
+    assert importer.pages_of("page one\fpage two\f") == ["page one", "page two"]
+    assert importer.pages_of("page one\f \n\f") == ["page one", " \n"]
     # pypdf marks no pages: the file is one stretch of text.
-    assert importer._pages("all of it") == ["all of it"]
+    assert importer.pages_of("all of it") == ["all of it"]
 
 
 def test_a_garbage_scan_cannot_crash_the_number_check():

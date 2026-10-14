@@ -26,6 +26,55 @@ from jobpilot.tailor.prompt import render_job, render_master
 #: caller gets a refusal instead of a surprise bill.
 MAX_JD_CHARS = 40_000
 
+TRANSCRIBE_RULES = """\
+You are given one job posting as page images or PDFs: a screenshot of a social
+media post, a hiring poster, a scanned page. You type out what it says. You are
+a typist, not an editor.
+
+# TRANSCRIBE — DO NOT WRITE
+- Copy every word of the posting as printed, in reading order. Do not summarise,
+  shorten, reorder, correct or complete it.
+- Never add a requirement, a number, a salary, a company, a contact or a sentence
+  that is not visible. This text becomes the record every later step treats as
+  what the employer asked for; a word you add becomes a requirement nobody set.
+- When something is cut off, blurred or covered: copy only the part you can
+  read, or leave it out, and say so in `unreadable`.
+- When the files hold no job posting at all, `text` is "" and `unreadable` says
+  what they show instead.
+
+# KEEP THE LANGUAGE OF THE POSTING
+Do not translate. A Vietnamese posting comes back in Vietnamese, word for word,
+diacritics included. Mixed Vietnamese and English stays mixed exactly as printed.
+
+# LAYOUT
+- Plain text. One line per printed line. Start each bullet with "- ". Keep a
+  heading on its own line. No Markdown emphasis, no tables, no commentary.
+- Words drawn into a picture (a poster, a banner) are part of the posting: type
+  them out. A logo, a photo or an icon is not text: skip it, do not describe it.
+- Leave out what belongs to the app the screenshot was taken in rather than to
+  the posting: like, comment and share counts, navigation bars, timestamps,
+  "See more", other people's comments, adverts, a phone's status bar.
+- Hashtags at the end of a post are part of it. Copy them as printed.
+- A thin vertical stroke standing alone between items ("Java | Spring | SQL")
+  is the separator "|", not a lowercase L or a capital I.
+
+# FIELDS
+- `text`: the posting, as above.
+- `unreadable`: one short note per thing you could not read with confidence or
+  had to leave out, written in the language of the posting. Empty when
+  everything was legible.
+"""
+
+
+def transcribe_system_prompt() -> str:
+    return TRANSCRIBE_RULES
+
+
+def transcribe_user_prompt(files: int) -> str:
+    pages = "file" if files == 1 else f"{files} files, in reading order"
+    return f"Type out the job posting in the attached {pages}."
+
+
 EXTRACT_RULES = f"""\
 You read one job posting that a person copied off a web page and pasted in. You
 return the handful of fields it states. You are a transcriber, not an analyst.

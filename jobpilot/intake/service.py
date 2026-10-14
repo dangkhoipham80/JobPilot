@@ -29,6 +29,7 @@ from jobpilot.config import get_config
 from jobpilot.crawler.normalize import enrich, parse_work_mode
 from jobpilot.crawler.quality import describe
 from jobpilot.crawler.text import html_to_markdown
+from jobpilot.cv import importer as uploads
 from jobpilot.cv import store as cv_store
 from jobpilot.cv.schema import CvDocument
 from jobpilot.intake.engine import IntakeEngine, IntakeError
@@ -124,6 +125,76 @@ def clean_paste(text: str) -> str:
         if line or (out and out[-1]):
             out.append(line)
     return "\n".join(out).strip()
+
+
+#: A PDF page carrying less text than this is not a page of a posting: a scan
+#: with a stamped page number, an export that kept only its footer — or a page
+#: that is one big picture, which is how a poster arrives. Counted **per page**:
+#: here the layer *replaces* a reading, so a page of caption next to a page of
+#: poster must not pass as the whole posting on the strength of the caption.
+#: Below the floor the model reads the upload instead.
+_MIN_LAYER_CHARS = 200
+
+_NOT_A_FILE_HINT = "a posting that is already text is pasted straight into the box"
+
+
+@dataclass
+class FileReading:
+    """The text of a posting that arrived as a picture or a PDF. Not saved."""
+
+    text: str
+    #: True when a model typed the text out of the file. False when it is the
+    #: PDF's own text layer — the publisher's words, with no model in between.
+    #: The form says which, because only one of them needs proof-reading.
+    transcribed: bool
+    #: The model's own notes on what it could not read. Empty for a text layer.
+    unreadable: list[str]
+    #: What was actually sent, after sniffing: name, media type, size.
+    files: list[dict]
+
+
+def read_files(files: list[tuple[str, bytes]], engine: IntakeEngine) -> FileReading:
+    """Get the text out of an uploaded posting. Writes nothing, reads no fields.
+
+    Only the text. Title, company and salary are then read from it by the same
+    ``extract_jd`` a paste goes through, so a job added from a screenshot and
+    one added from a paste differ in nothing but where their text came from —
+    and the text passes through the form, where the user can hold it against
+    the picture, before it is ever stored.
+
+    A PDF that carries real text on every page is not shown to a model at all:
+    the layer is the publisher's own words. What the layer cannot carry is text
+    drawn *inside* a picture on such a page — the form says so beside the box.
+    """
+    try:
+        attachments = uploads.load_files(files, text_hint=_NOT_A_FILE_HINT)
+    except uploads.CvImportRefused as exc:
+        raise IntakeRefused(str(exc)) from exc
+    sent = [{"name": a.name, "media_type": a.media_type, "bytes": len(a.data)} for a in attachments]
+
+    layer = uploads.text_layer(attachments)
+    if layer is not None and all(
+        len(page.strip()) >= _MIN_LAYER_CHARS for page in uploads.pages_of(layer)
+    ):
+        text, transcribed, unreadable = uploads.plain_text(layer), False, []
+    else:
+        transcript = engine.transcribe(attachments)
+        text = uploads.plain_text(transcript.text)
+        transcribed = True
+        unreadable = [note.strip() for note in transcript.unreadable if note.strip()]
+        if not text:
+            # A photo of something else, a blank scan. An empty box that looks
+            # like a result would be the worse answer.
+            raise IntakeRefused(
+                "no job posting could be read in this upload"
+                + (f" — {'; '.join(unreadable)}" if unreadable else "")
+            )
+    if len(text) > MAX_JD_CHARS:
+        raise IntakeRefused(
+            f"that upload reads as {len(text):,} characters; postings are a few thousand. "
+            f"Upload the job description itself (limit {MAX_JD_CHARS:,})."
+        )
+    return FileReading(text=text, transcribed=transcribed, unreadable=unreadable, files=sent)
 
 
 def extract_jd(text: str, engine: IntakeEngine, url: str = "") -> IntakeResult:

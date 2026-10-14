@@ -30,6 +30,8 @@ second reading, so its numbers are always compared (``import_text``).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 import tempfile
 import unicodedata
@@ -122,7 +124,14 @@ def pdf_pages(data: bytes) -> int | None:
         return None
 
 
-def load_files(files: list[tuple[str, bytes]]) -> list[Attachment]:
+#: What to do instead, when the file is not one of the four kinds — said to
+#: somebody importing a CV. Other callers of ``load_files`` pass their own.
+CV_TEXT_HINT = "a CV that is already text is pasted, or read with `cv read --text`"
+
+
+def load_files(
+    files: list[tuple[str, bytes]], *, text_hint: str = CV_TEXT_HINT
+) -> list[Attachment]:
     """Validate an upload and hand back what the model will be shown.
 
     Refuses rather than repairs. Every limit here is one a provider enforces
@@ -144,7 +153,7 @@ def load_files(files: list[tuple[str, bytes]]) -> list[Attachment]:
             raise CvImportRefused(
                 f"{label} is not a PNG, JPEG, WebP or PDF — convert it first "
                 "(an iPhone HEIC photo, a Word file and a screenshot in TIFF all land here; "
-                "a CV that is already text is pasted, or read with `cv read --text`)"
+                f"{text_hint})"
             )
         limit = MAX_PDF_BYTES if kind == PDF_TYPE else MAX_IMAGE_BYTES
         if len(data) > limit:
@@ -157,7 +166,7 @@ def load_files(files: list[tuple[str, bytes]]) -> list[Attachment]:
             # None is "could not count", not "too many": let the provider decide.
             if pages is not None and pages > MAX_PDF_PAGES:
                 raise CvImportRefused(
-                    f"{label} has {pages} pages; a CV import takes at most {MAX_PDF_PAGES}"
+                    f"{label} has {pages} pages; an import takes at most {MAX_PDF_PAGES}"
                 )
         out.append(Attachment(media_type=kind, data=data, name=name))
 
@@ -181,6 +190,35 @@ _LINE_BREAK = re.compile(r"\r\n|[\r\x0b\x0c\u0085\u2028\u2029]")
 _CONTROL = re.compile(r"[\x00-\x08\x0e-\x1f\x7f]")
 
 
+def plain_text(text: str) -> str:
+    """``text`` with one kind of line ending and no control characters."""
+    return _CONTROL.sub(" ", _LINE_BREAK.sub("\n", text)).strip()
+
+
+def decode_upload(name: str, data: str) -> bytes:
+    """One uploaded file's bytes. Accepts a bare base64 string or a data URI."""
+    payload = data.split(",", 1)[1] if data.startswith("data:") else data
+    # Checked on the encoded length, before decoding: a body far past any limit
+    # should cost a comparison, not an allocation the size of the upload.
+    if len(payload) > MAX_PDF_BYTES * 4 // 3 + 4:
+        raise CvImportRefused(f"{name or 'file'} is larger than any import accepts")
+    try:
+        return base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise CvImportRefused(f"{name or 'file'} did not arrive intact") from exc
+
+
+def decode_uploads(files: list[tuple[str, str]]) -> list[tuple[str, bytes]]:
+    """Every uploaded file's bytes, in order.
+
+    Counted before anything is decoded: the limit exists so that a body of a
+    thousand files costs a comparison, not a thousand allocations.
+    """
+    if len(files) > MAX_FILES:
+        raise CvImportRefused(f"at most {MAX_FILES} files per import — got {len(files)}")
+    return [(name, decode_upload(name, data)) for name, data in files]
+
+
 def load_text(text: str) -> str:
     """Validate a pasted CV and hand back what the model will be shown.
 
@@ -188,7 +226,7 @@ def load_text(text: str) -> str:
     is touched. This string is also what the draft's numbers are checked
     against, so it has to stay what the user pasted.
     """
-    cleaned = _CONTROL.sub(" ", _LINE_BREAK.sub("\n", text)).strip()
+    cleaned = plain_text(text)
     if not cleaned:
         raise CvImportRefused("no text was pasted")
     if len(cleaned) > MAX_TEXT_CHARS:
@@ -427,7 +465,7 @@ def _draft_text(doc: CvDocument) -> str:
     return " ".join(out)
 
 
-def _pages(text: str) -> list[str]:
+def pages_of(text: str) -> list[str]:
     """``text`` per page. pdfminer ends each page with a form feed; pypdf does
     not mark pages at all, in which case this is the whole file as one."""
     pages = text.split("\f")
@@ -462,7 +500,7 @@ def text_layer(files: list[Attachment]) -> str | None:
             # A file — or, where the extractor marks page breaks, a page — with
             # no text at all is a scan. The layer then covers part of the CV,
             # and every number read off the rest would be reported as invented.
-            if got is None or not all(page.strip() for page in _pages(got.text)):
+            if got is None or not all(page.strip() for page in pages_of(got.text)):
                 return None
             parts.append(got.text)
     return "\n".join(parts)

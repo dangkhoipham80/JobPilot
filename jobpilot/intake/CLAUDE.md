@@ -14,7 +14,9 @@ Ba bước **cố ý tách rời**, vì mỗi bước tự nó đã dùng đư�
 
 ## Ba luật không được phá
 
-- **JD lưu xuống là bản dán của user, KHÔNG BAO GIỜ là bản model kể lại.** Đây là luật quan trọng
+- **JD lưu xuống là bản dán của user, KHÔNG BAO GIỜ là bản model kể lại.** (Tin chỉ tồn tại dưới
+  dạng ảnh thì model được **chép**, không được kể — và bản chép đi qua ô mô tả trước khi thành row;
+  xem "Tin là ảnh hoặc PDF" bên dưới.) Đây là luật quan trọng
   nhất ở đây. Mọi guardrail phía sau — `requirements` của tailor, cover letter, chính cái fit report
   này — đọc `description_md` như là **bằng chứng**. Để model viết lại JD là để nó tự bịa ra bằng
   chứng cho chính nó, và không có guard nào bắt được vì guard nào cũng đang so với đúng cái field
@@ -30,6 +32,118 @@ Ba bước **cố ý tách rời**, vì mỗi bước tự nó đã dùng đư�
   biệt một ý kiến đúng với một ý kiến sai, nên không có gì để kiểm và không có gì để gửi lại. Nếu
   có ngày nào output này bắt đầu chảy vào tailor hay vào CV thì **phải viết guardrail trước**, không
   phải sau.
+
+## Tin là ảnh hoặc PDF (`POST /jobs/intake/file`, `service.read_files`)
+
+Bài đăng trong group Facebook/Zalo thường chỉ là một tấm ảnh. Endpoint này biến file thành **text
+và chỉ text** — không đọc field nào, không lưu gì.
+
+- **Hai request, không gộp.** File → text vào **ô mô tả** của form → `POST /jobs/intake` đọc field
+  từ text đó, đúng lượt gọi mà một lần dán dùng. Ô mô tả là trạm kiểm: thứ được lưu làm
+  `description_md` là thứ user đã nhìn thấy trong ô, với ảnh gốc cách một cú click. Gộp thành một
+  lượt "ảnh → row" là để bằng chứng đi từ ảnh xuống DB mà không ai thấy.
+- **`JdTranscript` chỉ có `text` + `unreadable`.** Cùng lý do `JdExtract` không có
+  `description_md`, nhìn từ phía kia: lượt gọi được phép đụng vào chữ của tin thì chỉ được *chép*.
+  Một lượt vừa chép vừa điền title/lương là vừa đọc vừa chép, và làm việc thứ hai tệ hơn.
+- **PDF có text layer trên MỌI trang thì KHÔNG gọi model.** Layer là chữ của chính người đăng.
+  `transcribed=False`, và form nói thẳng "không có AI nào viết". Sàn 200 ký tự (`_MIN_LAYER_CHARS`)
+  tính **theo từng trang**: trang nào dưới sàn (con dấu số trang, footer, **hay một trang chỉ là
+  ảnh**) thì cả upload qua model. Bản đầu tính sàn trên *tổng* — bài đăng in ra PDF gồm một trang
+  caption + một trang poster qua được nhờ caption, ô chỉ có khung trang dưới dòng "không cần AI"
+  (review gate tái hiện). Ở nhập CV thì layer chỉ để *đối chiếu* nên thiếu là báo động giả; ở đây
+  layer **thay** bản đọc nên thiếu là mất nội dung — cùng một hàm, hướng hỏng ngược nhau.
+  **Vẫn chưa kín:** chữ nằm *trong ảnh* trên một trang vốn đủ chữ thì layer không có; form ghi rõ
+  điều đó cạnh ô. Chiều ngược lại sẽ gặp thường: PDF toàn chữ thật mà trang cuối chỉ có hai dòng
+  liên hệ (< 200 ký tự) thì cả file đi qua model — tốn một lượt gọi, nhưng có nhãn "AI đã chép". Extractor pypdf không đánh dấu trang ⇒ sàn lại thành tính trên tổng (pdfminer là
+  extractor mặc định). PDF đi kèm ảnh thì cả upload qua model.
+- **Layer của PDF in từ trang web mang cả khung trang** (tên người đăng, số like, nút bấm) — đo
+  thật. Không lọc: lọc là đoán, và `extract`/`sections` vốn đã viết để bỏ qua rác của một lần dán.
+- **Kiểm file dùng lại `cv/importer`** (`decode_uploads`, `load_files`, `text_layer`, `pages_of`,
+  `plain_text`): sniff theo byte, cùng giới hạn (6 file, ảnh 3,5 MB, PDF 10 MB, 10 trang). Đừng viết
+  bộ kiểm thứ hai. Câu từ chối "không phải PNG/JPEG/WebP/PDF" nhận `text_hint` của caller — bản mặc
+  định chỉ cách nhập *CV* và từng hiện nguyên trên form thêm job.
+- **Không có vòng retry và không có phép kiểm máy nào** cho bản chép từ ảnh — như nhập CV từ ảnh.
+  Guard là: note dưới ô mô tả nói rõ model đã chép, link "Bản gốc", và `unreadable` của model.
+  Không có cờ nào lưu xuống job ghi rằng JD của nó từng là ảnh: sau khi qua ô, nó là text user đã
+  duyệt, cùng cách bản nháp CV nhập từ ảnh thành version của `user`. **Rủi ro còn lại:** user bấm
+  lưu mà không so, và một con số đọc nhầm thành "yêu cầu của nhà tuyển dụng" cho tailor/fit.
+- **Bản đọc chỉ hạ cánh vào ô TRỐNG hoặc ô còn nguyên bản đọc trước** (`boxIsFree`). Ô có chữ user
+  gõ/sửa thì nút bị khoá — bản đọc thay toàn bộ ô. **Ô bị khoá (`readOnly`) suốt lúc đang đọc**:
+  `boxIsFree` chỉ kiểm lúc bắt đầu, và review gate gõ được một câu vào ô trong lúc chờ rồi nhìn nó
+  bị thay sạch. URL thì đọc qua ref (`urlNow`) — `read()` chạy từ closure cũ hơn lượt đọc file.
+- **Dán ảnh từ clipboard vào ô (`onPaste`) chỉ khi clipboard KHÔNG có text.** Copy từ bảng tính hay
+  trình soạn thảo mang cả text lẫn ảnh của chính nó; thứ user muốn dán là text.
+- **`llm_calls.task = "intake_file"`**, backend của task `intake`. Tên riêng để `llm stats` không
+  giấu chi phí của ảnh (đắt hơn text nhiều lần) vào giữa các lượt dán.
+- **Đo thật 2026-10-14** (`claude_cli`; một bài đăng **bịa**, song ngữ Việt/Anh, render thành ảnh
+  chụp kiểu mạng xã hội 1200 px và thành PDF): ảnh → `claude-opus-5` 11 s, `claude-haiku-4-5`
+  15 s, **mọi từ và mọi con số khớp** với text nguồn, khung app (tên người đăng, like, bình luận)
+  được bỏ đúng như prompt dặn. Lượt đầu đọc **mọi dấu `|` thành chữ `l`** ("Java l Spring Boot")
+  — sai kiểu trông-như-đúng; thêm một dòng vào prompt thì hết ở cả hai model. PDF → 0 s, không gọi
+  model, nguyên văn kèm khung trang. Chưa thử: ảnh chụp bằng điện thoại, poster chữ cách điệu,
+  ảnh nhiều trang.
+
+## Nguồn của job thêm tay (`JobIn.source`, `HandSourceStr`)
+
+- **`source` là nơi user nói đã thấy tin** — `manual` (nơi khác) / `facebook` / `linkedin` / `zalo`.
+  Danh sách **đóng** vì nó thành `jobs.source`, cột mà mọi chart theo nguồn `GROUP BY`: chữ tự do
+  ở đó tách một nơi thành "fb", "Facebook", "facebook group". Chỉ danh từ riêng, để tên không cần
+  dịch (`sourceLabel`). Thêm nơi mới = thêm vào `HandSourceStr` + `HAND_SOURCES` ở `web/src/types.ts`
+  + `SOURCE_NAMES`.
+- **ID luôn là `manual:<native>`, bất kể source.** Nó là thứ khiến dán lại một tin rơi đúng row cũ,
+  và là cách app phân biệt job thêm tay với job crawl trùng tên nguồn (`crawler/types.is_hand_added`)
+  — job thêm tay ghi `linkedin` và job từ LinkedIn alert chung một `source` (cùng một nơi, đúng là
+  thế) nhưng không bao giờ chung id. Đây là chỗ **duy nhất** `id` không mở đầu bằng `source`.
+- **`source` của job thêm tay KHÔNG phải khoá crawler — ba chỗ từng coi nó là thế, đều do review
+  gate tìm ra:**
+  - `GET /jobs/{id}` lấy `crawl_passes(job.source)` ⇒ job dán tay ghi `linkedin` bị gắn `not_seen`
+    ("có thể đã bị gỡ") sau hai lượt alert, dù chưa lượt crawl nào từng tìm nó. Giờ job thêm tay
+    không có pass nào. *Chưa từng được tìm ≠ đã biến mất.*
+  - Dedup lớp 2 (`persist._same_posting`) coi trùng `source` là "cùng board" và so tiêu đề chặt ⇒
+    tin dán tay và bản của chính board thành hai job chỉ vì một cặp ngoặc. Luật cùng-board giờ bỏ
+    qua row `manual:`.
+  - `/analytics/market` đếm nguồn từ `payload["source"]` (thứ chỉ `normalize()` ghi) ⇒ mọi job thêm
+    tay là một cột "?". `POST`/`PATCH /jobs` giờ ghi key đó. Row thêm tay có từ trước vẫn là "?"
+    cho tới lần sửa kế tiếp.
+- **Địa chỉ dán vào chỉ là danh tính của tin khi nó thật sự chỉ MỘT tin** (`_native_id` trả
+  `(id, strong)`):
+  - *Mạnh — chỉ số job của LinkedIn* (`/jobs/view/<n>`, hoặc `currentJobId=<n>` là thứ thanh địa
+    chỉ hiện khi đang duyệt kết quả tìm kiếm). Số đó là 1-1 với một tin: dán lại luôn về đúng row,
+    kể cả khi đã sửa tiêu đề.
+  - *Yếu — mọi thứ khác*: số bài Facebook (`fbid` / `story_fbid` / `multi_permalinks`, hoặc
+    `/posts|permalink|videos|share/p/<id>`) — một bài của recruiter **liệt kê nhiều vị trí**; và
+    segment cuối của path (`…/careers` là **mọi** job của công ty đó). Id yếu chỉ được dùng khi row
+    tìm thấy **cùng công ty và cùng tiêu đề so chặt** (`_as_listed`: giữ cấp bậc và phần trong
+    ngoặc); khác thì rơi về `slug(company-title)`. **Không dùng `dedup_key`** ở đây: khoá đó bỏ
+    "Junior" và "(Java)" vì hai *board* viết một vai trò theo hai kiểu — còn đây là cùng một form
+    nói về cùng một địa chỉ. Bản đầu dùng `dedup_key`, và "Junior Backend Engineer" bị "Senior
+    Backend Engineer" ghi đè (review gate vòng hai).
+  - *Không có*: địa chỉ mạng xã hội không chứa bài nào (link group Facebook, `zalo.me/g/<id>`) —
+    segment cuối ở đó là **cái group**, giống nhau cho mọi tin từng đăng trong đó.
+  - Địa chỉ copy thiếu `https://` vẫn được đọc như địa chỉ (thêm scheme trước khi tách) — không thì
+    không luật nào ở trên biết đó là Facebook.
+  Trước khi sửa: hai bài khác công ty mở từ trình xem ảnh của Facebook cùng ra `manual:photo`, bài
+  sau ghi đè bài trước và trả **201** — status, CV đã tailor và application của tin đầu dính vào
+  nội dung của tin khác. Gốc lỗi có từ trước phase này; phase này là thứ mời URL Facebook vào ô đó.
+  Hướng hỏng còn lại là hướng rẻ: sửa tiêu đề (kể cả chỉ thêm "Senior" hay một cặp ngoặc) của một
+  job có địa chỉ *yếu* rồi dán lại thì thành row thứ hai — với bài Facebook cũng vậy. **Vẫn còn
+  một ca đè:** hai tin *khác nhau* trùng hẳn công ty lẫn tiêu đề (hai team cùng tuyển "Backend
+  Engineer") dùng chung một địa chỉ yếu, hoặc không có địa chỉ — không gì trên form phân biệt
+  được chúng.
+- **Đường lùi `slug(company-title)` cũng bị hỏi cùng câu đó** (`_fallback_id`). Slug chỉ giữ 80 ký
+  tự `[a-z0-9]`: tên pháp nhân dài lấp đầy nó trước khi tới tiêu đề, và tiêu đề viết bằng chữ không
+  phải Latin không góp ký tự nào — nên hai vị trí của một công ty tên dài, hay hai tin tiêu đề
+  tiếng Trung/Nhật, từng ra cùng id và đè nhau (có từ trước phase này; review gate vòng ba chỉ
+  ra). Row dưới slug mà khác tin thì id được gắn thêm digest của đúng `company|title`. **Id của
+  row đang có không đổi**: digest chỉ xuất hiện khi slug đã có chủ khác. `_as_listed` so chuỗi gốc
+  ở phần nào bộ chuẩn hoá trả rỗng — hai chuỗi rỗng thì bằng nhau, và đó chính là lỗi.
+- **`None` = không nói**: job mới thì `manual`, dán lại job cũ thì **giữ nguyên** source đang có.
+  Client cũ (Slack, bundle chưa build lại) không gửi field này và không được phép reset nó. Form
+  vì thế **bỏ hẳn** field khi user chưa chọn và URL không nói lên điều gì.
+- **`PATCH` chỉ đổi được source của job thêm tay** (422 với job crawl): source của job crawl là
+  dữ kiện về nơi nó được crawl.
+- Form đoán mặc định từ URL (`sourceFromUrl`: facebook.com/fb.com/fb.me, linkedin.com/lnkd.in,
+  zalo.me); user chọn thì user thắng. Chưa có logo cho Facebook/Zalo — `SourceIcon` rơi về monogram.
 
 ## JD có cấu trúc — hai lượt gọi, chạy song song
 

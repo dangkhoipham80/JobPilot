@@ -296,7 +296,7 @@ jobpilot/
   tailor/     index-based plan schema · anti-fabrication guard · model engine · diff
   apply/      cover letter · email (3 gates) · portal hand-off · dispatcher
               followup.py (reminders) · outcome.py (what happened) · inbox.py (read replies)
-  intake/     read a pasted job description · score its fit against the CV
+  intake/     read a pasted (or screenshotted) job description · score its fit against the CV
   companies/  employers and their HR contacts · folding employer names
   llm/        provider registry · per-task engines · schema adapters · cost & quality telemetry
   analytics/  market facets, each carrying how much of the corpus it actually saw

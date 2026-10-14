@@ -7,9 +7,6 @@ should still ``encodeURIComponent`` it.
 
 from __future__ import annotations
 
-import base64
-import binascii
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -125,19 +122,6 @@ def get_reader() -> CvReader:
     return default_reader()
 
 
-def _decode(name: str, data: str) -> bytes:
-    """One uploaded file's bytes. Accepts a bare base64 string or a data URI."""
-    payload = data.split(",", 1)[1] if data.startswith("data:") else data
-    # Checked on the encoded length, before decoding: a body far past any limit
-    # should cost a comparison, not an allocation the size of the upload.
-    if len(payload) > importer.MAX_PDF_BYTES * 4 // 3 + 4:
-        raise importer.CvImportRefused(f"{name or 'file'} is larger than any import accepts")
-    try:
-        return base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise importer.CvImportRefused(f"{name or 'file'} did not arrive intact") from exc
-
-
 @router.post("/{scope}/import", response_model=CvImportOut)
 def import_cv(
     scope: str,
@@ -172,13 +156,7 @@ def import_cv(
         if pasted:
             result = importer.import_text(body.text, reader, CvDocument())
         else:
-            # Counted before anything is decoded: the limit exists so that a body
-            # of a thousand files costs a comparison, not a thousand allocations.
-            if len(body.files) > importer.MAX_FILES:
-                raise importer.CvImportRefused(
-                    f"at most {importer.MAX_FILES} files per import — got {len(body.files)}"
-                )
-            files = [(f.name, _decode(f.name, f.data)) for f in body.files]
+            files = importer.decode_uploads([(f.name, f.data) for f in body.files])
             result = importer.import_cv(files, reader, CvDocument())
     except importer.CvImportRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

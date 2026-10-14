@@ -102,6 +102,22 @@ class JdExtract(_Model):
         return cleaned if cleaned in LEVELS else ""
 
 
+class JdTranscript(_Model):
+    """A posting typed out of a picture — the words on it and nothing else.
+
+    Its own call and its own schema, kept apart from :class:`JdExtract` for the
+    reason that class has no description field: the text a job is stored with
+    is *the evidence* every later step reads, so the only thing a model may do
+    to it is copy it. A call that also filled in the title and the salary would
+    be reading and transcribing at once, and would do the second worse.
+    """
+
+    text: str = Field(description="Every word of the posting, in reading order. '' if none.")
+    unreadable: list[str] = Field(
+        description="One short note per thing that could not be read with confidence."
+    )
+
+
 class JdSections(_Model):
     """The body of a posting, split into the parts a person reads separately.
 

@@ -25,13 +25,22 @@ read that field and would inherit the invention silently.
 from __future__ import annotations
 
 from jobpilot.intake.schema import FitReport, JdExtract
-from jobpilot.intake.service import IntakeRefused, IntakeResult, assess_fit, extract_jd
+from jobpilot.intake.service import (
+    FileReading,
+    IntakeRefused,
+    IntakeResult,
+    assess_fit,
+    extract_jd,
+    read_files,
+)
 
 __all__ = [
+    "FileReading",
     "FitReport",
     "IntakeRefused",
     "IntakeResult",
     "JdExtract",
     "assess_fit",
     "extract_jd",
+    "read_files",
 ]

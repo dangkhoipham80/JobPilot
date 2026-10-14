@@ -17,6 +17,16 @@ from dataclasses import dataclass, field
 JOB_ID_WIDTH = 128
 
 
+#: The id prefix of every job added by hand — and its ``source`` too, until the
+#: user says where they found it. The prefix never follows the source: it is how
+#: a hand-added row is told from a crawled one that shares its source name.
+HAND_ID_PREFIX = "manual"
+
+
+def is_hand_added(job_id: str) -> bool:
+    return job_id.startswith(f"{HAND_ID_PREFIX}:")
+
+
 def make_job_id(source: str, native_id: str) -> str:
     """``<source>:<native_id>``, bounded to ``JOB_ID_WIDTH``.
 

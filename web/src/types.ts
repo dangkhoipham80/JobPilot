@@ -955,8 +955,26 @@ export interface WarningItem {
   checked_on: string;
 }
 
+/** Where a job added by hand was found — `HandSourceStr` in the API. `manual`
+ *  is "somewhere else". Proper nouns only, so `sourceLabel` names them. */
+export const HAND_SOURCES = ["manual", "facebook", "linkedin", "zalo"] as const;
+export type HandSource = (typeof HAND_SOURCES)[number];
+
+/** The text of a posting uploaded as images or a PDF. Not saved, no fields read. */
+export interface JdFileReading {
+  text: string;
+  /** True when a model typed the text out of the file — it needs proof-reading.
+   *  False when it is the PDF's own text layer, which no model touched. */
+  transcribed: boolean;
+  /** The model's notes on what it could not read, in the posting's language. */
+  unreadable: string[];
+  files: { name: string; media_type: string; bytes: number }[];
+}
+
 export interface JobInput {
   url?: string;
+  /** Omitted = not said: a new job is `manual`, an existing one keeps its own. */
+  source?: HandSource;
   title: string;
   company: string;
   location?: string | null;
