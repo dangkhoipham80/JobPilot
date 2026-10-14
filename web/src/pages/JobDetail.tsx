@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
-import type { JobStatus } from "@/types";
+import type { JobDetail, JobStatus } from "@/types";
 import { useT } from "@/i18n";
 import { useFormat } from "@/lib/format";
 import { skillLabel, useLabels } from "@/lib/labels";
@@ -65,6 +65,17 @@ export function JobDetail({ version }: { version: number }) {
         <Skeleton className="h-72 rounded-card" />
       ) : (
         <>
+          {job.latest_id && (
+            <Card className="border-accent/40 bg-accent/5 p-4 text-sm">
+              {t("olderCopyLead")}{" "}
+              <Link
+                to={`/jobs/${encodeURIComponent(job.latest_id)}`}
+                className="font-medium text-accent hover:underline"
+              >
+                {t("openNewest")}
+              </Link>
+            </Card>
+          )}
           <Card>
             <CardBody className="space-y-4">
               <div className="flex items-start justify-between gap-4">
@@ -173,6 +184,8 @@ export function JobDetail({ version }: { version: number }) {
             </CardBody>
           </Card>
 
+          {!!job.copies?.length && <Copies job={job} />}
+
           {/* Above the JD, because the point of it is to be read *before* you
               read the whole posting and decide how to spend an hour. */}
           <FitCard job={job} onAssessed={refetch} />
@@ -185,5 +198,39 @@ export function JobDetail({ version }: { version: number }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Every listing of this posting: the board re-listed it under new ids. */
+function Copies({ job }: { job: JobDetail }) {
+  const t = useT("jobs");
+  const fmt = useFormat();
+  const rows = [...(job.copies ?? [])];
+  return (
+    <Card className="p-4">
+      <h3 className="text-sm font-semibold">{t("copiesTitle", { n: rows.length + 1 })}</h3>
+      <p className="mb-2 text-xs text-ink-muted">{t("copiesHint")}</p>
+      <ul className="space-y-1 text-sm">
+        {rows.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center gap-2">
+            <Link to={`/jobs/${encodeURIComponent(c.id)}`} className="font-mono text-xs hover:text-accent">
+              {c.id}
+            </Link>
+            {c.id === job.latest_id && (
+              <span className="rounded border border-accent/40 px-1.5 text-[11px] text-accent">
+                {t("newestCopy")}
+              </span>
+            )}
+            <StatusPill status={c.status} />
+            <span className="text-xs text-ink-muted">
+              {t("copySeen", {
+                first: fmt.relativeTime(c.crawled_at),
+                last: fmt.relativeTime(c.last_seen_at),
+              })}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

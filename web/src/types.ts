@@ -40,9 +40,24 @@ export interface Job {
   run_id: number | null;
   /** Advisory: why the score, and whether the posting looks live. */
   quality: JobQuality | null;
+  /** Newest copy of this posting when its board re-listed it; null = this is it. */
+  latest_id?: string | null;
+  /** How many older listings of this posting point at this row. */
+  reposts?: number;
+}
+
+/** Another listing of the same posting (crawler/reposts.py). */
+export interface JobCopy {
+  id: string;
+  url: string;
+  status: JobStatus;
+  crawled_at: string | null;
+  last_seen_at: string | null;
 }
 
 export interface JobDetail extends Job {
+  /** Every other listing of this posting, newest first. */
+  copies?: JobCopy[];
   skills: string[];
   description_md: string;
   is_fresh: boolean;
@@ -301,6 +316,8 @@ export interface JobsQuery {
   level?: string;
   q?: string;
   fresh?: boolean;
+  /** Include older listings of a re-listed posting (hidden by default). */
+  reposts?: boolean;
   /** Only jobs discovered by this crawl. */
   run_id?: number;
   /** ISO timestamp — only jobs crawled at or after it. */

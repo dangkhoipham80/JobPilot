@@ -54,6 +54,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     from jobpilot.companies.service import link_all_jobs
     from jobpilot.crawler.normalize import backfill_facets
     from jobpilot.crawler.quality import backfill
+    from jobpilot.crawler.reposts import relink_all
     from jobpilot.store.db import session_scope
 
     with session_scope() as db:
@@ -64,11 +65,17 @@ def cmd_backfill(args: argparse.Namespace) -> int:
         # repair path for a job whose employer row went missing or whose fold
         # changed. Nothing here is ever cleared, so a re-run cannot subtract.
         links = link_all_jobs(db)
+        # After linking: groups are found through `company_id`.
+        reposts = relink_all(db)
     print(f"annotated {touched} job(s) with quality signals")
     print(f"derived salary/skills/city on {facets} job(s)")
     print(
         f"companies: created {links.created}, linked {links.linked} job(s)"
         + (f", {links.unlinkable} without a company name" if links.unlinkable else "")
+    )
+    print(
+        f"re-listings: {reposts.groups} posting(s) listed more than once, "
+        f"{reposts.hidden} older copy(ies) now point at the newest"
     )
     return 0
 

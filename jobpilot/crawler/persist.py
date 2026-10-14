@@ -60,6 +60,7 @@ from sqlalchemy.orm import Session, defer
 
 from jobpilot.crawler.normalize import NormalizedJob, vn_now
 from jobpilot.crawler.quality import THIN_JD_CHARS
+from jobpilot.crawler.reposts import relink
 from jobpilot.crawler.text import dedup_key, normalize_title, title_level
 from jobpilot.crawler.types import is_hand_added
 from jobpilot.store.models import Job, JobStatus
@@ -473,6 +474,7 @@ def persist_jobs(
         ):
             index.add(job)
 
+    touched: list[Job] = []
     for nj in jobs:
         # One savepoint per job. Postgres enforces column widths and constraints
         # that SQLite never checks, and a violation surfaces mid-flush — which
@@ -506,6 +508,19 @@ def persist_jobs(
                 stats.superseded += 1
         if nj.fresh:
             stats.fresh += 1
+        if row is not None:
+            touched.append(row)
 
+    session.flush()
+    # Re-listings: point every copy of a posting at its newest member, so the
+    # list shows one row per posting (``crawler/reposts.py``). After the loop,
+    # once per employer+title, not per row: a crawl re-sees most of a board.
+    seen_groups: set[tuple] = set()
+    for row in touched:
+        group_key = (row.company_id, dedup_key(row.company, row.title), row.source, row.title)
+        if row.company_id is None or group_key in seen_groups:
+            continue
+        seen_groups.add(group_key)
+        relink(session, row)
     session.flush()
     return stats

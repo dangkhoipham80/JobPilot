@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Check, ExternalLink, History, Search, X } from "lucide-react";
+import { Check, ExternalLink, History, Layers, Search, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
@@ -68,6 +68,7 @@ export function Jobs({ version }: { version: number }) {
   const [source, setSource] = useState("");
   const [level, setLevel] = useState("");
   const [fresh, setFresh] = useState(false);
+  const [allCopies, setAllCopies] = useState(false);
   const [win, setWin] = useState("");
   const [band, setBand] = useState("");
   const [order, setOrder] = useState<Order>("crawled");
@@ -111,6 +112,7 @@ export function Jobs({ version }: { version: number }) {
       level: level || undefined,
       status: (status || undefined) as JobStatus | undefined,
       fresh: fresh || undefined,
+      reposts: allCopies || undefined,
       run_id: runId,
       crawled_after: hours ? new Date(Date.now() - hours * 3600 * 1000).toISOString() : undefined,
       match_min: matchBand?.min,
@@ -122,12 +124,12 @@ export function Jobs({ version }: { version: number }) {
       limit: size,
       offset,
     };
-  }, [q, source, level, status, fresh, win, band, order, runId, size, offset]);
+  }, [q, source, level, status, fresh, allCopies, win, band, order, runId, size, offset]);
 
   // A changed filter means a different list, so page 7 of the old one is not a
   // place in the new one. Without this, narrowing a search from 300 hits to 4
   // lands on an empty table with no clue that the rows are on page 1.
-  const filterKey = JSON.stringify([q, source, level, status, fresh, win, band, order, runId]);
+  const filterKey = JSON.stringify([q, source, level, status, fresh, allCopies, win, band, order, runId]);
   useEffect(reset, [filterKey, reset]);
 
   const { data, loading, error, refetch } = useApi(() => api.jobs(query), [query, version]);
@@ -144,7 +146,7 @@ export function Jobs({ version }: { version: number }) {
     }
   }
 
-  const hasFilters = q || source || level || status || fresh || win || band || runId;
+  const hasFilters = q || source || level || status || fresh || allCopies || win || band || runId;
 
   return (
     <div className="animate-fade-up space-y-4">
@@ -251,6 +253,16 @@ export function Jobs({ version }: { version: number }) {
         >
           <FreshBeacon /> {t("freshOnly")}
         </button>
+        <button
+          onClick={() => setAllCopies((v) => !v)}
+          title={t("allCopiesHint")}
+          className={
+            "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors " +
+            (allCopies ? "border-accent bg-accent/10 text-accent" : "text-ink-muted hover:bg-surface-2")
+          }
+        >
+          <Layers size={14} /> {t("allCopies")}
+        </button>
         {hasFilters && (
           <Button
             variant="ghost"
@@ -260,6 +272,7 @@ export function Jobs({ version }: { version: number }) {
               setSource("");
               setLevel("");
               setFresh(false);
+              setAllCopies(false);
               setWin("");
               setBand("");
               setParams({}, { replace: true });
@@ -356,6 +369,19 @@ function Row({
             >
               {job.title}
             </span>
+            {!!job.reposts && (
+              <span
+                className="mt-0.5 shrink-0 rounded border border-border px-1.5 text-[11px] text-ink-muted"
+                title={t("repostedHint", { n: job.reposts })}
+              >
+                {t("reposted", { n: job.reposts })}
+              </span>
+            )}
+            {job.latest_id && (
+              <span className="mt-0.5 shrink-0 rounded border border-border px-1.5 text-[11px] text-ink-muted">
+                {t("olderCopy")}
+              </span>
+            )}
           </div>
           <div className="text-xs text-ink-muted [overflow-wrap:anywhere]">
             {job.company}

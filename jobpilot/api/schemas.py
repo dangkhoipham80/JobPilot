@@ -87,6 +87,23 @@ class JobOut(BaseModel):
     # Why the score is what it is, and whether the posting looks worth
     # answering. Advisory only — nothing here filters a job out.
     quality: dict | None = None
+    #: The newest copy of this posting when its board re-listed it under a new
+    #: id (``crawler/reposts.py``); null when this row is the newest.
+    latest_id: str | None = None
+    #: How many older copies point at this row. Filled by the list route.
+    reposts: int = 0
+
+
+class RepostOut(BaseModel):
+    """One older listing of the same posting, for the detail page."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    url: str
+    status: JobStatus
+    crawled_at: datetime | None
+    last_seen_at: datetime | None = None
 
 
 class JdSectionsOut(BaseModel):
@@ -198,6 +215,8 @@ class JobDetailOut(JobOut):
     #: not worth making. Offered as an apply target, never applied — see
     #: ``HrContact``.
     hr_contacts: list[HrContactOut] = []
+    #: Every other listing of this posting, newest first (``crawler/reposts.py``).
+    copies: list[RepostOut] = []
 
     @classmethod
     def from_job(cls, job: Job, passes: list | None = None) -> "JobDetailOut":

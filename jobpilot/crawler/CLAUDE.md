@@ -346,3 +346,21 @@ riêng (`ats.locations`); feed remote thì không có.
   `request` được đọc ngược từ `query` + key của `sites`, `limit` = không biết (mặc định).
 - **Lịch tự động đọc `crawl.queries`**; rỗng thì giữ query cũ ghép từ 3 stack đầu (config cũ chạy y
   như trước — dù query đó dài tới mức TopCV trả 0).
+
+## Tin đăng lại (`reposts.py`, cột `jobs.latest_id`, migration 0013)
+
+Board gỡ tin rồi đăng lại **mã mới** sau khi hết cửa sổ dedup ⇒ mã mới được insert (đúng: nó là
+bản đang sống). Sai là bản cũ còn nằm trên list. Đo 2026-10-14: 34 nhóm / 37 dòng cũ, toàn bộ là
+cùng board + cùng tiêu đề (vd một tin ITviec 3 mã trong 3 tháng).
+
+- **Không xoá, không suppress.** Mọi bản giữ row; mỗi bản trỏ `latest_id` về bản **thấy gần nhất**
+  (`last_seen_at`, rồi `crawled_at`, rồi id); bản mới nhất `latest_id = NULL`. Bản cũ được thấy
+  lại trên board thì giành lại vị trí đầu.
+- **"Cùng một tin" là luật của dedup (`persist._same_posting`), không phải luật thứ hai**: cùng
+  `dedup_key`, cùng `company_id`; cùng board thì tiêu đề phải y hệt (kể cả level và ngoặc). 8 nhóm
+  tiêu đề lệch nhau ("Java Developer" / "Junior Java Developer") **cố ý không gộp** — cùng board
+  đăng hai tiêu đề thì thường là hai vị trí. Muốn gộp mờ hơn (AI) thì đó là một quyết định riêng.
+- **List ẩn bản cũ trừ khi user đã thao tác** (`status` ngoài `DISCOVERED`/`SKIPPED`): bản đã
+  shortlist/nộp là việc của user. `GET /jobs?reposts=true` hiện hết; detail có `copies`.
+- Tính lại sau mỗi `persist_jobs` (một lần mỗi nhóm) và trong `jobpilot backfill` — migration chỉ
+  thêm cột, vì gom nhóm bằng SQL là bản sao thứ hai của luật.
