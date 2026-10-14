@@ -107,6 +107,7 @@ python -m jobpilot.cli backfill     # gắn quality signal + facet phân tích +
 python -m jobpilot.cli backfill --force   # tính lại cả row đã có — dùng sau khi SỬA parser
 python -m jobpilot.cli cv seed      # tạo Master CV rỗng nếu chưa có (idempotent)
 python -m jobpilot.cli cv read scan.png -o my-cv.local.json   # AI đọc ảnh/PDF → bản nháp JSON, KHÔNG lưu
+python -m jobpilot.cli cv read --text cv.txt -o my-cv.local.json   # như trên, từ một file text
 python -m jobpilot.cli cv import my-cv.local.json   # nạp CV có sẵn vào DB
 python -m jobpilot.cli cv export my-cv.local.json   # backup CV từ DB ra file (gitignored)
 python -m jobpilot.cli cv build     # render JSON → .tex → PDF ở out/cv/master/
@@ -204,11 +205,12 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | claude_cli | Provider LLM chạy trên **gói Claude** của user qua `claude -p` (0đ/lượt, chặn nếu login không phải gói) | `llm/claude_cli.py`, `jobpilot/llm/CLAUDE.md` |
 | public | **Repo public + MIT** (2026-10-12): `LICENSE` + license của phần vendor, `README.vi.md`, `CONTRIBUTING(.vi).md`, `CODEOWNERS`; `main` được bảo vệ, CI của PR từ fork chờ duyệt | `LICENSE`, `CONTRIBUTING.md`, `.github/CODEOWNERS` |
 | cv-import | **Nhập CV từ ảnh/PDF**: model chép file thành bản nháp trong CV Studio, **không tự lưu**; PDF có text layer thì đối chiếu con số; tầng LLM nhận file đính kèm (`Attachment`) ở cả 4 provider | `cv/reader.py`, `cv/importer.py`, `llm/base.py`, `web/src/components/cv/ImportBox.tsx` |
+| cv-import-text | **Dán text CV** vào cùng thẻ nhập: File *hoặc* text, text luôn được đối chiếu con số, nằm giữa thẻ `<cv_text>` để không bị đọc thành lệnh | `cv/reader.py`, `cv/importer.py`, `web/src/components/cv/ImportBox.tsx` |
 | ats-scope | **Board công ty lọc theo địa điểm** (`ats.locations`, nguyên từ, trước `limit`) + miễn cổng stack cho board đã khoanh vùng (`stack_gated`) | `crawler/ats.py`, `crawler/pipeline.py`, `jobpilot/crawler/CLAUDE.md` |
 | dedup-same-board | Dedup lớp 2 hết gộp hai tin **cùng board khác tiêu đề** (level/ngoặc chỉ được bỏ qua giữa hai board khác nhau) | `crawler/persist.py`, `crawler/text.py` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
 
-1186 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
+1213 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +
 `GET /stats/llm` + `llm bench`. **Cả ba provider API (claude/openai/gemini) đã gọi thật thành công** cho cả schema phẳng
 (`MailVerdict`) lẫn schema lồng (`TailorPlan`), kể cả OpenAI strict mode — classify 5/5 trên

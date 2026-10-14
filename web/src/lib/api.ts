@@ -137,11 +137,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ instruction }),
     }),
-  /* Read page images or a PDF into a draft document. Saves nothing: the draft
-     goes into the editor and becomes a version through `saveCv` once the user
-     has compared it with the file. One model call, so it can take a minute. */
-  importCv: (files: { name: string; data: string }[]) =>
-    req<CvImportResult>("/cv/master/import", { method: "POST", body: JSON.stringify({ files }) }),
+  /* Read page images, a PDF or pasted text into a draft document. Saves
+     nothing: the draft goes into the editor and becomes a version through
+     `saveCv` once the user has compared it with the original. One model call,
+     so it can take a minute. Files or text — the endpoint refuses both at once. */
+  importCv: (source: { files: { name: string; data: string }[] } | { text: string }) =>
+    req<CvImportResult>("/cv/master/import", { method: "POST", body: JSON.stringify(source) }),
   saveCv: (scope: string, document: CvDocument) =>
     req<CvDocumentResponse>(cvPath(scope), { method: "PUT", body: JSON.stringify(document) }),
   compileCv: (scope: string) => req<CvCompileResult>(`${cvPath(scope)}/compile`, { method: "POST" }),

@@ -112,7 +112,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def _cv_read(db, args: argparse.Namespace) -> int:
-    """Read page images or a PDF into a draft JSON file. Never touches the DB's CV.
+    """Read page images, a PDF or a text file into a draft JSON. Never touches the DB's CV.
 
     Two steps on purpose — ``cv read`` writes a file, ``cv import`` saves one —
     so that a person reads the draft in between. The dashboard does the same
@@ -129,10 +129,18 @@ def _cv_read(db, args: argparse.Namespace) -> int:
         return 1
     for line in llm.warnings("tailor"):
         print(f"WARNING: {line}", file=sys.stderr)
+    if args.text and len(args.files) != 1:
+        print("ERROR: --text reads one text file", file=sys.stderr)
+        return 1
     try:
         files = [(Path(f).name, Path(f).read_bytes()) for f in args.files]
+        # utf-8-sig: Notepad's BOM is not the first character of anyone's name.
+        text = files[0][1].decode("utf-8-sig") if args.text else ""
     except OSError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    except UnicodeDecodeError:
+        print(f"ERROR: {args.files[0]} is not UTF-8 text", file=sys.stderr)
         return 1
     # The current Master's template and theme, so importing the draft does not
     # also reset how the CV looks. Its text is not carried over. Read with
@@ -142,7 +150,10 @@ def _cv_read(db, args: argparse.Namespace) -> int:
     row = store.latest_version(db, store.MASTER_SCOPE)
     base = CvDocument.model_validate(row.content) if row else CvDocument()
     try:
-        result = importer.import_cv(files, default_reader(), base)
+        if args.text:
+            result = importer.import_text(text, default_reader(), base)
+        else:
+            result = importer.import_cv(files, default_reader(), base)
     except importer.CvImportRefused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 1
@@ -165,15 +176,16 @@ def _cv_read(db, args: argparse.Namespace) -> int:
     print(f"  sections: {sections}")
     for note in result.unreadable:
         print(f"  could not read: {note}")
+    against = "the text file" if args.text else "the PDF's own text"
     if not result.checked:
         print("  numbers: NOT checked - no text layer to compare with. Compare it yourself.")
     elif result.unbacked_numbers:
         print(
-            "  numbers not found in the PDF's own text - check these: "
+            f"  numbers not found in {against} - check these: "
             + ", ".join(result.unbacked_numbers)
         )
     else:
-        print("  numbers: every number in the draft also appears in the PDF's own text")
+        print(f"  numbers: every number in the draft also appears in {against}")
     if result.markup:
         print(
             "  will render as formatting, not as written (~x~, `x`, **x**, [x](url)): "
@@ -711,9 +723,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("--scope", default="master", help="'master' or a job id")
 
     p_read = cv_sub.add_parser(
-        "read", help="read a CV from page images or a PDF into a draft JSON (saves nothing)"
+        "read",
+        help="read a CV from page images, a PDF or a text file into a draft JSON (saves nothing)",
     )
-    p_read.add_argument("files", nargs="+", help="PNG/JPEG/WebP pages in order, or a PDF")
+    p_read.add_argument(
+        "files", nargs="+", help="PNG/JPEG/WebP pages in order, a PDF, or with --text a text file"
+    )
+    p_read.add_argument(
+        "--text",
+        action="store_true",
+        help="the file is the CV as plain text (UTF-8), e.g. copied out of a document",
+    )
     p_read.add_argument(
         "-o",
         "--output",

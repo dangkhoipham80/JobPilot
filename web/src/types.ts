@@ -387,10 +387,11 @@ export interface CvImportResult {
   document: CvDocument;
   /** The model's own notes on what it could not read, in the CV's language. */
   unreadable: string[];
-  /** True only when a PDF's text layer was compared with the draft. False is
-   *  "nothing was checked" — never "nothing was wrong". */
+  /** True only when there was text to compare the draft with: a PDF's own text
+   *  layer, or a CV that was pasted as text. False is "nothing was checked" —
+   *  never "nothing was wrong". */
   checked: boolean;
-  /** Numbers in the draft that the PDF's own text never states. */
+  /** Numbers in the draft that that text never states. */
   unbacked_numbers: string[];
   /** Stretches the PDF will render as formatting (`~x~`, backticks, `**x**`,
    *  `[label](url)`) rather than print as the original wrote them. */

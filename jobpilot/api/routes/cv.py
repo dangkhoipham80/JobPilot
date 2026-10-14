@@ -144,7 +144,7 @@ def import_cv(
     body: CvImportIn,
     reader: CvReader = Depends(get_reader),
 ) -> CvImportOut:
-    """Read an uploaded CV (page images or a PDF) into a draft. **Saves nothing.**
+    """Read a CV (page images, a PDF, or pasted text) into a draft. **Saves nothing.**
 
     200, not 201, and no database session at all: the draft goes back to the
     editor, and it becomes a version through the ordinary ``PUT /cv/master``
@@ -159,17 +159,27 @@ def import_cv(
     if scope != store.MASTER_SCOPE:
         raise HTTPException(
             status_code=400,
-            detail="only the Master CV is imported from a file; a tailored CV is derived from it",
+            detail="only the Master CV is imported; a tailored CV is derived from it",
         )
     try:
-        # Counted before anything is decoded: the limit exists so that a body of
-        # a thousand files costs a comparison, not a thousand allocations.
-        if len(body.files) > importer.MAX_FILES:
-            raise importer.CvImportRefused(
-                f"at most {importer.MAX_FILES} files per import — got {len(body.files)}"
-            )
-        files = [(f.name, _decode(f.name, f.data)) for f in body.files]
-        result = importer.import_cv(files, reader, CvDocument())
+        pasted = bool(body.text.strip())
+        if pasted and body.files:
+            # Not merged: the one check this feature has compares the draft with
+            # its source, and a draft read from two has no single source.
+            raise importer.CvImportRefused("send the files or the text, not both")
+        if not pasted and not body.files:
+            raise importer.CvImportRefused("nothing to read: attach a file or paste the CV's text")
+        if pasted:
+            result = importer.import_text(body.text, reader, CvDocument())
+        else:
+            # Counted before anything is decoded: the limit exists so that a body
+            # of a thousand files costs a comparison, not a thousand allocations.
+            if len(body.files) > importer.MAX_FILES:
+                raise importer.CvImportRefused(
+                    f"at most {importer.MAX_FILES} files per import — got {len(body.files)}"
+                )
+            files = [(f.name, _decode(f.name, f.data)) for f in body.files]
+            result = importer.import_cv(files, reader, CvDocument())
     except importer.CvImportRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except CvReadError as exc:

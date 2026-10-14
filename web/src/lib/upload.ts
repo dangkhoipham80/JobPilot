@@ -8,6 +8,8 @@ export const IMPORT_TYPES = ["image/png", "image/jpeg", "image/webp", "applicati
 export const MAX_IMPORT_FILES = 6;
 export const MAX_IMAGE_BYTES = 3_500_000;
 export const MAX_PDF_BYTES = 10_000_000;
+/** A CV pasted as text instead of uploaded — the same file's limits, in characters. */
+export const MAX_IMPORT_TEXT_CHARS = 40_000;
 
 export type UploadProblem = "type" | "size" | "decode";
 
