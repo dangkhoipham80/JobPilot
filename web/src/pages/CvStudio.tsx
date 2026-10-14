@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { Code2, LayoutList, Plus, Save, X } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Code2, LayoutList, Plus, Save, Wand2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
 import { useTask } from "@/hooks/useTask";
 import { useClampPage, usePaging } from "@/hooks/usePaging";
 import { Pagination } from "@/components/Pagination";
-import { Button, Card, CardBody, Select, Skeleton } from "@/components/ui";
+import { Button, Card, CardBody, CardHeader, CardTitle, Select, Skeleton } from "@/components/ui";
+import { AddJobForm } from "@/components/AddJobForm";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
@@ -20,7 +21,18 @@ import { SectionEditor } from "@/components/cv/SectionEditor";
 import { TemplatePicker } from "@/components/cv/TemplatePicker";
 import { VersionHistory } from "@/components/cv/VersionHistory";
 import { DiffPanel } from "@/components/review/DiffPanel";
-import type { AtsReport, CvDocument, CvSection, CvSectionType, CvVersionDiff } from "@/types";
+import type {
+  AtsReport,
+  CvDocument,
+  CvSection,
+  CvSectionType,
+  CvVersionDiff,
+  JobDetail,
+  JobStatus,
+} from "@/types";
+
+/** Statuses a job has to be moved out of before it can be tailored. */
+const NOT_SHORTLISTED = new Set<JobStatus>(["DISCOVERED", "SKIPPED"]);
 
 // The `title` here lands in the CV and is rendered into the PDF, so it is CV
 // content, not UI copy: it stays in English in both languages, same as every
@@ -41,6 +53,7 @@ const NEW_SECTION: Record<CvSectionType, () => CvSection> = {
 export function CvStudio({ version: wsVersion }: { version: number }) {
   // /cv edits the Master CV; /cv/<job id> edits that job's tailored fork.
   const { scope = "master" } = useParams();
+  const navigate = useNavigate();
   const t = useT("cv");
   const tc = useT("common");
   const { data, loading, error, refetch } = useApi(() => api.cv(scope), [scope]);
@@ -380,6 +393,30 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
     setImported(null);
   };
 
+  // "Paste a JD, get a tailored CV": the job is saved by the form; this takes
+  // it the rest of the way. Shortlisting here is the user's own decision — they
+  // pasted the posting and pressed "tailor" — and tailoring sends nothing out:
+  // it ends on the review page, in front of the same Approve gate as any job.
+  // The task is started *here*, on the click, and handed to the review page to
+  // follow. Starting it from that page's load would make a model call a side
+  // effect of navigation — and of the back button.
+  const tailorTo = async (job: JobDetail) => {
+    const review = `/jobs/${encodeURIComponent(job.id)}/review`;
+    // Re-pasting a posting lands on its existing row, which may be anywhere in
+    // the funnel by now. "Does it already have a tailored CV" is asked of the
+    // CV, not of the status: FAILED means a tailor that broke *or* an apply
+    // that broke after the CV was approved, and a status cannot say which. A
+    // job that has one is opened, never tailored over — and the review page is
+    // told to say so, or "Save & tailor" would have silently done neither.
+    if ((await api.review(job.id)).version > 0) {
+      navigate(review, { state: { tailorSkipped: true } });
+      return;
+    }
+    if (NOT_SHORTLISTED.has(job.status)) await api.shortlist(job.id);
+    const task = await api.tailor(job.id);
+    navigate(review, { state: { tailorTask: task.id } });
+  };
+
   const setSections = (sections: CvSection[]) => setDraft({ ...draft, sections });
   const moveSection = (i: number, delta: number) => {
     const next = [...draft.sections];
@@ -427,6 +464,28 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
               onClose={() => setCompare(null)}
             />
           )}
+          {/* Outside the tab switch below, and hidden rather than unmounted on
+              the LaTeX tab: the form holds a pasted posting — possibly one a
+              model was paid to type out of a screenshot — and a look at the
+              other tab must not cost the user that. */}
+          {scope === "master" && (
+            <Card className={mode === "fields" ? undefined : "hidden"}>
+              <CardHeader>
+                <CardTitle>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Wand2 size={14} className="text-accent" /> {t("tailorJdTitle")}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardBody className="pt-3">
+                <AddJobForm
+                  mode="tailor"
+                  onCreated={tailorTo}
+                  blocked={dirty ? t("tailorJdDirty") : undefined}
+                />
+              </CardBody>
+            </Card>
+          )}
           {mode === "latex" ? (
             <RawLatexEditor
               scope={scope}
@@ -459,6 +518,7 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
               {scope === "master" && (
                 <InstructionBox task={editTask} error={editError} onSubmit={askForEdit} />
               )}
+
               {editSkippedVersion != null && (
                 <Card>
                   <CardBody className="flex items-center justify-between gap-3 text-xs text-ink-muted">

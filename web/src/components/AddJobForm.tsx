@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, ImageUp, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { ExternalLink, ImageUp, Loader2, Plus, Sparkles, Wand2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Button, Card, CardBody, Input, Select } from "@/components/ui";
 import { useT } from "@/i18n";
@@ -70,8 +70,23 @@ interface FileNote {
  * against, and the note under it says whether a model typed those words or the
  * PDF carried them.
  */
-export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void }) {
+export function AddJobForm({
+  onCreated,
+  mode = "add",
+  blocked,
+}: {
+  /** Called with the saved job. May do more work (and may throw): the form
+   *  waits for it, and says the job was saved if what came after it failed. */
+  onCreated: (job: JobDetail) => void | Promise<void>;
+  /** `tailor` is the same form hosted in CV Studio: it sits inside that page's
+   *  own card, needs the description (a tailor with no JD has nothing to read),
+   *  and its button says what happens next. */
+  mode?: "add" | "tailor";
+  /** Why saving is not possible right now, said beside the button. */
+  blocked?: string;
+}) {
   const t = useT("jobs");
+  const tailoring = mode === "tailor";
   const common = useT("common");
   const labels = useLabels();
   const [open, setOpen] = useState(false);
@@ -268,6 +283,10 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
   }
 
   async function submit() {
+    // The same ref as the two readers, for the same reason: in tailor mode a
+    // second click in one tick would save, shortlist and queue everything twice.
+    if (running.current) return;
+    running.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -287,12 +306,21 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
         sections,
         description_md: form.description_md,
       });
-      onCreated(job);
+      try {
+        await onCreated(job);
+      } catch (e) {
+        // The row exists; only the step after it failed. Saying just "failed"
+        // would send the user to add the job a second time.
+        const why = e instanceof ApiError ? e.message : t("afterSaveFailed");
+        setError(`${why} — ${t("savedAnyway")}`);
+        return;
+      }
       reset();
       setOpen(false);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("addJobFailed"));
     } finally {
+      running.current = false;
       setBusy(false);
     }
   }
@@ -319,18 +347,28 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
   if (!open) {
     return (
       <Button variant="outline" onClick={() => setOpen(true)}>
-        <Plus size={15} /> {t("addJob")}
+        {tailoring ? <Wand2 size={15} /> : <Plus size={15} />}{" "}
+        {t(tailoring ? "tailorJdOpen" : "addJob")}
       </Button>
     );
   }
 
+  // In CV Studio the host card already carries the title; a card inside a card
+  // would be a frame around a frame.
+  const Frame = tailoring ? Bare : Framed;
+  const canSave =
+    !!form.title.trim() && !!form.company.trim() && (!tailoring || !!form.description_md.trim());
+
   return (
-    <Card className="w-full">
-      <CardBody className="flex flex-col gap-3">
+    <Frame>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-sm font-semibold">{t("addJobTitle")}</h2>
-            <p className="text-xs leading-relaxed text-ink-muted">{t("addJobIntro")}</p>
+            {!tailoring && (
+              <h2 className="font-display text-sm font-semibold">{t("addJobTitle")}</h2>
+            )}
+            <p className="text-xs leading-relaxed text-ink-muted">
+              {t(tailoring ? "tailorJdIntro" : "addJobIntro")}
+            </p>
           </div>
           <button
             onClick={() => {
@@ -532,17 +570,37 @@ export function AddJobForm({ onCreated }: { onCreated: (job: JobDetail) => void 
 
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-ink-muted">
-            {error ? <span className="text-critical">{error}</span> : t("addJobChannel")}
+            {error ? (
+              <span className="text-critical">{error}</span>
+            ) : blocked ? (
+              <span className="text-accent">{blocked}</span>
+            ) : (
+              t(tailoring ? "tailorJdNext" : "addJobChannel")
+            )}
           </span>
-          <Button
-            onClick={submit}
-            disabled={busy || fileBusy || !form.title.trim() || !form.company.trim()}
-          >
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}{" "}
-            {t("addJob")}
+          <Button onClick={submit} disabled={busy || fileBusy || !canSave || !!blocked}>
+            {busy ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : tailoring ? (
+              <Wand2 size={15} />
+            ) : (
+              <Plus size={15} />
+            )}{" "}
+            {t(tailoring ? "tailorJdSubmit" : "addJob")}
           </Button>
         </div>
-      </CardBody>
+    </Frame>
+  );
+}
+
+function Framed({ children }: { children: React.ReactNode }) {
+  return (
+    <Card className="w-full">
+      <CardBody className="flex flex-col gap-3">{children}</CardBody>
     </Card>
   );
+}
+
+function Bare({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-3">{children}</div>;
 }

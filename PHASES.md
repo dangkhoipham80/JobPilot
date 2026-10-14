@@ -2672,3 +2672,55 @@ về ý nghĩa: ba chỗ trong số đó ngầm hiểu `source` là "board mà c
 - Không có nút sửa nguồn trên trang job (API `PATCH` đã nhận) — muốn đổi thì dán lại tin và chọn nguồn.
 - Chưa có logo Facebook/Zalo; màu monogram lấy theo hash nên có thể trùng màu một board khác.
 
+## Phase cv-tailor-jd — dán JD ngay trong CV Studio để tailor (2026-10-14)
+
+Trước đây muốn tailor theo một tin tự tìm thì phải: sang `/jobs` → Thêm job → mở job → Chọn → mở
+trang review → Tailor. Giờ CV Studio (scope master) có thẻ "Tailor theo một JD": dán tin (hoặc ảnh
+chụp tin) → **Lưu & tailor CV** → trang CV Review mở ra với lượt tailor đang chạy.
+
+Chỉ đổi frontend. Thẻ là chính `AddJobForm` ở `mode="tailor"`, nên nguồn (Facebook…), nhập từ
+ảnh/PDF và "AI điền giúp" của phase intake-file đi theo nguyên vẹn. Luật: `web/src/CLAUDE.md`
+§ "Tailor theo một JD".
+
+### Chạy thật
+
+Trình duyệt, build của worktree + SQLite tạm, Master CV là **CV mẫu hư cấu**, tin là bài đăng bịa
+của phase intake-file, model thật (`claude_cli`):
+
+- Có title + công ty mà chưa có JD → nút khoá. Sửa một ô trong editor → nút khoá kèm lý do; trả
+  lại như cũ → mở.
+- Bấm → sang `/jobs/manual:…/review` sau 0,1 s, thanh tiến trình tailor hiện ngay, nút Tailor khoá,
+  `history.state` đã được xoá; job `TAILORING`, `source=facebook`.
+- 48 s sau: job `REVIEW`, version 1, 1 trang, trang hiện diff + thứ tự section.
+- Reload trang review: số task trước/sau bằng nhau (không chạy lại).
+- Form ở `/jobs` không đổi hành vi: vẫn có tiêu đề riêng, vẫn lưu được job không có JD.
+- Dán lại tin của job đang `REVIEW` → mở thẳng trang review, số task không đổi, không sinh job mới.
+- Chặn `POST …/tailor` bằng một 409 giả ở tầng mạng → ở lại CV Studio, form giữ nguyên, dòng lỗi là
+  câu của backend + "job thì đã được lưu, nằm trong Việc làm"; job đúng là đã có, `SHORTLISTED`.
+
+### Review gate (cv-tailor-jd) — APPROVE, bốn điểm đã sửa
+
+- **`FAILED` mang hai nghĩa.** Bản đầu quyết định "có tailor không" theo status, và `FAILED` (apply
+  hỏng sau khi CV đã duyệt) bị coi như chưa tailor ⇒ tailor đè, mất trạng thái duyệt. Giờ hỏi CV:
+  đã có version thì chỉ mở trang review.
+- **Mở trang review cũ mà không nói gì.** Giờ có một dòng: job đã có CV, không chạy vòng mới, tin
+  vừa dán đã được lưu, muốn theo JD mới thì bấm Tailor lại.
+- **Task id mà queue không biết** làm mọi nút khoá vĩnh viễn (`useTask` chỉ báo "bị đẩy ra" khi đã
+  từng thấy task). Giờ báo cả khi chưa từng thấy.
+- **Đổi sang tab LaTeX là mất tin đang dán** (form bị unmount). Giờ thẻ chỉ bị ẩn.
+- Kèm: nút lưu dùng chung `useRef` guard với hai nút đọc (hai click cùng tick từng gửi mọi thứ hai
+  lần; backend chặn được task thứ hai nhưng không nên phải dựa vào nó).
+
+Chạy lại trên trình duyệt (endpoint model stub ở trong trang): đổi tab rồi quay lại giữ nguyên
+tiêu đề + JD; hai click cùng tick → đúng một `POST /jobs`, một shortlist, một tailor; task id giả →
+sau vài giây nút Tailor mở lại và trang ghi "không theo dõi được task này nữa"; job đã có CV → chỉ
+một `POST /jobs`, dòng báo hiện, đóng được, Back/Forward không hiện lại.
+
+### Chưa làm / chưa kiểm
+
+- Dán lại một tin đã **đổi nội dung** lên job đã có CV: `POST /jobs` vẫn ghi JD mới (hành vi
+  upsert có từ trước) trong khi CV đã tailor theo JD cũ. Trang review giờ có nói — nhưng chỉ ở
+  lượt vừa dán, không phải mỗi lần mở.
+- Repo không có test frontend, nên phần này chỉ được giữ bởi `tsc` và lượt chạy tay ở trên.
+- Master CV rỗng vẫn bấm tailor được; lượt đó sẽ cho ra một CV vô nghĩa. Chưa chặn.
+

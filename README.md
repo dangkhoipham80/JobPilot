@@ -55,7 +55,7 @@ Eleven pages, at `localhost:5173` in development (or at `:8000`, served by the A
 |---|---|
 | **Deck** | The funnel and the day's numbers |
 | **Jobs** | Everything crawled, filterable; shortlist or skip from the row |
-| **CV Studio** | Structured editor for the Master CV, version history, diff any two versions; import an existing CV from an image, a PDF or pasted text as a draft you review before saving |
+| **CV Studio** | Structured editor for the Master CV, version history, diff any two versions; import an existing CV from an image, a PDF or pasted text as a draft you review before saving; paste a job description to save it as a job and tailor to it in one step |
 | **Applications** | Board of what was dispatched, per stage; follow-up reminders and inbox suggestions |
 | **Companies** | Employers and their HR contacts; an HR email can become a job's apply target |
 | **Runs** | Start a crawl, watch the queue, read the run history |

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -41,8 +41,36 @@ export function CvReview({ version }: { version: number }) {
   const job = useApi(() => api.job(id), [id, version]);
   const review = useApi(() => api.review(id), [id, version]);
 
-  const [busy, setBusy] = useState<Action | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
+  // A tailor round started somewhere else — CV Studio's "tailor to a JD" — is
+  // handed over in the navigation state, so this page follows it from its first
+  // render instead of offering a Tailor button for a round already running.
+  // Read once and then cleared from the history entry: a reload, or coming back
+  // to this entry later, must not go on waiting for a task the queue has since
+  // forgotten (it keeps the last 50; `useTask` cannot tell a first-fetch 404
+  // from "not yet").
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [arrival] = useState(
+    () => (location.state as { tailorTask?: string; tailorSkipped?: boolean } | null) ?? null,
+  );
+  const handed = arrival?.tailorTask ?? null;
+  // The other way to arrive from there: the pasted posting was a job that
+  // already has a tailored CV, so nothing was started. Said once, on this
+  // visit — the user pressed "Save & tailor" and is looking at an old CV.
+  const [skipped, setSkipped] = useState(arrival?.tailorSkipped === true);
+  useEffect(() => {
+    if (arrival) {
+      navigate(location.pathname + location.search + location.hash, {
+        replace: true,
+        state: null,
+      });
+    }
+    // Once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [busy, setBusy] = useState<Action | null>(handed ? "tailor" : null);
+  const [taskId, setTaskId] = useState<string | null>(handed);
   const [applied, setApplied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("");
@@ -168,6 +196,21 @@ export function CvReview({ version }: { version: number }) {
             <Link to="/applications" className="shrink-0 text-ink-muted hover:text-ink">
               {t("applicationsBoard")}
             </Link>
+          </CardBody>
+        </Card>
+      )}
+
+      {skipped && (
+        <Card className="border-l-2 border-l-accent">
+          <CardBody className="flex items-start justify-between gap-3 py-3 text-sm">
+            <span>{t("tailorSkipped")}</span>
+            <button
+              type="button"
+              onClick={() => setSkipped(false)}
+              className="shrink-0 text-ink-muted hover:text-ink"
+            >
+              {t("dismiss")}
+            </button>
           </CardBody>
         </Card>
       )}

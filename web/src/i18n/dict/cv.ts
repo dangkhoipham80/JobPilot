@@ -174,6 +174,8 @@ export const cv = ns({
     importDiscard: "Discard the draft",
 
     // --- Instruction box --------------------------------------------------
+    tailorJdTitle: "Tailor to a job description",
+    tailorJdDirty: "Save your edits first — the tailor reads the saved Master CV, and leaving this page drops unsaved changes.",
     askForChange: "Ask for a change",
     instructionPlaceholder: "Describe the change in your own words…",
     factsLead: "New facts have to come from",
@@ -415,6 +417,8 @@ export const cv = ns({
     importUnreadableLead: "AI ghi lại những chỗ nó không đọc được:",
     importDiscard: "Bỏ bản nháp",
 
+    tailorJdTitle: "Tailor theo một JD",
+    tailorJdDirty: "Lưu chỉnh sửa trước đã — tailor đọc bản Master CV đã lưu, và rời trang này là mất phần chưa lưu.",
     askForChange: "Nhờ sửa giúp",
     instructionPlaceholder: "Mô tả thay đổi bạn muốn, bằng lời của bạn…",
     factsLead: "Dữ kiện mới phải đến từ lời của",

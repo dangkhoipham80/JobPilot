@@ -55,7 +55,7 @@ Mười một trang, ở `localhost:5173` khi dev (hoặc ở `:8000`, do API ph
 |---|---|
 | **Deck** | Phễu và các con số trong ngày |
 | **Jobs** | Mọi tin đã crawl, lọc được; chọn hoặc bỏ qua ngay trên từng dòng |
-| **CV Studio** | Trình sửa có cấu trúc cho Master CV, lịch sử version, so sánh hai version bất kỳ; nhập CV có sẵn từ ảnh, PDF hoặc text dán vào thành bản nháp để bạn soát rồi mới lưu |
+| **CV Studio** | Trình sửa có cấu trúc cho Master CV, lịch sử version, so sánh hai version bất kỳ; nhập CV có sẵn từ ảnh, PDF hoặc text dán vào thành bản nháp để bạn soát rồi mới lưu; dán một JD để lưu thành job và tailor theo nó trong một bước |
 | **Applications** | Bảng các đơn đã gửi theo từng giai đoạn; nhắc follow-up và gợi ý từ hộp thư |
 | **Companies** | Nhà tuyển dụng và liên hệ HR; email HR có thể trở thành nơi nhận đơn của một tin |
 | **Runs** | Bắt đầu một lượt crawl, xem hàng đợi, đọc lịch sử chạy |
