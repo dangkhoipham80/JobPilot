@@ -12,12 +12,20 @@ from jobpilot.config import Config
 from jobpilot.crawler.base import BaseScraper, Fetcher
 from jobpilot.crawler.arbeitnow import ArbeitnowScraper
 from jobpilot.crawler.ats import GreenhouseScraper, LeverScraper
+from jobpilot.crawler.careers import (
+    CareerFeedScraper,
+    EightfoldScraper,
+    GoogleCareersScraper,
+    WorkdayScraper,
+)
 from jobpilot.crawler.cityscope import CityScopedScraper
 from jobpilot.crawler.itviec import ITViecScraper
 from jobpilot.crawler.linkedin import LinkedInAlertsScraper
 from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.robots import RobotsPolicy
+from jobpilot.crawler.scope import Scope
 from jobpilot.crawler.topcv import TopCVScraper
+from jobpilot.crawler.types import COMPANY_BOARD_SOURCES
 from jobpilot.crawler.vietnamworks import VietnamWorksScraper
 from jobpilot.crawler.weworkremotely import WeWorkRemotelyScraper
 
@@ -36,10 +44,15 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     # -- tier 3: company career pages, one adapter per ATS platform -------- #
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
+    # Company career sites on other platforms, or their own (careers.py).
+    "careerfeed": CareerFeedScraper,
+    "workday": WorkdayScraper,
+    "eightfold": EightfoldScraper,
+    "googlecareers": GoogleCareersScraper,
 }
 
 #: Sources whose job list comes from `ats.<key>` in config rather than a query.
-ATS_SOURCES = ("greenhouse", "lever")
+ATS_SOURCES = tuple(sorted(COMPANY_BOARD_SOURCES))
 
 
 def build_scrapers(
@@ -48,6 +61,7 @@ def build_scrapers(
     fetcher: Fetcher | None = None,
     respect_robots: bool = True,
     only: list[str] | None = None,
+    scope: Scope | None = None,
 ) -> list[BaseScraper]:
     """Instantiate scrapers for every enabled+known source in config.
 
@@ -87,10 +101,13 @@ def build_scrapers(
         # you listed, so it needs that list rather than a page ceiling.
         if src.key in ATS_SOURCES:
             kwargs["boards"] = cfg.ats.boards_for(src.key)
-            kwargs["locations"] = cfg.ats.locations
+            # A place preference narrows the company boards too; without one
+            # their own `ats.locations` stands.
+            kwargs["locations"] = list(scope.places) if scope and scope.places else cfg.ats.locations
         # The boards that can be searched within one city take `crawl.city`;
         # the rest (feeds, alerts, company boards) have their own scoping or none.
         if issubclass(cls, CityScopedScraper):
-            kwargs["city"] = cfg.crawl.city
+            city = scope.board_city() if scope else None
+            kwargs["city"] = cfg.crawl.city if city is None else city
         scrapers.append(cls(**kwargs))
     return scrapers

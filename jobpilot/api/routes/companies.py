@@ -26,6 +26,7 @@ from jobpilot.api.schemas import (
     Page,
 )
 from jobpilot.apply.followup import SENT_RESULTS
+from jobpilot.companies.logos import Fetcher, clean_domain, logo_path, refresh_one
 from jobpilot.companies.service import company_key, resolve_company
 from jobpilot.crawler.normalize import fit_column
 from jobpilot.crawler.text import clean_text
@@ -116,6 +117,9 @@ def _as_out(company: Company, counts: tuple[int, int, int]) -> CompanyOut:
         id=company.id,
         name=company.name,
         normalized_name=company.normalized_name,
+        domain=company.domain,
+        logo=logo_path(company.logo_file),
+        logo_url=company.logo_url,
         job_count=jobs,
         applied_count=applied,
         contact_count=contacts,
@@ -199,12 +203,23 @@ def get_company(company_id: int, db: Session = Depends(get_db)) -> CompanyDetail
 def patch_company(
     company_id: int, body: CompanyPatch, db: Session = Depends(get_db)
 ) -> CompanyDetailOut:
-    """Rename an employer. ``normalized_name`` is untouched — see ``CompanyPatch``."""
+    """Rename an employer and/or set its website. See ``CompanyPatch``."""
     company = _require(db, company_id)
-    name = clean_text(body.name)
-    if not name:
-        raise HTTPException(status_code=422, detail="company name is required")
-    company.name = fit_column("company", name)
+    if body.name is not None:
+        name = clean_text(body.name)
+        if not name:
+            raise HTTPException(status_code=422, detail="company name is required")
+        company.name = fit_column("company", name)
+    if body.domain is not None:
+        domain = clean_domain(body.domain) if body.domain.strip() else None
+        if body.domain.strip() and domain is None:
+            raise HTTPException(status_code=422, detail=f"not a website: {body.domain!r}")
+        if domain != company.domain:
+            company.domain = domain
+            # A new site is a new place to look: try now, so the page shows the
+            # result of the edit it just made.
+            if domain and not company.logo_file:
+                refresh_one(company, get_logo_fetcher())
     db.commit()
     db.refresh(company)
     return _detail(db, company)
@@ -250,6 +265,11 @@ def delete_contact(
 
 
 # --------------------------------------------------------------------------- #
+def get_logo_fetcher() -> Fetcher:
+    """Overridden in tests so a domain edit never reaches the network."""
+    return Fetcher()
+
+
 def _require(db: Session, company_id: int) -> Company:
     company = db.get(Company, company_id)
     if company is None:
@@ -308,7 +328,10 @@ def _detail(db: Session, company: Company) -> CompanyDetailOut:
     return CompanyDetailOut(
         **base.model_dump(),
         contacts=[HrContactOut.model_validate(c) for c in company.contacts],
-        jobs=[JobOut.model_validate(j) for j in jobs[:JOBS_ON_DETAIL]],
+        jobs=[
+            JobOut.model_validate(j).model_copy(update={"company_logo": base.logo})
+            for j in jobs[:JOBS_ON_DETAIL]
+        ],
         # Asked for one more than shown, so "there are more" is a fact rather
         # than an inference from `len(jobs) == limit` — which is wrong exactly
         # when the count lands on the limit.

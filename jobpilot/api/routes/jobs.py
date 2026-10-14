@@ -9,16 +9,17 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from jobpilot.api.deps import get_db, require_token
 from jobpilot.api.paging import LimitParam, OffsetParam, page_list, page_query
-from jobpilot.api.schemas import JobDetailOut, JobIn, JobOut, JobPatch, Page
+from jobpilot.api.schemas import JobDetailOut, JobIn, JobOut, JobPatch, Page, RepostOut
 # Imported from where the dispatcher defines them, so "email" cannot come to
 # mean one thing at the endpoint that sets the channel and another at the code
 # that reads it.
 from jobpilot.apply.dispatcher import EMAIL
 from jobpilot.apply.email import recipient_of
+from jobpilot.companies.logos import logo_path
 from jobpilot.companies.service import link_job
 # Imported by name, not as a module: `jobpilot.crawler` re-exports a *function*
 # called `normalize`, so `from jobpilot.crawler import normalize` binds that and
@@ -35,7 +36,7 @@ from jobpilot.crawler.text import normalize_company, normalize_title
 from jobpilot.crawler.types import HAND_ID_PREFIX, is_hand_added, make_job_id
 from jobpilot.api.ws import manager
 from jobpilot.config import get_config
-from jobpilot.store.models import Job, JobStatus
+from jobpilot.store.models import Company, Job, JobStatus
 from jobpilot.timeutil import vn_now
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_token)])
@@ -282,10 +283,23 @@ def list_jobs(
     match_min: float | None = Query(None, ge=0, le=1, description="match score at or above"),
     match_below: float | None = Query(None, ge=0, le=1, description="match score strictly below"),
     order: str = Query("crawled", pattern="^(posted|crawled|match)$"),
+    reposts: bool = Query(
+        False, description="include older listings of a re-listed posting (hidden by default)"
+    ),
     limit: int = LimitParam(),
     offset: int = OffsetParam(),
 ) -> dict:
     stmt = select(Job)
+    if not reposts:
+        # One row per posting: an older listing of a re-listed role is hidden —
+        # unless the user has acted on it. A shortlisted or applied-to copy is
+        # their work, and the list is where they find it (crawler/reposts.py).
+        stmt = stmt.where(
+            or_(
+                Job.latest_id.is_(None),
+                Job.status.not_in([JobStatus.DISCOVERED, JobStatus.SKIPPED]),
+            )
+        )
     if source:
         stmt = stmt.where(Job.source == source)
     if status:
@@ -350,7 +364,21 @@ def list_jobs(
         keys = (func.date(Job.crawled_at).desc(), Job.match_score.desc(), Job.crawled_at.desc())
     stmt = stmt.order_by(skipped_last, *keys, Job.id.desc())
     rows, total = page_query(db, stmt, limit, offset)
-    return page_list([JobOut.model_validate(r) for r in rows], total, limit, offset)
+    # One grouped query for the page, not one per row.
+    ids = [r.id for r in rows]
+    counts = dict(
+        db.execute(
+            select(Job.latest_id, func.count()).where(Job.latest_id.in_(ids)).group_by(Job.latest_id)
+        ).all()
+    ) if ids else {}
+    logos = _logos_for(db, rows)
+    items = []
+    for r in rows:
+        out = JobOut.model_validate(r)
+        out.reposts = counts.get(r.id, 0)
+        out.company_logo = logos.get(r.company_id)
+        items.append(out)
+    return page_list(items, total, limit, offset)
 
 
 @router.post("", response_model=JobDetailOut, status_code=201)
@@ -577,7 +605,34 @@ def get_job(job_id: str, db: Session = Depends(get_db)) -> JobDetailOut:
     # it against LinkedIn's passes would flag it "not seen lately — possibly
     # taken down" two alert emails later. Never looked for is not gone.
     passes = [] if is_hand_added(job.id) else crawl_passes(db, [job.source]).get(job.source, [])
-    return JobDetailOut.from_job(job, passes)
+    out = JobDetailOut.from_job(job, passes)
+    out.company_logo = _logos_for(db, [job]).get(job.company_id)
+    out.copies = [RepostOut.model_validate(c) for c in _copies(db, job)]
+    out.reposts = sum(1 for c in out.copies if c.id != job.latest_id)
+    return out
+
+
+def _logos_for(db: Session, jobs: list[Job]) -> dict[int, str]:
+    """company_id → cached logo URL, in one query for the whole page."""
+    ids = {j.company_id for j in jobs if j.company_id is not None}
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(Company.id, Company.logo_file).where(Company.id.in_(ids), Company.logo_file.is_not(None))
+    ).all()
+    return {cid: url for cid, name in rows if (url := logo_path(name))}
+
+
+def _copies(db: Session, job: Job) -> list[Job]:
+    """The other listings of this posting: everything sharing its newest copy."""
+    head = job.latest_id or job.id
+    stmt = (
+        select(Job)
+        .where(or_(Job.id == head, Job.latest_id == head), Job.id != job.id)
+        .options(defer(Job.payload))
+        .order_by(Job.last_seen_at.desc(), Job.id.desc())
+    )
+    return list(db.scalars(stmt))
 
 
 async def _transition(job_id: str, target: JobStatus, db: Session) -> JobDetailOut:

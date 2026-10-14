@@ -55,6 +55,18 @@ export const jobs = ns({
     sortMatch: "Sort: best match",
     sortPosted: "Sort: newest posting",
     freshOnly: "Fresh",
+    allCopies: "Older listings",
+    allCopiesHint:
+      "Also show earlier listings of postings their board has re-listed. By default only the newest is shown, plus any older copy you already acted on.",
+    reposted: "listed ×{n}",
+    repostedHint: "This board has listed the same posting {n} more time(s) before; this is the newest.",
+    olderCopy: "older listing",
+    olderCopyLead: "This is an older listing — the board has re-listed this posting since.",
+    openNewest: "Open the newest listing →",
+    copiesTitle: "Listed {n} times",
+    copiesHint: "The same posting under different ids on its board. The newest is the one to apply through.",
+    newestCopy: "newest",
+    copySeen: "first seen {first} · last seen {last}",
     clear: "Clear",
 
     /* Table -------------------------------------------------------------- */
@@ -224,6 +236,18 @@ export const jobs = ns({
     sortPosted: "Xếp: tin đăng mới nhất",
     // Not "fresher" — that is a seniority level in this same UI.
     freshOnly: "Tin mới",
+    allCopies: "Bản đăng cũ",
+    allCopiesHint:
+      "Hiện cả các lần đăng trước của tin mà trang tuyển dụng đã đăng lại. Mặc định chỉ hiện bản mới nhất, cùng bản cũ nào bạn đã thao tác.",
+    reposted: "đăng lại ×{n}",
+    repostedHint: "Trang này đã đăng đúng tin này thêm {n} lần trước đó; đây là bản mới nhất.",
+    olderCopy: "bản đăng cũ",
+    olderCopyLead: "Đây là bản đăng cũ — trang tuyển dụng đã đăng lại tin này sau đó.",
+    openNewest: "Mở bản đăng mới nhất →",
+    copiesTitle: "Tin này đã đăng {n} lần",
+    copiesHint: "Cùng một tin với các mã khác nhau trên trang tuyển dụng. Nên nộp qua bản mới nhất.",
+    newestCopy: "mới nhất",
+    copySeen: "thấy lần đầu {first} · lần cuối {last}",
     clear: "Xoá lọc",
 
     colRole: "Vị trí",

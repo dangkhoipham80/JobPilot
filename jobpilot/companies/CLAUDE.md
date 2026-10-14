@@ -163,3 +163,25 @@ vì một card không tên trên `/companies` cho mỗi tin như thế là vô n
 - **Đếm cho row của TRANG hiện tại thôi** (`_counts_for`), không phải correlated subquery mỗi
   row: 3 lần quét `jobs` cho một trang 25 dòng. Chỉ hai kiểu sort *cần* con số để xếp mới trả
   giá đó.
+
+## Logo (`logos.py`, migration 0014)
+
+Bốn cột trên `companies`: `logo_url` (board nói logo ở đâu), `domain` (site của chính công ty),
+`logo_file` (bản cache), `logo_checked_at`.
+
+- **Nguồn theo thứ tự:** (1) `hiringOrganization.logo` trong JSON-LD của trang tin — thu ở **một
+  chỗ** trong `BaseScraper.crawl` (TopCV, ITviec có; đo 2026-10-14), không phải mỗi scraper một
+  bản; (2) trang chủ của `domain`: `apple-touch-icon` → `icon` lớn nhất → `/favicon.ico`.
+- **Không dùng dịch vụ favicon của Google**: robots.txt của nó cấm. Mọi request logo đi qua
+  `RobotsPolicy` như crawler.
+- **Chỉ nhận ảnh raster thật** (PNG/JPEG/GIF/WebP/ICO, đoán theo byte, ≤ 512 KB). **SVG bị từ
+  chối**: nó là tài liệu chạy được script và sẽ được phục vụ từ chính origin của dashboard.
+- **Dashboard không bao giờ hotlink CDN của board.** Ảnh tải về `<out_dir>/logos/<sha256[:20]>.<ext>`
+  và phục vụ ở `/api/logos/<tên>` — route **duy nhất không cần token**, vì `<img>` không gửi được
+  header. Nó chỉ nhận tên khớp `FILE_RE`; tên là hash nội dung, không suy ra được từ công ty.
+- **Chỉ điền chỗ trống** (`service._take_brand`): domain người dùng sửa tay, hay logo của board đầu
+  tiên, không bị lần crawl sau ghi đè.
+- Tải sau mỗi lượt crawl (tối đa 25 công ty, lỗi chỉ log — không bao giờ làm hỏng kết quả crawl),
+  bằng `jobpilot logos`, và ngay khi user đặt domain. Không tìm thấy thì thử lại sau 7 ngày.
+- Đo thật trên bản sao DB: 8/8 công ty từ logo của board, 3/4 theo domain — chỗ còn lại trang chủ
+  trả 403 cho bot. Không có logo ⇒ UI hiện chữ cái đầu (`CompanyLogo.tsx`), không lưu gì.

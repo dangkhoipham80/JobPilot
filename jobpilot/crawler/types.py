@@ -23,6 +23,15 @@ JOB_ID_WIDTH = 128
 HAND_ID_PREFIX = "manual"
 
 
+#: Sources that read an employer's own applicant-tracking system. There every id
+#: is a requisition the company opened: two ids under one title are two openings
+#: (checked boards list several at once under one title, one per team), never a
+#: board re-listing its own posting.
+COMPANY_BOARD_SOURCES = frozenset(
+    {"greenhouse", "lever", "careerfeed", "workday", "eightfold", "googlecareers"}
+)
+
+
 def is_hand_added(job_id: str) -> bool:
     return job_id.startswith(f"{HAND_ID_PREFIX}:")
 

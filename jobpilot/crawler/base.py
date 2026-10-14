@@ -9,10 +9,12 @@ pagination and graceful per-hit failure around them.
 
 from __future__ import annotations
 
+import json
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from jobpilot.crawler.jsonld import find_job_posting, org_logo
 from jobpilot.crawler.normalize import title_excluded
 from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.robots import RobotsPolicy
@@ -127,6 +129,15 @@ class BaseScraper(ABC):
         """
         return hits
 
+    def search_body(self, query: str, page: int) -> dict | None:
+        """JSON body for a POST search; ``None`` (the default) means a GET."""
+        return None
+
+    def detail_url(self, hit: SearchHit) -> str:
+        """Where the detail is read from. The posting's own page unless an API
+        serves the same posting as data (Workday, Eightfold)."""
+        return hit.url
+
     def title_dropped(self, hit: SearchHit) -> bool:
         """Whether the listing title alone rules ``hit`` out.
 
@@ -158,8 +169,12 @@ class BaseScraper(ABC):
             self._owned_fetcher = self.default_fetcher()
         return self._owned_fetcher
 
-    def _fetch(self, url: str) -> str:
+    def _fetch(self, url: str, body: dict | None = None) -> str:
         """The one door every request to the site goes through.
+
+        ``body`` makes it a JSON POST (Workday's search endpoint takes no GET).
+        It goes through the same robots check, wait and memo as a GET — keyed by
+        URL *and* body, since one endpoint answers different pages by body.
 
         Rate limiting lives here rather than at the call sites: it waits before
         *every* request except the first of the run. It used to wait only before
@@ -174,20 +189,28 @@ class BaseScraper(ABC):
         they filter locally) and from re-fetching the detail page of a posting
         two keywords both found. Failures are not remembered.
         """
-        if url in self._memo:
-            return self._memo[url]
+        key = url if body is None else f"{url}\n{json.dumps(body, sort_keys=True)}"
+        if key in self._memo:
+            return self._memo[key]
         if self.robots is not None and not self.robots.allowed(url):
             raise RobotsDisallowed(url)
         if self._requested:
             self.rate.wait()
         self._requested = True
-        html = self._resolve_fetcher()(url)
+        fetcher = self._resolve_fetcher()
+        if body is None:
+            html = fetcher(url)
+        else:
+            post = getattr(fetcher, "post_json", None)
+            if not callable(post):
+                raise TypeError(f"[{self.source}] this fetcher cannot POST; use HttpFetcher")
+            html = post(url, body)
         # Bounded: a deep sweep (limit 200 × 8 keywords) of full Playwright
         # pages would otherwise hold hundreds of MB until the site closes. Past
         # the budget a repeat goes back to the network — still behind the wait
         # above, so politeness holds; only the saving stops.
         if self._memo_chars + len(html) <= MEMO_BUDGET_CHARS:
-            self._memo[url] = html
+            self._memo[key] = html
             self._memo_chars += len(html)
         return html
 
@@ -234,12 +257,14 @@ class BaseScraper(ABC):
 
         for page in range(1, max(1, self.max_pages) + 1):
             url = self.search_url(query, page)
-            if not url or url in seen_urls:
+            body = self.search_body(query, page)
+            request = url if body is None else f"{url}\n{json.dumps(body, sort_keys=True)}"
+            if not url or request in seen_urls:
                 break  # the source has no distinct URL for this page
-            seen_urls.add(url)
+            seen_urls.add(request)
 
             try:
-                page_hits = self.parse_search(self._fetch(url))
+                page_hits = self.parse_search(self._fetch(url, body))
             except Exception as exc:
                 if page == 1:
                     raise  # the site itself failed — let the pipeline isolate it
@@ -377,8 +402,18 @@ class BaseScraper(ABC):
             try:
                 detail = ""
                 if self.needs_detail:
-                    detail = self._fetch(hit.url)
-                results.append(self.parse_detail(detail, hit))
+                    detail = self._fetch(self.detail_url(hit))
+                raw = self.parse_detail(detail, hit)
+                # The employer's logo, wherever the detail page carries the
+                # JSON-LD posting — one place for every board, not one per
+                # scraper. Used for the company row (companies/logos.py).
+                # Substring first: parsing a 1.6 MB TopCV page a second time just
+                # to learn it has no JSON-LD would double the crawl's CPU.
+                if "ld+json" in detail and not raw.extra.get("company_logo"):
+                    logo = org_logo(find_job_posting(detail))
+                    if logo:
+                        raw.extra["company_logo"] = logo
+                results.append(raw)
             except Exception as exc:
                 log.warning("[%s] skip %s: %s", self.source, hit.url, exc)
                 continue

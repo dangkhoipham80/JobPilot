@@ -430,6 +430,8 @@ def test_each_keyword_is_its_own_search_on_every_site(session_factory):
         "queries": ["java", "spring boot"],
         "sources": ["a", "b"],
         "limit": None,
+        "places": [],
+        "work_modes": [],
     }
     assert stats["by_query"]["java"]["inserted"] == 2
 

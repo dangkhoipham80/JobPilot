@@ -47,6 +47,8 @@ export function RecentCrawls({
         query: item.query,
         sources: item.sources ?? undefined,
         limit: item.limit ?? undefined,
+        places: item.places ?? undefined,
+        work_modes: item.work_modes ?? undefined,
       });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("crawlFailed"));

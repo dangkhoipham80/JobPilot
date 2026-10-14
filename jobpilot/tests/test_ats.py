@@ -166,18 +166,44 @@ def test_lever_rejects_the_404_object():
 # --------------------------------------------------------------------------- #
 # the shared board-per-page contract
 # --------------------------------------------------------------------------- #
-def test_each_configured_company_is_one_page():
+def test_each_configured_company_is_its_own_walk():
     s = GreenhouseScraper(boards=["gitlab", "elastic"])
-    assert "gitlab" in s.search_url("java", 1)
-    assert "elastic" in s.search_url("java", 2)
-    assert s.search_url("java", 3) == ""  # out of companies → the walk stops
+    assert s.board_page_url("gitlab", "java", 1).endswith("/gitlab/jobs?content=true")
+    assert s.board_page_url("gitlab", "java", 2) == ""  # one request covers a board
+    assert s.search_url("java", 1) == ""  # outside a walk there is no current board
 
 
-def test_company_count_overrides_the_page_ceiling():
+def test_a_company_with_no_postings_does_not_end_the_crawl():
+    """The shared loop reads an empty page as "end of results". When a page was a
+    company, one company with nothing open hid every company listed after it."""
+    boards = {
+        "empty": '{"jobs": []}',
+        "acme": (
+            '{"jobs": [{"id": 1, "title": "Java Engineer", "absolute_url": '
+            '"https://boards.greenhouse.io/acme/jobs/1", "company_name": "Acme", '
+            '"location": {"name": "Remote"}, "content": "Java"}]}'
+        ),
+    }
+    s = GreenhouseScraper(
+        boards=["empty", "acme"],
+        fetcher=lambda u: next(v for k, v in boards.items() if f"/{k}/" in u),
+        rate_limiter=RateLimiter(0, 0),
+    )
+    assert [h.native_id for h in s.search("java", limit=5)] == ["1"]
+
+
+def test_company_count_is_not_capped_by_the_page_ceiling():
     """`crawl.max_pages` exists to stop us walking an unbounded board forever. A
     hand-written list of companies is already bounded by whoever wrote it."""
-    s = LeverScraper(boards=["a", "b", "c", "d", "e", "f", "g"], max_pages=2)
-    assert s.max_pages == 7
+    fetched: list[str] = []
+    s = LeverScraper(
+        boards=list("abcdefg"),
+        max_pages=2,
+        fetcher=lambda u: fetched.append(u) or "[]",
+        rate_limiter=RateLimiter(0, 0),
+    )
+    s.search("java", limit=50)
+    assert len(fetched) == 7
 
 
 def test_no_companies_configured_says_so_plainly(caplog):

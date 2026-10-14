@@ -277,6 +277,9 @@ export const api = {
      jobs and is not touched by a rename. */
   renameCompany: (id: number, name: string) =>
     req<CompanyDetail>(`/companies/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  /** The employer's website; setting it fetches the logo right away. "" clears. */
+  setCompanyDomain: (id: number, domain: string) =>
+    req<CompanyDetail>(`/companies/${id}`, { method: "PATCH", body: JSON.stringify({ domain }) }),
   addContact: (companyId: number, body: HrContactInput) =>
     req<HrContact>(`/companies/${companyId}/contacts`, {
       method: "POST",

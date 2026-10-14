@@ -163,6 +163,22 @@ def _salary(base: object) -> str | None:
     return clean_text(f"{body} {currency}{suffix}")
 
 
+def org_logo(posting: dict | None) -> str | None:
+    """``hiringOrganization.logo`` — the employer's logo as the board serves it.
+
+    A URL string or an ``ImageObject``; only http(s) is kept. TopCV and ITviec
+    both carry it (checked 2026-10-14), and it is the board's own picture of the
+    employer, so it beats guessing one from a domain.
+    """
+    org = (posting or {}).get("hiringOrganization")
+    logo = org.get("logo") if isinstance(org, dict) else None
+    if isinstance(logo, dict):
+        logo = logo.get("url") or logo.get("contentUrl")
+    if isinstance(logo, str) and logo.strip().startswith(("https://", "http://")):
+        return logo.strip()
+    return None
+
+
 def _org_name(org: object) -> str:
     if isinstance(org, dict):
         return clean_text(str(org.get("name") or ""))

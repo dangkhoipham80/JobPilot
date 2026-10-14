@@ -98,7 +98,25 @@ def link_job(db: Session, job: Job) -> Company | None:
     company = resolve_company(db, job.company)
     if company is not None:
         job.company_id = company.id
+        _take_brand(company, job.payload or {})
     return company
+
+
+def _take_brand(company: Company, payload: dict) -> None:
+    """Fill the logo source and domain from what a source said — only if empty.
+
+    Never overwritten: a domain typed in by the user, or the first board's logo,
+    stays. A different board's logo for the same employer is the same picture
+    at another URL, and a later crawl swapping it would re-download for nothing.
+    """
+    logo = payload.get("company_logo")
+    if isinstance(logo, str) and logo and not company.logo_url:
+        company.logo_url = logo[:2000]
+    domain = payload.get("company_domain")
+    if isinstance(domain, str) and domain and not company.domain:
+        from jobpilot.companies.logos import clean_domain
+
+        company.domain = clean_domain(domain)
 
 
 @dataclass

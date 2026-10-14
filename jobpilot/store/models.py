@@ -63,6 +63,16 @@ class Company(Base):
     name: Mapped[str] = mapped_column(String(256))
     normalized_name: Mapped[str] = mapped_column(String(256), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    #: The employer's own site ("acme.com"), set by a source that knows it or by
+    #: hand. Used to find a logo when no board supplied one.
+    domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Where a board said the logo is (JSON-LD ``hiringOrganization.logo``).
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The cached copy under ``<out_dir>/logos/``, named by content hash.
+    logo_file: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Last attempt, success or not — so a company with no findable logo is
+    #: retried weekly, not on every crawl.
+    logo_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     contacts: Mapped[list[HrContact]] = relationship(
         back_populates="company",
@@ -161,6 +171,13 @@ class Job(Base):
     # sighting made a still-live posting fall out of its own window.
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    # The newest copy of this posting when the board has re-listed it under a
+    # new id (``crawler/reposts.py``). NULL = this row is the newest (or the only)
+    # one. The Jobs list hides rows that point elsewhere unless the user has
+    # acted on them. SET NULL: deleting the newest copy surfaces the older one.
+    latest_id: Mapped[str | None] = mapped_column(
+        ForeignKey(_JOBS_ID, ondelete="SET NULL"), nullable=True, index=True
     )
     # The crawl that first discovered this job. Not updated on re-crawl: a job
     # belongs to the run that found it, not to every run that has seen it.
