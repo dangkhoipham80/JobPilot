@@ -364,3 +364,36 @@ cùng board + cùng tiêu đề (vd một tin ITviec 3 mã trong 3 tháng).
   shortlist/nộp là việc của user. `GET /jobs?reposts=true` hiện hết; detail có `copies`.
 - Tính lại sau mỗi `persist_jobs` (một lần mỗi nhóm) và trong `jobpilot backfill` — migration chỉ
   thêm cột, vì gom nhóm bằng SQL là bản sao thứ hai của luật.
+## Trang tuyển dụng của công ty ngoài Greenhouse/Lever (`careers.py`, 2026-10-14)
+
+Nhiều công ty lớn đăng tin chủ yếu (có nơi chỉ) trên trang của mình, aggregator không có. Bên dưới
+vẫn là một nền tảng, nên mỗi nền tảng là **một adapter cho mọi công ty dùng nó**; thêm công ty =
+thêm một dòng `ats.<key>` trong **`config.local.yaml`** (không commit — repo public, luật ở mục
+Greenhouse/Lever phía trên áp y nguyên: không tên công ty, không tiêu đề nguyên văn, không số đếm).
+
+| key | Token | Cách đọc | robots (đo bằng `RobotsPolicy`) |
+|---|---|---|---|
+| `careerfeed` | URL feed XML kiểu Indeed | 1 request, đủ JD | feed cho phép; **API SmartRecruiters của cùng site thì cấm** → dùng feed |
+| `workday` | `<tenant>.wdN.myworkdayjobs.com/<site>` | POST `/wday/cxs/<tenant>/<site>/jobs` (offset), JD từ API từng tin | cho phép |
+| `eightfold` | `<careers host>/<domain>` | `/api/pcsx/search` + `position_details` | cho phép |
+| `googlecareers` | `google` | dữ liệu nhúng `ds:1` trong trang kết quả | **cấm phân trang** (`results?page=`) → chỉ trang 1, thu hẹp bằng `q=` |
+
+- **`AtsScraper` giờ đi từng công ty một** (`pages_per_board` trang mỗi công ty), không còn "một
+  trang = một công ty". Bản cũ: công ty có 0 tin = trang rỗng = vòng chung dừng ⇒ mọi công ty xếp
+  sau **không được đọc**. Một công ty lỗi thì log và đọc tiếp công ty sau.
+- **`_fetch(url, body)`**: body ⇒ POST JSON, cùng cửa robots/giãn cách/memo (memo theo URL + body).
+  `detail_url(hit)` cho nguồn đọc JD từ API thay vì từ trang tin.
+- **Eightfold trả 429 nếu thiếu cookie phiên** mà trang careers đặt. `warmup()` gọi trang đó một lần
+  mỗi công ty; `HttpFetcher` giữ cookie suốt lượt chạy như trình duyệt.
+- **Google: robots chặn trang 2.** Đừng tăng `pages_per_board`; `_fetch` sẽ từ chối. Dữ liệu đọc
+  theo vị trí mảng — layout đổi thì **raise**, không trả 0 tin.
+- **Trên nguồn trang công ty (`COMPANY_BOARD_SOURCES`), hai mã là hai vị trí** dù cùng tiêu đề:
+  hệ thống của chính công ty không đăng lại tin của nó, mỗi mã là một requisition (có board mở
+  nhiều vị trí cùng tên, mỗi team một). Luật "cùng board + cùng tiêu đề = một tin" của
+  `_same_posting` chỉ còn áp cho job board.
+- **Chế độ làm việc khai bằng dữ liệu thắng nhãn**: `extra.work_mode_stated` (Eightfold
+  `workLocationOption`, feed `remotetype`, Workday `remoteType`) → `payload.work_mode`;
+  `backfill --force` đọc lại đúng giá trị đó.
+- **Workday ghi pháp nhân** ("VN01 Acme Vietnam Company Limited") → `_company_from_legal` bỏ mã và
+  đuôi pháp nhân + quốc gia, để mọi văn phòng là một công ty trên trang Companies. Nhãn
+  "2 Locations" không phải địa điểm ⇒ coi như không nhãn (giữ), danh sách địa điểm của tin quyết.

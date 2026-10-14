@@ -286,7 +286,9 @@ def normalize(raw: RawJob, cfg: Config, now: datetime | None = None) -> Normaliz
         # Derived fields for analytics. Each sits *beside* the raw value rather
         # than replacing it: the raw string is what the board actually said, and
         # a derivation that turns out wrong should be re-runnable against it.
-        **derived_facets(raw.salary, raw.skills, raw.location, desc_md),
+        **derived_facets(
+            raw.salary, raw.skills, raw.location, desc_md, raw.extra.get("work_mode_stated")
+        ),
         "description_md": desc_md,
         "apply_channel": raw.apply_channel,
         "apply_target": raw.apply_target,
@@ -373,6 +375,7 @@ def derived_facets(
     skills_raw: list[str] | None,
     location_raw: str | None,
     description_md: str = "",
+    work_mode_stated: str | None = None,
 ) -> dict:
     """Analytics-ready fields derived from what the scraper found.
 
@@ -391,6 +394,12 @@ def derived_facets(
     # Only the location field decides "remote" — not the JD. A description that
     # mentions remote work in a perk list is not a remote job.
     remote = bool(location and _REMOTE_RE.search(location))
+    # A source that states the arrangement as data (a company career site's
+    # "onsite"/"remote" field) beats reading it off a label. Kept apart as
+    # `work_mode_stated` in the payload so a backfill re-derives the same thing.
+    stated = work_mode_stated if work_mode_stated in WORK_MODES else None
+    if stated == "remote":
+        remote = True
     return {
         "salary_range": money.as_dict() if money else None,
         "skills_canonical": canonicalise(skills_raw),
@@ -402,7 +411,7 @@ def derived_facets(
         # carry it too — and so `backfill --force` can fill it in for the ones
         # already stored. Finer than `is_remote`, which cannot tell hybrid from
         # on-site; both are kept because `is_remote` is what /market filters on.
-        "work_mode": parse_work_mode(location),
+        "work_mode": stated or parse_work_mode(location),
     }
 
 
@@ -517,6 +526,7 @@ def backfill_facets(session, *, force: bool = False) -> int:
                 payload.get("skills"),
                 job.location or payload.get("location"),
                 payload.get("description_md", ""),
+                payload.get("work_mode_stated"),
             )
         )
         job.payload = payload

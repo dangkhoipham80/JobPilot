@@ -62,7 +62,7 @@ from jobpilot.crawler.normalize import NormalizedJob, vn_now
 from jobpilot.crawler.quality import THIN_JD_CHARS
 from jobpilot.crawler.reposts import relink
 from jobpilot.crawler.text import dedup_key, normalize_title, title_level
-from jobpilot.crawler.types import is_hand_added
+from jobpilot.crawler.types import COMPANY_BOARD_SOURCES, is_hand_added
 from jobpilot.store.models import Job, JobStatus
 
 log = logging.getLogger(__name__)
@@ -288,6 +288,10 @@ def _same_posting(seen: _Seen, level: str | None, source: str, title: str | None
     # under a board's name: it has no house style of its own and no second id
     # from that board. Held to the same-board rule, a hand-pasted posting and the
     # board's own copy of it became two jobs over a parenthesis in the title.
+    if seen.job.source == source and source in COMPANY_BOARD_SOURCES:
+        # An employer's own system does not re-list its postings under new ids:
+        # each id is a requisition, and a shared title is several openings.
+        return False
     if seen.job.source == source and not is_hand_added(seen.job.id):
         # The shared normaliser, asked to keep what it otherwise forgives: the
         # level word and the parenthetical. Case, accents, dashes and spacing
