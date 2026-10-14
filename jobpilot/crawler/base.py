@@ -13,6 +13,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from jobpilot.crawler.normalize import title_excluded
 from jobpilot.crawler.ratelimit import RateLimiter
 from jobpilot.crawler.robots import RobotsPolicy
 from jobpilot.crawler.types import RawJob, SearchHit
@@ -59,11 +60,22 @@ class BaseScraper(ABC):
         rate_limiter: RateLimiter | None = None,
         robots: RobotsPolicy | None = None,
         max_pages: int | None = None,
+        exclude_keywords: list[str] | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.rate = rate_limiter or RateLimiter()
         self.robots = robots
         self.max_pages = max_pages if max_pages is not None else DEFAULT_MAX_PAGES
+        #: ``crawl.exclude_keywords``, applied to a listing title *before* the
+        #: hit counts toward ``limit`` (see :meth:`search`). Empty — the default
+        #: for a scraper built bare — leaves every hit in and the pipeline's own
+        #: check as the only one, which is how it worked before.
+        self.exclude_keywords = tuple(exclude_keywords or ())
+        #: Hits the most recent :meth:`search` left out by title, counted up to
+        #: the point where ``limit`` was met. The pipeline adds them to the
+        #: run's ``fetched`` and ``filtered``: they were seen and they were
+        #: filtered, only earlier than the rest and without a detail request.
+        self.titles_dropped = 0
         self._owned_fetcher = None  # lazily created default, closed by close()
         # Per-run request state, reset by close(). See _fetch.
         self._requested = False
@@ -109,6 +121,16 @@ class BaseScraper(ABC):
         :class:`jobpilot.crawler.feed.FeedScraper`.
         """
         return hits
+
+    def title_dropped(self, hit: SearchHit) -> bool:
+        """Whether the listing title alone rules ``hit`` out.
+
+        The pipeline's rule (``normalize.title_excluded``), asked one step
+        earlier. A hit whose listing carries no title is kept — an empty title
+        contains no keyword: not knowing what a posting is called is not
+        knowing it is excluded, and its detail page will say.
+        """
+        return title_excluded(hit.title, self.exclude_keywords)
 
     def default_fetcher(self) -> Fetcher:
         """The fetcher to use when none was injected. Browser by default."""
@@ -182,6 +204,14 @@ class BaseScraper(ABC):
         a page with no hits, a page whose hits were all seen already, or a page
         URL identical to one already fetched.
 
+        A hit whose title matches ``exclude_keywords`` is left out *here*, so it
+        neither counts toward ``limit`` nor costs a detail request. The pipeline
+        dropped those same titles anyway, but only after the limit had been
+        spent on them: at ten jobs a site, a board that leads with senior roles
+        gave most of its ten places to postings that were then thrown away, and
+        the ones cut to make room were the ones wanted. Paging goes on past
+        them, up to ``max_pages``.
+
         That "all seen already" check is the load-bearing one. A board that
         *accepts* ``?page=2`` and ignores it answers 200 with page 1 again, and
         without cross-page dedup the crawl would happily collect the same ten
@@ -192,8 +222,10 @@ class BaseScraper(ABC):
         """
         hits: list[SearchHit] = []
         kept_ids: set[str] = set()  # what we are returning
+        dropped_ids: set[str] = set()  # relevant, but ruled out by title
         seen_ids: set[str] = set()  # everything the site has shown us, relevant or not
         seen_urls: set[str] = set()
+        self.titles_dropped = 0
 
         for page in range(1, max(1, self.max_pages) + 1):
             url = self.search_url(query, page)
@@ -216,17 +248,24 @@ class BaseScraper(ABC):
                 break
 
             page_ids = {h.native_id for h in page_hits if h.native_id}
-            new = [
+            relevant = [
                 h
                 for h in page_hits
-                if h.native_id and h.native_id not in kept_ids and self.matches_query(h, query)
+                if h.native_id
+                and h.native_id not in kept_ids
+                and h.native_id not in dropped_ids
+                and self.matches_query(h, query)
             ]
+            excluded = [h for h in relevant if self.title_dropped(h)]
+            gone = {h.native_id for h in excluded}
+            new = [h for h in relevant if h.native_id not in gone]
             log.info(
-                "[%s] page %d: %d hit(s), %d new+relevant",
+                "[%s] page %d: %d hit(s), %d new+relevant, %d more left out by title",
                 self.source,
                 page,
                 len(page_hits),
                 len(new),
+                len(excluded),
             )
 
             if not page_ids:
@@ -251,7 +290,17 @@ class BaseScraper(ABC):
 
             seen_ids |= page_ids
             kept_ids.update(h.native_id for h in new)
-            hits.extend(self.rank_hits(new, query))
+            dropped_ids |= gone
+            # Walked in the order `limit` is spent, so the count stops where the
+            # limit does: an excluded hit ranked behind the last one kept was
+            # never in this crawl's window, and counting it would make a deep
+            # board look like a heavily filtered one.
+            for hit in self.rank_hits(relevant, query):
+                if hit.native_id in dropped_ids:
+                    if limit is None or len(hits) < limit:
+                        self.titles_dropped += 1
+                else:
+                    hits.append(hit)
             if limit is not None and len(hits) >= limit:
                 break
 
@@ -270,7 +319,8 @@ class BaseScraper(ABC):
         # reports success with nothing to show — the exact failure PLAN §10 calls
         # out ("cảnh báo khi 0 job"). It is indistinguishable from a genuinely
         # empty result set, so say so loudly instead of logging it as normal.
-        if not hits:
+        # Not when titles were left out: the parser demonstrably read the page.
+        if not hits and not self.titles_dropped:
             log.warning(
                 "[%s] search parsed to 0 hits for query=%r — either the query "
                 "has no results or the selectors no longer match the site",
@@ -285,6 +335,17 @@ class BaseScraper(ABC):
                 len(hits),
                 query,
                 limit,
+            )
+        if self.titles_dropped:
+            # Said out loud for the same reason the limit cut below is: these
+            # are postings the crawl saw and did not bring in, and "why is that
+            # job not here" has to be answerable from the log.
+            log.info(
+                "[%s] %d hit(s) for query=%r left out by title (crawl.exclude_keywords) "
+                "before the limit — no detail page fetched for them",
+                self.source,
+                self.titles_dropped,
+                query,
             )
         if limit is not None:
             if len(hits) > limit:

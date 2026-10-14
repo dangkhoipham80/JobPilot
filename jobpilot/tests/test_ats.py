@@ -308,6 +308,29 @@ def test_what_the_limit_cut_from_a_board_is_logged(caplog):
     assert any("3 matching hit(s)" in r.getMessage() and "cut by the limit of 2" in r.getMessage() for r in caplog.records)
 
 
+def test_excluded_titles_do_not_take_a_scoped_boards_places():
+    """A company board hands over one fixed listing, so what the limit cuts is
+    cut on every crawl. With the excluded roles listed first, the limit used to
+    be spent on them and the roles behind them were never brought in."""
+    board = _gh(
+        ("1", "Senior Software Engineer", "Saigon"),
+        ("2", "Lead Software Engineer", "Saigon"),
+        ("3", "Software Engineer", "Saigon"),
+        ("4", "Software Engineer, Tools", "Saigon"),
+        ("5", "Senior Software Engineer", "Lima, Peru"),
+    )
+    s = GreenhouseScraper(
+        boards=["x"],
+        locations=["Ho Chi Minh"],
+        exclude_keywords=["Senior", "Lead"],
+        fetcher=lambda u: board,
+    )
+    assert [j.native_id for j in s.crawl("software engineer", limit=2)] == ["3", "4"]
+    # Out of scope is not "left out by title": each posting is counted once,
+    # under the first rule that removed it.
+    assert s.titles_dropped == 2
+
+
 def test_no_location_scope_is_every_location():
     board = _gh(("1", "Software Engineer", "Lisbon"), ("2", "Software Engineer", "Saigon"))
     for locations in (None, [], ["  "]):

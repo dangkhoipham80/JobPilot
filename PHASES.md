@@ -2566,3 +2566,35 @@ Ba quyết định đáng nhớ:
 - Thông báo từ chối của server (quá ngắn, quá dài) vẫn là câu tiếng Anh do backend soạn — cùng món
   nợ i18n ghi ở `CLAUDE.md` gốc.
 
+## Fix title-before-limit — `limit` tiêu vào tin sắp bị vứt (2026-10-14)
+
+Món nợ ghi ở phase ats-scope, và là lý do lịch tự động (`jobs_per_site: 10`) sót tin: scraper cắt
+`limit` rồi tải trang chi tiết, pipeline mới loại tiêu đề theo `crawl.exclude_keywords`. Tin
+"Senior …" vừa chiếm chỗ vừa tốn một request, và tin bị cắt để nhường chỗ lại là tin cần.
+
+Sửa: `BaseScraper.search` hỏi `normalize.title_excluded` trên tiêu đề của listing trước khi hit
+được đếm vào `limit`; phân trang đi tiếp qua các tin bị loại. Danh sách đi từ config qua
+`registry.build_scrapers`; scraper dựng trần thì không lọc gì. Pipeline giữ nguyên bước kiểm của
+nó. Luật: `jobpilot/crawler/CLAUDE.md` § "Lọc tiêu đề trước `limit`".
+
+- **Bộ đếm**: `fetched`/`filtered` cộng thêm số tin bị loại sớm, để hai con số không lặng lẽ đổi
+  nghĩa; `fetched` vì thế có thể lớn hơn `limit`.
+- Đo offline trên 9 trang listing thật đã lưu (ITviec/TopCV/VietnamWorks × `developer`,
+  `ai engineer`, `backend`, parser của worktree): trước, 34/87 chỗ đầu là tiêu đề bị loại sau một
+  request trang chi tiết; sau, 0. Card và trang chi tiết cho cùng kết luận ở 59/59 tin đã lưu.
+- Chạy thật, **trong transaction rồi rollback** (Postgres, code của worktree, có assert
+  `getsourcefile`): ITviec `backend` limit 10 → 2 trang listing + 10 trang chi tiết, **0/10** trang
+  chi tiết là tiêu đề bị loại, `fetched=22 filtered=12 updated=10`; số row sau rollback không đổi.
+- Sửa kèm: keyword rỗng trong `exclude_keywords` từng loại **mọi** tiêu đề (`"" in title`).
+- Đột biến (tắt lọc sớm; đếm quá điểm `limit`; pipeline bỏ số loại sớm; registry không truyền;
+  quên id đã loại; trả lại cảnh báo parser hỏng; keyword rỗng) mỗi cái đỏ đúng test của nó.
+- Chưa kiểm: lượt crawl đủ 8 nguồn × 3 từ khoá theo lịch (thời lượng thật so với trần 45 phút).
+
+Review gate: **APPROVE**, ba điểm sửa trước khi push. Reviewer chạy thật cả ba board qua pipeline
+(ghi SQLite tạm): ITviec `backend` 2 listing + 10 chi tiết, VietnamWorks `ai engineer` 2 + 10,
+TopCV `backend` 1 + 10 — **0/10** trang chi tiết là tiêu đề bị loại ở cả ba; mỗi cặp site × từ khoá
+mất 87–137 giây. Đã sửa: (1) thiếu test cho "trang 1 toàn tiêu đề bị loại, trang 2 mới có tin giữ"
+— reviewer chèn một `break` ở đúng chỗ đó mà 211 test crawler vẫn xanh; (2) bản đầu `strip()` cả
+keyword không rỗng, biến `"Java "` thành thứ loại luôn "JavaScript" — giờ chỉ bỏ entry rỗng;
+(3) docs nói "thêm một trang listing" trong khi dữ liệu của chính lượt đo cho thấy có thể hơn.
+

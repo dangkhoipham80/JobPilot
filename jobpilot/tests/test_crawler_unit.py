@@ -173,6 +173,21 @@ def test_title_excluded_matches_title_only():
     assert title_excluded("Junior Java Dev", kws) is False
 
 
+def test_a_blank_exclude_keyword_excludes_nothing():
+    """``"" in title`` holds for every title: one empty line in the list would
+    drop the whole crawl, and send each scraper to its last page looking for a
+    title that passes."""
+    assert title_excluded("Java Dev", ["", "   "]) is False
+    assert title_excluded("Senior Java Dev", ["", "Senior"]) is True
+
+
+def test_a_keyword_is_matched_as_written_spaces_included():
+    """Only *blank* entries are dropped. Trimming the rest would turn a keyword
+    written to spare "JavaScript" into one that excludes it."""
+    assert title_excluded("Java Developer", ["Java "]) is True
+    assert title_excluded("JavaScript Developer", ["Java "]) is False
+
+
 # -- rate limiter ----------------------------------------------------------- #
 def test_rate_limiter_uses_injected_sleep_within_bounds():
     slept: list[float] = []

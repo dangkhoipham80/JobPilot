@@ -170,12 +170,11 @@ nằm trong CV. Viết tỉ lệ thay cho số đếm, loại vị trí thay cho
   miễn**: query khớp bất kỳ từ nào của tiêu đề, nên "ai engineer" trên cả board lấy luôn vài chục
   tin kỹ sư **không phải phần mềm** ở score 0. Tin được miễn vào với `match_score = 0` — hiện ra,
   thấy rõ là chưa xếp hạng.
-- **Nợ: `limit` cắt trước khi lọc tiêu đề** — và cắt trúng tin cần nhất. Ở `jobs_per_site: 10`, hơn
-  nửa số chỗ của một board bị tin "Senior …" chiếm rồi mới bị loại; phần bị cắt lại chính là các
-  tin không ghi cấp bậc. Board trả cùng thứ tự mỗi lần nên lượt sau cắt **đúng những tin đó**: tin
-  mới nằm sau vị trí 10 lịch tự động không bao giờ thấy. Có log `at least N … were cut by the
-  limit`; sửa thật là lọc tiêu đề trước `limit` (cũng tiết kiệm ~1/3 request trang chi tiết ở
-  board VN). Lượt đầu cho một board mới thì crawl tay với limit cao.
+- **`limit` đếm SAU khi lọc tiêu đề** (2026-10-14, § "Lọc tiêu đề trước `limit`" bên dưới). Trước đó,
+  ở `jobs_per_site: 10`, hơn nửa số chỗ của một board bị tin cấp cao chiếm rồi mới bị loại, và phần
+  bị cắt lại chính là các tin không ghi cấp bậc — board trả cùng thứ tự mỗi lần nên lượt sau cắt
+  **đúng những tin đó**. Còn lại: `limit` vẫn cắt tin *hợp lệ* nằm sau vị trí N (log `at least N …
+  were cut by the limit`), nên lượt đầu cho một board mới vẫn nên crawl tay với limit cao.
 - **Nợ: nhiều board trên một ATS dùng chung một `limit`.** Board đầu đủ `limit` thì board sau
   **không được gọi**, và log không nhắc tới nó. Hôm nay mỗi ATS một board nên chưa dính.
 - **Nợ: `payload.city` của Greenhouse không canonical** — nhãn dạng `"<thành phố>, <thành phố>,
@@ -204,6 +203,43 @@ nằm trong CV. Viết tỉ lệ thay cho số đếm, loại vị trí thay cho
 - **Fetch strategy**: `PlaywrightFetcher` load bằng `domcontentloaded` rồi *cố* chờ `networkidle` 6s, timeout thì bỏ qua. Chờ `networkidle` như **điều kiện** load là bẫy: job board chạy analytics/socket không bao giờ im → trang render xong nhưng `goto` treo tới timeout rồi fail cả crawl. Nó cũng **raise theo status code**: trang chặn (403/429) là một *trang* hợp lệ với parser, không chặn ở tầng fetch thì lặng lẽ thành "0 job".
 - **Chọn fetcher theo thứ site phục vụ**: `HttpFetcher` cho document (RSS/JSON/HTML server-render), `PlaywrightFetcher` cho app (ITviec/VNW). Đừng dùng chung 1 fetcher cho mọi scraper trong production — `build_scrapers(fetcher=...)` chỉ dành cho test, vì browser bọc JSON thành `<pre>` và feed parser vỡ.
 - **`infer_level` vẫn quét cả JD**, nên JD nhắc "we hire senior engineers" có thể kéo job mid thành senior. Phần substring đã sửa, phạm vi quét thì chưa — thu về title-only sẽ mất job VN ghi "thực tập sinh" trong body.
+
+### Lọc tiêu đề trước `limit` (2026-10-14)
+
+- **`crawl.exclude_keywords` được hỏi trên tiêu đề của LISTING, trong `BaseScraper.search`** — trước
+  khi hit được đếm vào `limit` và trước khi tải trang chi tiết. Trước đó pipeline loại đúng các tiêu
+  đề này nhưng *sau* khi `limit` đã tiêu vào chúng. Đo trên trang listing thật của 3 board VN với 3
+  từ khoá của lịch tự động: **34/87 chỗ đầu** thuộc về tiêu đề bị loại, mỗi chỗ tốn một request
+  trang chi tiết rồi vứt. Giờ các chỗ đó thuộc về tin được giữ; giá phải trả là thêm trang
+  **listing** khi trang 1 không đủ `limit` tiêu đề qua lọc — thường một trang, tối đa
+  `max_pages − 1` (ITviec 20 card/trang; VietnamWorks ~9, và một trang đã lưu của nó chỉ có 3/9
+  tiêu đề qua lọc). Keyword được so **nguyên văn, kể cả dấu cách**; chỉ entry rỗng bị bỏ qua.
+- **Một matcher duy nhất: `normalize.title_excluded`.** Scraper và pipeline gọi cùng một hàm; đừng
+  viết bản thứ hai trong scraper. **Pipeline vẫn kiểm lại** — tiêu đề trên card là cái nhìn đầu,
+  tiêu đề trên trang chi tiết mới là thứ được lưu. Đối chiếu 59 tin đã lưu với card của chính nó:
+  59/59 cùng kết luận, nhưng đó là số đo, không phải bảo đảm.
+- **Mặc định TẮT với scraper dựng trần** (`exclude_keywords=()`); chỉ `registry.build_scrapers` đưa
+  danh sách từ config vào. Test dựng scraper bằng tay muốn lọc sớm thì phải truyền vào.
+- **Hit không có tiêu đề thì GIỮ** — không biết tên ≠ biết là bị loại; trang chi tiết sẽ trả lời.
+- **`fetched` và `filtered` giữ nguyên nghĩa**: `fetched` = số tin crawl đã *nhìn*, `filtered` = số
+  trong đó bị luật loại. Tin bị loại sớm (`scraper.titles_dropped`) được cộng vào **cả hai**; không
+  cộng thì cùng một board hôm trước báo "10 found, 6 filtered", hôm sau báo "10 found, 0 filtered".
+  Hệ quả: `fetched` có thể **lớn hơn `limit`** (10 giữ + 12 loại = 22) — nó chưa bao giờ là số
+  request. `titles_dropped` chỉ đếm tới **điểm `limit` được lấp đầy**: tiêu đề bị loại xếp sau tin
+  cuối cùng được giữ thì chưa từng nằm trong cửa sổ của lượt crawl này (board công ty trả cả listing
+  một lần — đếm hết thì con số thành "mọi tin cấp cao công ty đó có").
+- **Trang toàn tiêu đề bị loại không phải parser hỏng**: cảnh báo "0 hits — selectors no longer
+  match" chỉ phát khi không có hit nào *và* không tiêu đề nào bị loại.
+- **Keyword rỗng bị bỏ qua** (`"" in title` đúng với mọi tiêu đề): một dòng trống trong danh sách
+  từng có nghĩa là loại cả crawl; với lọc sớm nó còn kéo mỗi board đi tới `max_pages`.
+- **Nợ: danh sách loại trừ càng gắt thì đi càng sâu**, chặn trên bởi `max_pages`. TopCV bị 403 ở
+  request listing thứ hai, nên nếu 50 card trang 1 không đủ `limit` tiêu đề qua lọc thì site đó về
+  thiếu (có log `only N hit(s)`), không lấy thêm được.
+- **Nợ: LinkedIn alerts tự viết `crawl()`** nên vẫn cắt `limit` rồi mới lọc (ở pipeline). Không tốn
+  request nào — nó đọc mail — nhưng tin bị loại vẫn chiếm chỗ trong `limit`.
+- **Nợ: `title_excluded` khớp SUBSTRING** — "Lead" loại cả "Leading …", và "Sr."/"Principal"/"Staff"
+  không bị loại trừ khi user thêm vào danh sách. Đổi sang nguyên từ là đổi luật lọc cho mọi nguồn,
+  việc riêng.
 
 ### Nhiều từ khoá + crawl lại (2026-10-04)
 

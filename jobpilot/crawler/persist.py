@@ -73,7 +73,9 @@ TRACE_LIMIT = 10
 
 @dataclass
 class CrawlStats:
-    fetched: int = 0  # raw jobs scraped (pre-filter)
+    #: Postings the crawl looked at, pre-filter: the ones scraped, plus the ones
+    #: a scraper left out by title before fetching their detail page.
+    fetched: int = 0
     inserted: int = 0  # new rows
     updated: int = 0  # existing id refreshed
     duplicates: int = 0  # cross-source dupes skipped
@@ -82,7 +84,7 @@ class CrawlStats:
     #: bucket — these rows are counted in ``inserted`` as well, so the buckets
     #: still add up to ``fetched`` for anything reading them that way.
     superseded: int = 0
-    filtered: int = 0  # dropped by stack/exclude rules
+    filtered: int = 0  # dropped by stack/exclude rules, before or after the detail page
     fresh: int = 0  # posted within crawl.fresh_hours
     #: Searches that failed. With one keyword per run that is "the site failed";
     #: with several, a site can be ok (some searches worked) and still carry

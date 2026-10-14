@@ -78,6 +78,9 @@ def build_scrapers(
             "rate_limiter": RateLimiter(low, high),
             "robots": RobotsPolicy(DEFAULT_USER_AGENT) if respect_robots else None,
             "max_pages": cfg.crawl.max_pages,
+            # Titles ruled out before they count toward the per-site limit; the
+            # pipeline applies the same list again to what the detail page says.
+            "exclude_keywords": cfg.crawl.exclude_keywords,
         }
         # An ATS source has no search query — its "pages" are the company boards
         # you listed, so it needs that list rather than a page ceiling.

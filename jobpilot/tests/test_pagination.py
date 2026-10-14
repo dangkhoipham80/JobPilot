@@ -200,3 +200,139 @@ def test_matches_query_filters_before_the_limit_is_counted():
     hits = scraper.search("java", limit=10)
     assert all(int(h.native_id) % 2 == 1 for h in hits)
     assert len(hits) >= 10
+
+
+# --------------------------------------------------------------------------- #
+# title exclusions, asked before the limit is spent
+# --------------------------------------------------------------------------- #
+class TitledScraper(BaseScraper):
+    """A board whose listing is the given titles, ``per_page`` to a page."""
+
+    source = "titled"
+
+    def __init__(self, titles: list[str], *, per_page: int = 10, **kw):
+        kw.setdefault("rate_limiter", RateLimiter(0, 0))
+        super().__init__(**kw)
+        self.titles = titles
+        self.per_page = per_page
+        self.fetched: list[str] = []
+        self.fetcher = self._serve
+
+    def _serve(self, url: str) -> str:
+        self.fetched.append(url)
+        return url
+
+    def search_url(self, query: str, page: int = 1) -> str:
+        return f"https://board.test/jobs?page={page}"
+
+    def parse_search(self, text: str) -> list[SearchHit]:
+        page = int(text.rsplit("=", 1)[1])
+        start = (page - 1) * self.per_page
+        return [
+            SearchHit(native_id=str(i), url=f"https://board.test/j/{i}", title=title)
+            for i, title in enumerate(self.titles[start : start + self.per_page], start=start)
+        ]
+
+    def parse_detail(self, text: str, hit: SearchHit) -> RawJob:
+        return RawJob(source=self.source, native_id=hit.native_id, url=hit.url, title=hit.title)
+
+    @property
+    def details(self) -> list[str]:
+        return [u for u in self.fetched if "/j/" in u]
+
+
+#: A board that leads with the roles the user excluded: six of the first ten.
+SENIOR_FIRST = ["Senior Engineer"] * 6 + ["Engineer"] * 4 + ["Engineer"] * 10
+
+
+def test_an_excluded_title_does_not_spend_the_limit():
+    """The bug: ten jobs a site, six of them thrown away after being fetched.
+
+    The pipeline dropped "Senior …" all along, but only once the limit had been
+    spent on it. Asked of the listing title instead, the ten places go to ten
+    postings that are kept, the walk goes on to page 2 to find them, and no
+    detail page is requested for a title that was never going to be stored.
+    """
+    scraper = TitledScraper(SENIOR_FIRST, exclude_keywords=["Senior", "Lead"])
+    jobs = scraper.crawl("engineer", limit=10)
+
+    assert [j.title for j in jobs] == ["Engineer"] * 10
+    assert len(scraper.details) == 10
+    assert not {"https://board.test/j/0", "https://board.test/j/5"} & set(scraper.details)
+    assert scraper.titles_dropped == 6
+
+
+def test_a_page_of_nothing_but_excluded_titles_is_not_the_end_of_the_board():
+    """A page the filter empties is neither an empty page nor a repeated one:
+    the site moved on, we just wanted none of it. Stopping there would leave a
+    board with nine cards a page — most of them senior — short on every crawl,
+    with nothing in the log but "only N hits"."""
+    titles = ["Senior Engineer"] * 4 + ["Engineer"] * 4
+    scraper = TitledScraper(titles, per_page=4, exclude_keywords=["Senior"])
+    jobs = scraper.crawl("engineer", limit=3)
+
+    assert [j.title for j in jobs] == ["Engineer"] * 3
+    listings = [u for u in scraper.fetched if "/j/" not in u]
+    assert listings == ["https://board.test/jobs?page=1", "https://board.test/jobs?page=2"]
+    assert scraper.titles_dropped == 4
+
+
+def test_a_scraper_built_bare_excludes_nothing():
+    """Off unless configured: the pipeline's own check is then the only one,
+    which is exactly how every crawl worked before."""
+    scraper = TitledScraper(SENIOR_FIRST)
+    jobs = scraper.crawl("engineer", limit=10)
+    assert [j.title for j in jobs] == ["Senior Engineer"] * 6 + ["Engineer"] * 4
+    assert scraper.titles_dropped == 0
+
+
+def test_a_hit_with_no_listing_title_is_kept():
+    """Unknown is not excluded. A listing that does not carry the title leaves
+    the question to the detail page, where the pipeline asks it again."""
+    scraper = TitledScraper(["", "Senior Engineer", "Engineer"], exclude_keywords=["Senior"])
+    assert [h.native_id for h in scraper.search("engineer", limit=10)] == ["0", "2"]
+
+
+def test_the_dropped_count_stops_where_the_limit_does():
+    """An excluded title ranked behind the last hit kept was never in this
+    crawl's window. Counting it would report a deep board as a heavily filtered
+    one — on a company board, which hands over its whole listing at once, the
+    number would be every senior role the company has."""
+    titles = ["Engineer", "Senior Engineer", "Engineer", "Engineer", "Senior Engineer", "Lead"]
+    scraper = TitledScraper(titles, exclude_keywords=["Senior", "Lead"])
+    hits = scraper.search("engineer", limit=2)
+
+    assert [h.native_id for h in hits] == ["0", "2", "3"]  # the page, whole; crawl() trims
+    assert scraper.titles_dropped == 1  # the one ahead of the second kept hit
+
+    scraper.search("engineer", limit=None)
+    assert scraper.titles_dropped == 3  # no limit: the whole listing is the window
+
+
+def test_a_listing_that_slides_does_not_count_an_excluded_title_twice():
+    """Boards shift by a card or two between two page requests. The excluded
+    hit that reappears on page 2 is the same posting, seen once."""
+
+    class Sliding(TitledScraper):
+        def parse_search(self, text: str) -> list[SearchHit]:
+            page = int(text.rsplit("=", 1)[1])
+            ids = {1: ["a", "b"], 2: ["b", "c"], 3: []}[page]
+            names = {"a": "Engineer", "b": "Senior Engineer", "c": "Engineer"}
+            return [SearchHit(native_id=i, url=f"https://board.test/j/{i}", title=names[i]) for i in ids]
+
+    scraper = Sliding([], exclude_keywords=["Senior"])
+    assert [h.native_id for h in scraper.search("engineer", limit=5)] == ["a", "c"]
+    assert scraper.titles_dropped == 1
+
+
+def test_a_page_of_nothing_but_excluded_titles_is_not_reported_as_a_broken_parser(caplog):
+    """"0 hits — the selectors no longer match" is the wrong thing to say about
+    a page that was read perfectly well and held only roles the user ruled out."""
+    scraper = TitledScraper(["Senior Engineer", "Engineering Lead"], exclude_keywords=["Senior", "Lead"])
+    with caplog.at_level(logging.INFO):
+        assert scraper.crawl("engineer", limit=10) == []
+
+    said = [r.getMessage() for r in caplog.records]
+    assert not any("selectors no longer match" in line for line in said)
+    assert any("2 hit(s)" in line and "left out by title" in line for line in said)
+    assert scraper.details == []
