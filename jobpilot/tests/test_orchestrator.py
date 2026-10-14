@@ -460,6 +460,24 @@ def test_resending_a_locked_value_unchanged_is_not_a_rejection(client, tmp_path,
     config_mod.get_config.cache_clear()
 
 
+def test_the_crawl_city_is_saved_from_settings_and_a_non_city_is_refused(client, tmp_path, monkeypatch):
+    """The Settings page is where the city is typed. A value the crawler cannot
+    read as one Vietnamese city is refused there, with the reason — not saved
+    and then ignored by a crawl that goes nationwide under it."""
+    config_mod = _isolated_config(tmp_path, monkeypatch)
+    c, _ = client
+
+    assert c.get("/settings", headers=AUTH).json()["crawl"]["city"] == ""
+    bad = c.put("/settings", headers=AUTH, json={"crawl": {"city": "Atlantis"}})
+    assert bad.status_code == 422 and "not a Vietnamese city" in bad.json()["detail"]
+    assert config_mod.get_config().crawl.city == ""
+
+    ok = c.put("/settings", headers=AUTH, json={"crawl": {"city": "Ho Chi Minh"}})
+    assert ok.status_code == 200 and ok.json()["crawl"]["city"] == "Ho Chi Minh"
+    assert config_mod.get_config().crawl.city == "Ho Chi Minh"
+    config_mod.get_config.cache_clear()
+
+
 def test_settings_tell_the_ui_which_fields_are_locked(client):
     c, _ = client
     locked = c.get("/settings", headers=AUTH).json()["locked"]

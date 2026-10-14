@@ -41,7 +41,7 @@ from urllib.parse import quote
 from jobpilot.crawler.feed import FeedScraper, load_json
 from jobpilot.crawler.text import clean_text, fold
 from jobpilot.crawler.types import RawJob, SearchHit
-from jobpilot.crawler.vietnam import CITIES, canonical_city
+from jobpilot.crawler.vietnam import VIETNAMESE_CITIES, canonical_city
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +49,6 @@ log = logging.getLogger(__name__)
 _PLACE_SPLIT = re.compile(r"\s*[,;/|&]\s*|\s+-\s+|\s+(?:or|and)\s+")
 _VIET_NAM_RE = re.compile(r"(?<![a-z0-9])viet nam(?![a-z0-9])")
 _LETTERS_ONLY = re.compile(r"[^a-z]")
-# What `canonical_city` can resolve to that is a place in Vietnam. "Remote" is
-# in the city table because boards print it where a city goes; it is not one.
-_VIETNAMESE_CITIES = frozenset(CITIES) - {"Remote"}
 
 
 def place_matches(place: str | None, term: str | None) -> bool:
@@ -83,7 +80,7 @@ def place_matches(place: str | None, term: str | None) -> bool:
     # A label that is just a Vietnamese city is in Vietnam whether or not it
     # says so. Without this a scope of "Vietnam" dropped every posting a board
     # labels with the bare city, which is how most of them write it.
-    if folded_term == "vietnam" and cities & _VIETNAMESE_CITIES:
+    if folded_term == "vietnam" and cities & VIETNAMESE_CITIES:
         return True
     return canonical_city(term) in cities
 

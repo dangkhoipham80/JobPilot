@@ -182,7 +182,7 @@ line of config (`PLAN.md` §5.1.1).
 |---|---|---|---|
 | **ITviec** | 1 | Playwright | Cloudflare-protected; salaries are behind a login, so `salary` is `null` |
 | **TopCV** | 1 | Playwright | Server-rendered + schema.org `JobPosting`. Keyword goes in the *path*, not `?keyword=` |
-| **VietnamWorks** | 1 | Playwright | Jobs arrive by XHR; lazy-loads ~9–20 cards per page, so it is paged |
+| **VietnamWorks** | 1 | Playwright | Jobs arrive by XHR; only the first ~9 cards of a page are rendered. The page after the last one lists suggestions, which are not read as results |
 | **LinkedIn** | 1 | IMAP | Reads **Job Alert emails in your own inbox**. LinkedIn is never crawled |
 | **We Work Remotely** | 2 | RSS | One feed per category, full JD inline, no browser needed |
 | **Arbeitnow** | 2 | JSON API | Really paginated; mostly Germany/EU, descriptions often in German |
@@ -191,6 +191,14 @@ line of config (`PLAN.md` §5.1.1).
 | TopDev, Ashby | — | — | Deliberately absent — see below |
 
 Tier-2 sources are remote/worldwide roles. Turn them off in Settings if you only want Vietnam.
+
+**One city for the Vietnamese boards.** Set `crawl.city` (Settings → City, or `config.yaml`) to
+`Ho Chi Minh`, `Ha Noi` or `Da Nang` and ITviec, TopCV and VietnamWorks are searched within that
+city, each through its own URL form. Empty means every city, and then the per-site limit is spent
+on the whole country. What comes back is checked as well: a posting whose card names another city
+is left out, so a board that stops honouring its URL cannot quietly fill the list with other
+cities. A posting that does not say where it is, or says "Remote", is kept. Any other Vietnamese city is accepted too, but no board
+has a URL form for it yet: it is searched nationwide and filtered by card, with a warning in the log.
 
 **Tier 3 — company career pages.** Most companies don't build a job board, they rent one, and a role
 usually appears there before it reaches any aggregator. One adapter reaches every company on a

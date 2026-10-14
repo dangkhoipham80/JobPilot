@@ -76,6 +76,11 @@ class BaseScraper(ABC):
         #: run's ``fetched`` and ``filtered``: they were seen and they were
         #: filtered, only earlier than the rest and without a detail request.
         self.titles_dropped = 0
+        #: Hits the most recent :meth:`search` left out *on purpose* for a reason
+        #: of the scraper's own (a card that names another city). Only read to
+        #: tell "the page was read and nothing on it was wanted" apart from "the
+        #: parser found nothing" — see :meth:`crawl`.
+        self.left_out = 0
         self._owned_fetcher = None  # lazily created default, closed by close()
         # Per-run request state, reset by close(). See _fetch.
         self._requested = False
@@ -319,8 +324,10 @@ class BaseScraper(ABC):
         # reports success with nothing to show — the exact failure PLAN §10 calls
         # out ("cảnh báo khi 0 job"). It is indistinguishable from a genuinely
         # empty result set, so say so loudly instead of logging it as normal.
-        # Not when titles were left out: the parser demonstrably read the page.
-        if not hits and not self.titles_dropped:
+        # Not when hits were left out by title or by the scraper's own scope:
+        # the parser demonstrably read the page, and "the selectors no longer
+        # match" would send whoever reads the log to fix a parser that works.
+        if not hits and not self.titles_dropped and not self.left_out:
             log.warning(
                 "[%s] search parsed to 0 hits for query=%r — either the query "
                 "has no results or the selectors no longer match the site",

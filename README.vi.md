@@ -181,7 +181,7 @@ scraper cùng một dòng config (`PLAN.md` §5.1.1).
 |---|---|---|---|
 | **ITviec** | 1 | Playwright | Sau Cloudflare; lương phải đăng nhập mới thấy, nên `salary` là `null` |
 | **TopCV** | 1 | Playwright | Render ở server + `JobPosting` của schema.org. Từ khoá nằm trong *path*, không phải `?keyword=` |
-| **VietnamWorks** | 1 | Playwright | Tin về qua XHR; lazy-load khoảng 9–20 thẻ mỗi trang, nên phải đi từng trang |
+| **VietnamWorks** | 1 | Playwright | Tin về qua XHR; mỗi trang chỉ render khoảng 9 thẻ đầu. Trang sau trang cuối liệt kê tin gợi ý, và chúng không được đọc thành kết quả |
 | **LinkedIn** | 1 | IMAP | Đọc **email Job Alert trong hộp thư của chính bạn**. Không bao giờ crawl LinkedIn |
 | **We Work Remotely** | 2 | RSS | Mỗi category một feed, JD đầy đủ ngay trong feed, không cần browser |
 | **Arbeitnow** | 2 | JSON API | Phân trang thật; chủ yếu Đức/EU, mô tả thường bằng tiếng Đức |
@@ -190,6 +190,14 @@ scraper cùng một dòng config (`PLAN.md` §5.1.1).
 | TopDev, Ashby | — | — | Cố ý không có — xem bên dưới |
 
 Nguồn tier-2 là việc remote/toàn cầu. Tắt chúng trong Settings nếu bạn chỉ muốn việc ở Việt Nam.
+
+**Một thành phố cho các board Việt Nam.** Đặt `crawl.city` (Settings → Thành phố, hoặc
+`config.yaml`) là `Ho Chi Minh`, `Ha Noi` hoặc `Da Nang` thì ITviec, TopCV và VietnamWorks được tìm
+trong thành phố đó, mỗi board theo dạng URL của chính nó. Để trống là mọi nơi, và khi đó giới hạn
+mỗi site bị tiêu vào cả nước. Kết quả trả về cũng được kiểm lại: tin mà thẻ ghi thành phố khác thì
+bị loại, nên một board thôi tôn trọng URL cũng không lặng lẽ lấp danh sách bằng tin ở thành phố
+khác. Tin không ghi địa điểm, hoặc ghi "Remote", thì được giữ. Thành phố Việt Nam khác cũng được nhận, nhưng chưa board nào có dạng URL
+cho nó: board được tìm trên cả nước rồi lọc theo thẻ, kèm một cảnh báo trong log.
 
 **Tier 3 — trang tuyển dụng của công ty.** Phần lớn công ty không tự xây job board mà thuê một
 cái, và một vị trí thường xuất hiện ở đó trước khi tới các trang tổng hợp. Một adapter phủ mọi

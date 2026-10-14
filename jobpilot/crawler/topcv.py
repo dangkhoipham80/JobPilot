@@ -22,7 +22,7 @@ import unicodedata
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from jobpilot.crawler.base import BaseScraper
+from jobpilot.crawler.cityscope import CityScopedScraper
 from jobpilot.crawler.jsonld import parse_job_posting
 from jobpilot.crawler.text import clean_text, el_text, first_match, strip_query
 from jobpilot.crawler.types import RawJob, SearchHit
@@ -126,8 +126,18 @@ def _card_location(card: Tag) -> str | None:
     return clean_city(el_text(card.select_one("label.address .city-text, .city-text")))
 
 
-class TopCVScraper(BaseScraper):
+class TopCVScraper(CityScopedScraper):
     source = "topcv"
+
+    #: The path suffix TopCV's own city links carry: ``-tai-<city>-kl<id>``,
+    #: where the id is the value of that city in its location filter. Both
+    #: halves are needed — the id alone is not a URL, and the name alone is a
+    #: different keyword.
+    city_tokens = {
+        "Hà Nội": "ha-noi-kl1",
+        "Hồ Chí Minh": "ho-chi-minh-kl2",
+        "Đà Nẵng": "da-nang-kl8",
+    }
 
     def search_url(self, query: str, page: int = 1) -> str:
         """``/tim-viec-lam-<slug>?page=N`` — the keyword goes in the *path*.
@@ -143,8 +153,13 @@ class TopCVScraper(BaseScraper):
         ``page`` is the exception: it *is* honoured (verified live — page 1 and
         page 2 of the same search share zero job ids), and running off the end
         redirects to a page with no cards, which stops the loop.
+
+        A city goes in the path as well, after the keyword:
+        ``/tim-viec-lam-<slug>-tai-<city>-kl<id>``.
         """
         url = f"{BASE_URL}/tim-viec-lam-{_slug(query or 'java')}"
+        if self.city_token:
+            url += f"-tai-{self.city_token}"
         return url if page <= 1 else f"{url}?page={page}"
 
     def _native_id(self, card_id: str, url: str) -> str:
