@@ -2809,3 +2809,25 @@ bị ẩn; (2) `SKILL.md` cập nhật tiêu chí; nit: docstring `system_prompt
 ### Chưa làm
 - Không có cờ "đừng bao giờ in project này" trên từng entry; muốn loại hẳn thì xoá khỏi Master.
 - Chất lượng chọn là phán đoán của model — test chỉ ghim *chữ* của luật, không ghim hành vi.
+
+### Phần 2 — gác entry bằng tag (cùng nhánh, 2026-10-15)
+
+User: các project game là vibecode, gắn tag `game` và tạm bỏ qua; CV chỉ cần hai kinh nghiệm + một
+project. Prompt không phải chỗ để nói "đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
+**dữ liệu**: `Entry.tags` (nhãn tự do, không in) + `CvDocument.hidden_tags`. Entry mang tag bị ẩn ở
+lại Master, ra khỏi mọi PDF và khỏi tầm nhìn của tailor (`CvDocument.visible()`). Bỏ tag khỏi
+`hidden_tags` là nó quay lại. Luật ai đi qua `visible()` ở `jobpilot/cv/CLAUDE.md`.
+
+UI: CV Studio có ô "Ẩn các entry có tag" (cấp CV) và ô Tag trên mỗi entry; entry bị gác mờ đi + nhãn
+"Không in ra CV · tag X".
+
+Chạy thật:
+- Backend riêng trên SQLite + token bịa, CV hư cấu: gõ `game` vào ô ẩn → entry mang tag mờ + có
+  nhãn; Lưu → `hidden_tags` và `tags` về đúng trong version mới. Console chỉ có 404 của
+  `/cv/master/pdf` (chưa build lần nào — có từ trước).
+- Build PDF thật bằng tectonic, cùng CV có/không ẩn: entry bị gác mất cả tiêu đề lẫn bullet, entry
+  khác còn nguyên (đọc bằng pypdf sau khi bỏ khoảng trắng — lần đọc đầu báo thiếu cả entry *không*
+  ẩn, là pypdf mất dấu cách chứ PDF không sao).
+
+**Thứ tự deploy:** `extra="forbid"` ⇒ Master có `tags` mà code cũ đọc vào là lỗi. Gắn tag trên DB
+thật **sau** khi service đã chạy code này.

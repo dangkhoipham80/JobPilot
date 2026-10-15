@@ -276,3 +276,20 @@ cho model **chép lại** thành `CvDocument`. Model nằm trọn trong `reader.
   skill": summary không đổi, skill không được thêm, model ghi dòng đó vào `unreadable` (một lượt —
   là quan sát, không phải bảo đảm).
 - **CLI**: `jobpilot cv read --text cv.txt` (đúng một file UTF-8; BOM được bỏ).
+
+### Entry bị "gác" bằng tag (`Entry.tags` + `CvDocument.hidden_tags`)
+
+Entry (experience/projects) mang một tag nằm trong `hidden_tags` vẫn **ở trong Master** nhưng không
+in ra CV nào và tailor không thấy. So khớp không phân biệt hoa thường. Luật một dòng:
+**thứ gì *hiển thị* CV hoặc *suy luận về thứ CV hiển thị* thì đi qua `doc.visible()`; thứ gì *sửa*
+CV thì không.**
+- Đi qua `visible()`: `render_document` (mọi PDF, cả Master lẫn tailored), `tailor_job` (index của
+  plan, diff và bản tailored đều tính trên bản đã lọc), fit check (`intake`), critique, `llm bench`.
+- Không đi qua: sửa Master bằng câu lệnh (`tailor/edit.py`), CV Studio, export/import — entry bị gác
+  vẫn là của user để sửa. Guard con số của cover letter vẫn đọc Master đầy đủ (nguồn sự thật, không
+  phải thứ in ra).
+- **Thêm field vào `CvDocument`/`Entry` là đổi định dạng lưu**: `_Model` có `extra="forbid"`, nên
+  một version có `tags` mà code cũ đọc vào là `ValidationError`. Deploy code **trước**, rồi mới ghi
+  field mới vào DB thật. Version cũ thiếu field thì đọc được (default rỗng).
+- Diff giữa hai version (Phase 16) **không** nhắc tag: gác một entry hiện ra trong diff là "không
+  đổi gì". Thấy nó trên PDF chứ không phải trong diff.
