@@ -87,6 +87,11 @@ export const cv = ns({
     role: "Role",
     techStack: "Tech stack",
     optional: "optional",
+    entryTags: "Tags",
+    entryTagsHint: "never printed",
+    parked: "Left off the CV · tag {tag}",
+    hiddenTags: "Hide entries tagged",
+    hiddenTagsHint: "kept in the Master, left off every PDF and out of the tailor's sight",
 
     // --- Identity card ----------------------------------------------------
     identity: "Identity",
@@ -336,6 +341,11 @@ export const cv = ns({
     role: "Vai trò",
     techStack: "Tech stack",
     optional: "không bắt buộc",
+    entryTags: "Tag",
+    entryTagsHint: "không in ra CV",
+    parked: "Không in ra CV · tag {tag}",
+    hiddenTags: "Ẩn các entry có tag",
+    hiddenTagsHint: "vẫn nằm trong Master, không in ra PDF nào và tailor không thấy",
 
     identity: "Thông tin cá nhân",
     firstName: "Tên",
