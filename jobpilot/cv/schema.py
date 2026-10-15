@@ -166,6 +166,8 @@ class CvDocument(_Model):
             return self
         doc = self.model_copy(deep=True)
         for section in doc.sections:
-            if isinstance(section, (ExperienceSection, ProjectsSection)):
+            if isinstance(section, (ExperienceSection, ProjectsSection)) and section.entries:
                 section.entries = [e for e in section.entries if not self.is_hidden(e)]
+                # Every entry parked → no section, not a heading over nothing.
+                section.enabled = section.enabled and bool(section.entries)
         return doc

@@ -103,3 +103,59 @@ def test_tailor_never_sees_a_parked_entry_and_master_keeps_it(db, doc):
     assert parked not in [e.title for e in _projects(tailored).entries]
     master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
     assert parked in [e.title for e in _projects(master).entries]
+
+
+def test_a_section_whose_entries_are_all_parked_is_dropped_not_left_bare(doc):
+    for entry in _projects(doc).entries:
+        entry.tags = ["game"]
+    doc.hidden_tags = ["game"]
+    assert _projects(doc.visible()).enabled is False
+    assert "resume/projects.tex" not in render_document(doc)
+    # A section that was empty to begin with is not this case: leave it alone.
+    _projects(doc).entries = []
+    assert _projects(doc.visible()).enabled is True
+
+
+def test_replan_drops_the_previous_plan_when_the_hidden_tags_changed(db, doc):
+    """The last plan's indices address the old visible outline."""
+    engine = _Recording()
+    service.tailor_job(db, "itviec:9", engine, compile_pdf=False)
+    db.get(Job, "itviec:9").status = JobStatus.REVIEW
+    db.commit()
+
+    service.tailor_job(db, "itviec:9", engine, instruction="shorter", compile_pdf=False)
+    assert engine.previous[-1] is not None  # same tags: the plan is carried over
+
+    db.get(Job, "itviec:9").status = JobStatus.REVIEW
+    unparked = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    unparked.hidden_tags = []
+    cv_store.save_version(db, cv_store.MASTER_SCOPE, unparked, author="user")
+    db.commit()
+    service.tailor_job(db, "itviec:9", engine, instruction="shorter", compile_pdf=False)
+    assert engine.previous[-1] is None
+
+
+class _Recording(_Recorder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.previous: list[TailorPlan | None] = []
+
+    def tailor(self, master, job, instruction=None, previous=None):
+        self.previous.append(previous)
+        return super().tailor(master, job, instruction, previous)
+
+
+def test_fit_check_says_hidden_not_empty_when_every_entry_is_parked(db):
+    from jobpilot.intake.service import IntakeRefused, assess_fit
+
+    master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    # Only roles and projects, every one parked: full CV, nothing visible.
+    master.sections = [s for s in master.sections if s.type in ("experience", "projects")]
+    for section in master.sections:
+        for entry in section.entries:
+            entry.tags = ["game"]
+    master.hidden_tags = ["game"]
+    cv_store.save_version(db, cv_store.MASTER_SCOPE, master, author="user")
+    db.commit()
+    with pytest.raises(IntakeRefused, match="hidden by a tag"):
+        assess_fit(db, "itviec:9", engine=None)

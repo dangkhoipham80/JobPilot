@@ -284,10 +284,16 @@ in ra CV nào và tailor không thấy. So khớp không phân biệt hoa thư�
 **thứ gì *hiển thị* CV hoặc *suy luận về thứ CV hiển thị* thì đi qua `doc.visible()`; thứ gì *sửa*
 CV thì không.**
 - Đi qua `visible()`: `render_document` (mọi PDF, cả Master lẫn tailored), `tailor_job` (index của
-  plan, diff và bản tailored đều tính trên bản đã lọc), fit check (`intake`), critique, `llm bench`.
+  plan, diff và bản tailored đều tính trên bản đã lọc), **cover letter** (người viết lẫn guard của nó
+  — thư đi kèm CV, khen một entry CV không có là một lời khẳng định CV không chống lưng), fit check
+  (`intake`), critique, `llm bench`.
 - Không đi qua: sửa Master bằng câu lệnh (`tailor/edit.py`), CV Studio, export/import — entry bị gác
-  vẫn là của user để sửa. Guard con số của cover letter vẫn đọc Master đầy đủ (nguồn sự thật, không
-  phải thứ in ra).
+  vẫn là của user để sửa.
+- Gác **hết** entry của một section experience/projects thì `visible()` tắt luôn section đó: PDF
+  không in một heading trơ. Section vốn rỗng thì để nguyên.
+- Đổi `hidden_tags` giữa hai round tailor ⇒ round sau **không** mang plan cũ theo: index của nó trỏ
+  vào outline cũ (`_hidden` trong `tailor/service.py`).
+- Gác hết thì fit/critique nói "bị ẩn bởi tag", không nói "CV còn trống" — *không thấy* ≠ *trống*.
 - **Thêm field vào `CvDocument`/`Entry` là đổi định dạng lưu**: `_Model` có `extra="forbid"`, nên
   một version có `tags` mà code cũ đọc vào là `ValidationError`. Deploy code **trước**, rồi mới ghi
   field mới vào DB thật. Version cũ thiếu field thì đọc được (default rỗng).

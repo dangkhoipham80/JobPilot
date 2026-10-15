@@ -365,7 +365,13 @@ def assess_fit(db: Session, job_id: str, engine: IntakeEngine) -> FitOutcome:
             "this job has no description yet — paste one in before asking how well it fits"
         )
 
-    master = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
+    full = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    master = full.visible()
+    if cv_is_unfilled(master) and not cv_is_unfilled(full):
+        raise IntakeRefused(
+            "every entry of your Master CV is hidden by a tag — un-hide some under "
+            "CV Studio before asking how well it fits a job"
+        )
     if cv_is_unfilled(master):
         # A fresh database bootstraps an *empty* Master CV (`cv/skeleton.py`), and
         # sending that outline would come back "weak, 0%" — a confident verdict

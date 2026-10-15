@@ -2812,8 +2812,7 @@ bị ẩn; (2) `SKILL.md` cập nhật tiêu chí; nit: docstring `system_prompt
 
 ### Phần 2 — gác entry bằng tag (cùng nhánh, 2026-10-15)
 
-User: các project game là vibecode, gắn tag `game` và tạm bỏ qua; CV chỉ cần hai kinh nghiệm + một
-project. Prompt không phải chỗ để nói "đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
+User muốn tạm gác một nhóm project (không xoá) bằng một tag. Prompt không phải chỗ để nói "đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
 **dữ liệu**: `Entry.tags` (nhãn tự do, không in) + `CvDocument.hidden_tags`. Entry mang tag bị ẩn ở
 lại Master, ra khỏi mọi PDF và khỏi tầm nhìn của tailor (`CvDocument.visible()`). Bỏ tag khỏi
 `hidden_tags` là nó quay lại. Luật ai đi qua `visible()` ở `jobpilot/cv/CLAUDE.md`.

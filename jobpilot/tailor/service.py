@@ -131,6 +131,10 @@ def tailor_job(
     # diff and the tailored version are all against the CV a reader would see.
     master = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
     previous = latest_plan(db, job_id) if instruction else None
+    if previous is not None and _hidden(cv_store.get_document(db, job_id)) != _hidden(master):
+        # The last plan's indices address the outline as it was then; with other
+        # tags hidden they would land on different entries. Re-plan from scratch.
+        previous = None
 
     run = Run(kind="tailor", started_at=vn_now())
     db.add(run)
@@ -194,6 +198,10 @@ def tailor_job(
         attempts=result.attempts,
         round=round_no,
     )
+
+
+def _hidden(doc: CvDocument) -> set[str]:
+    return {t.strip().lower() for t in doc.hidden_tags if t.strip()}
 
 
 def _build_meta(

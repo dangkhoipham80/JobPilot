@@ -157,7 +157,10 @@ def apply_job(
     if letter_engine is not None:
         try:
             say("writing the cover letter")
-            master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+            # The letter ships next to the CV, so it may only draw on what the CV
+            # shows: a parked entry (hidden tag) praised in the letter would be a
+            # claim the attached CV does not carry. Its guard reads the same doc.
+            master = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
             result = letter_engine.write(master, job, latest_plan(db, job_id))
             letter.text = result.letter.body()
             letter.txt = _write_letter(job_id, letter.text)
