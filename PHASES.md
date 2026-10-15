@@ -2778,3 +2778,66 @@ có khối "không có kết quả", 9 hit — sửa parser không biến trang 
   `crawl.queries`, thông báo có nêu tên key); từ khoá 0 kết quả trên ITviec trả 404 nên site hiện
   "failed" chứ không phải "0 found" — có từ trước, phạm vi hẹp thì dễ gặp hơn.
 
+
+## Phase tailor-project-strength — chọn project theo độ mạnh trước, trùng công nghệ sau (2026-10-15)
+
+**Vấn đề (user báo, đo lại trên DB thật):** kho project của Master CV có cả project production lẫn
+bài tập thời đi học. Prompt bảo model "judge relevance by shared
+technologies", và model làm đúng như thế: với ba job Java, nó giữ hai project Java thời đi học và
+**bỏ các project production** vì chúng viết bằng ngôn ngữ khác. Trùng ngôn ngữ thắng chất lượng.
+
+**Sửa:** chỉ đổi prompt (`tailor/prompt.py`). Project được chấm theo hai bậc: **strength** (gần đây,
+có người dùng/production, bài toán khó, có test, sở hữu rõ; yếu = bài tập cũ, CRUD không có gì riêng,
+stack lỗi thời) rồi mới **relevance** (loại việc trước, công nghệ sau). Mục Experience đã chứng minh
+ngôn ngữ chính, nên project backend mạnh ở ngôn ngữ khác thắng project yếu chỉ lặp lại ngôn ngữ của
+job. **Không lấp đủ limit bằng project yếu.** `changes` phải ghi lý do từng project được giữ.
+`limit_projects` (sàn khi model để trống `entry_order`) **không đổi** — nó vẫn xếp theo overlap,
+vì "độ mạnh" không đo được bằng đếm từ.
+
+### Chạy thật
+Dry-run bằng model thật (`claude_cli`, code của worktree), **không ghi version CV**, trên 3 job Java
+đã tailor trước đó: cả 3 giờ giữ project production, bỏ các project CRUD thời đi học. Một job vẫn
+giữ một project cũ vì JD của nó **ghi đích danh** đúng stack đó và project ấy là bằng chứng duy nhất,
+nên đây là lựa chọn đúng chứ không phải lỗi cũ quay lại.
+Hai job còn lại chọn một project phụ có phần server và chỉ giữ bullet backend của nó.
+
+**Review gate — APPROVE**, đã sửa: (1) prompt khuyến khích "giữ ít hơn" nhưng `entry_order` rỗng
+nghĩa là "giữ nguyên" nên "giữ 0" rơi về fallback overlap — giờ prompt chỉ đường `enabled: false`
+cho section projects (và luật `enabled` nhận ca này), có test ghim `limit_projects` để yên section
+bị ẩn; (2) `SKILL.md` cập nhật tiêu chí; nit: docstring `system_prompt`, mô tả `Change.reason`.
+
+### Chưa làm
+- (Phần 2 bên dưới thêm đúng cờ này: tag + `hidden_tags`.)
+- Chất lượng chọn là phán đoán của model — test chỉ ghim *chữ* của luật, không ghim hành vi.
+
+### Phần 2 — gác entry bằng tag (cùng nhánh, 2026-10-15)
+
+User muốn tạm gác một nhóm project (không xoá) bằng một tag. Prompt không phải chỗ để nói
+"đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
+**dữ liệu**: `Entry.tags` (nhãn tự do, không in) + `CvDocument.hidden_tags`. Entry mang tag bị ẩn ở
+lại Master, ra khỏi mọi PDF và khỏi tầm nhìn của tailor (`CvDocument.visible()`). Bỏ tag khỏi
+`hidden_tags` là nó quay lại. Luật ai đi qua `visible()` ở `jobpilot/cv/CLAUDE.md`.
+
+UI: CV Studio có ô "Ẩn các entry có tag" (cấp CV) và ô Tag trên mỗi entry; entry bị gác mờ đi + nhãn
+"Không in ra CV · tag X".
+
+Chạy thật:
+- Backend riêng trên SQLite + token bịa, CV hư cấu: gõ `game` vào ô ẩn → entry mang tag mờ + có
+  nhãn; Lưu → `hidden_tags` và `tags` về đúng trong version mới. Console chỉ có 404 của
+  `/cv/master/pdf` (chưa build lần nào — có từ trước).
+- Build PDF thật bằng tectonic, cùng CV có/không ẩn: entry bị gác mất cả tiêu đề lẫn bullet, entry
+  khác còn nguyên (đọc bằng pypdf sau khi bỏ khoảng trắng — lần đọc đầu báo thiếu cả entry *không*
+  ẩn, là pypdf mất dấu cách chứ PDF không sao).
+
+**Thứ tự deploy:** `extra="forbid"` ⇒ Master có `tags` mà code cũ đọc vào là lỗi. Gắn tag trên DB
+thật **sau** khi service đã chạy code này.
+
+**Review gate phần 2 — CHANGES REQUESTED → đã sửa:**
+- *Blocker:* cover letter được viết từ Master đầy đủ — model thấy entry bị gác và có thể khen nó
+  trong thư gửi đi, kèm một CV không có nó. Giờ người viết + guard của thư đọc `visible()`; test ghi
+  lại Master mà letter engine nhận.
+- Gác hết entry của section ⇒ PDF in heading trơ (reviewer build thật cả 2 template). `visible()`
+  tắt section đó.
+- Đổi tag giữa hai round ⇒ index của plan cũ trỏ sai entry. Round sau bỏ plan cũ.
+- Gác hết ⇒ fit/critique báo "CV trống". Giờ nói "bị ẩn bởi tag".
+Mỗi bản sửa có test, và hoàn tác riêng từng bản sửa thì đúng test của nó đỏ.

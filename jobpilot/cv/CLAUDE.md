@@ -276,3 +276,27 @@ cho model **chép lại** thành `CvDocument`. Model nằm trọn trong `reader.
   skill": summary không đổi, skill không được thêm, model ghi dòng đó vào `unreadable` (một lượt —
   là quan sát, không phải bảo đảm).
 - **CLI**: `jobpilot cv read --text cv.txt` (đúng một file UTF-8; BOM được bỏ).
+
+### Entry bị "gác" bằng tag (`Entry.tags` + `CvDocument.hidden_tags`)
+
+Entry (experience/projects) mang một tag nằm trong `hidden_tags` vẫn **ở trong Master** nhưng không
+in ra CV nào và tailor không thấy. So khớp không phân biệt hoa thường. Luật một dòng:
+**thứ gì *hiển thị* CV hoặc *suy luận về thứ CV hiển thị* thì đi qua `doc.visible()`; thứ gì *sửa*
+CV thì không.**
+- Đi qua `visible()`: `render_document` (mọi PDF, cả Master lẫn tailored), `tailor_job` (index của
+  plan, diff và bản tailored đều tính trên bản đã lọc), **cover letter** (người viết lẫn guard của nó
+  — thư đi kèm CV, khen một entry CV không có là một lời khẳng định CV không chống lưng), fit check
+  (`intake`), critique, `llm bench`.
+- Không đi qua: sửa Master bằng câu lệnh (`tailor/edit.py`), CV Studio, export/import — entry bị gác
+  vẫn là của user để sửa.
+- Gác **hết** entry của một section experience/projects thì `visible()` tắt luôn section đó, và
+  `render_document` **không bao giờ** in section experience/projects có 0 entry — vì plan tailor
+  (`SectionPlan.enabled` mặc định `True`) có thể bật lại section vừa bị tắt.
+- Đổi `hidden_tags` giữa hai round tailor ⇒ round sau **không** mang plan cũ theo: index của nó trỏ
+  vào outline cũ (`_hidden` trong `tailor/service.py`).
+- Gác hết thì fit/critique nói "bị ẩn bởi tag", không nói "CV còn trống" — *không thấy* ≠ *trống*.
+- **Thêm field vào `CvDocument`/`Entry` là đổi định dạng lưu**: `_Model` có `extra="forbid"`, nên
+  một version có `tags` mà code cũ đọc vào là `ValidationError`. Deploy code **trước**, rồi mới ghi
+  field mới vào DB thật. Version cũ thiếu field thì đọc được (default rỗng).
+- Diff giữa hai version (Phase 16) **không** nhắc tag: gác một entry hiện ra trong diff là "không
+  đổi gì". Thấy nó trên PDF chứ không phải trong diff.

@@ -214,6 +214,7 @@ quả nộp đơn theo nguồn** — hai thứ khác nhau, đừng gộp. Phase 
 | title-before-limit | `crawl.exclude_keywords` lọc tiêu đề **trước** khi đếm `limit` và trước khi tải trang chi tiết; `fetched`/`filtered` giữ nguyên nghĩa | `crawler/base.py`, `crawler/pipeline.py`, `crawler/registry.py` |
 | vn-city-scope | **`crawl.city`**: ITviec/TopCV/VietnamWorks tìm trong một thành phố (URL riêng từng board + kiểm lại nhãn trên card); VietnamWorks hết đọc khối "gợi ý" thành kết quả | `crawler/cityscope.py`, `crawler/vietnam.py`, `crawler/vietnamworks.py` |
 | multi-kw | **Nhiều từ khoá / 1 crawl** (dấu phẩy, mỗi site chạy hết rồi mới đóng) + **Crawl lại y hệt** 3 cấu hình gần nhất (`Run.stats.request`, `GET /crawl/recent`) | `crawler/pipeline.py`, `components/RecentCrawls.tsx` |
+| project-strength | Tailor chọn project theo **độ mạnh trước, trùng công nghệ sau**; không lấp đủ trần bằng project yếu. Entry gắn **tag** nằm trong `hidden_tags` được gác: ở lại Master, ra khỏi mọi PDF + tailor (`doc.visible()`) | `tailor/prompt.py`, `cv/schema.py`, `jobpilot/cv/CLAUDE.md` |
 
 1362 test pass. Đã verify trên môi trường thật: Alembic lên **PostgreSQL 17 local**, 11 trang web,
 build PDF bằng **tectonic** (Master + tailored, cả 2 template; Docker từng verify, đã gỡ), crawl 6+ nguồn qua API + Postgres, `llm_calls` +

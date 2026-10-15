@@ -382,6 +382,8 @@ export interface CvEntry {
   items: string[];
   role: string | null;
   tech_stack: string[];
+  /** Free labels; never printed. Optional: versions saved before tags existed lack it. */
+  tags?: string[];
 }
 
 interface CvSectionBase {
@@ -405,6 +407,14 @@ export interface CvDocument {
   theme: CvTheme;
   header: CvHeader;
   sections: CvSection[];
+  /** Entries carrying any of these tags stay in the Master but off every CV. */
+  hidden_tags?: string[];
+}
+
+/** Same rule as `CvDocument.is_hidden` on the backend: case-insensitive. */
+export function parkedBy(entry: CvEntry, hiddenTags: string[] | undefined): string | null {
+  const hidden = new Set((hiddenTags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean));
+  return (entry.tags ?? []).find((t) => hidden.has(t.trim().toLowerCase())) ?? null;
 }
 
 /** A draft read off an uploaded CV by `POST /cv/master/import`. Not saved. */

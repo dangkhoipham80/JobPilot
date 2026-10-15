@@ -17,7 +17,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from jobpilot.cv.latex import escape_tex, tex
-from jobpilot.cv.schema import CvDocument
+from jobpilot.cv.schema import CvDocument, ExperienceSection, ProjectsSection
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_TEMPLATE = "awesome_cv"
@@ -146,9 +146,17 @@ def render_letter(doc: CvDocument, context: dict) -> str:
 
 
 def render_document(doc: CvDocument) -> dict[str, str]:
-    """Render to ``{relative_path: file_text}``. Only enabled sections are emitted."""
+    """Render to ``{relative_path: file_text}``. Only enabled sections and
+    entries without a hidden tag are emitted, and a role/project section with
+    no entry left is not emitted at all — a heading over nothing, whichever
+    path (parking, a tailor plan re-enabling it, an empty draft) led there."""
+    doc = doc.visible()
     env = template_env(doc.template)
-    sections = doc.active_sections()
+    sections = [
+        s
+        for s in doc.active_sections()
+        if not (isinstance(s, (ExperienceSection, ProjectsSection)) and not s.entries)
+    ]
 
     files: dict[str, str] = {}
     for s in sections:

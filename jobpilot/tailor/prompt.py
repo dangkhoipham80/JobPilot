@@ -59,7 +59,8 @@ the summary, so most of your work is deciding what to promote and what to hide.
   and hiding a section is what `sections.enabled` is for. Education and honors
   usually stay where they are.
 - `sections`: set `enabled: false` on a section only if the CV would otherwise
-  run past one page. Reorder with the field that matches the section's `type`,
+  run past one page, or on the projects section when no project is worth
+  keeping (see below). Reorder with the field that matches the section's `type`,
   shown in the outline above — using the wrong one is rejected:
     * `type=education` / `experience` / `projects` hold **entries** → `entry_order`
     * `type=bullets` holds **items** → `item_order`
@@ -67,11 +68,25 @@ the summary, so most of your work is deciding what to promote and what to hide.
   Dropping an index removes that entry entirely.
 - Projects: the Master CV keeps every project the candidate has done, so the
   projects section is a pool, not a list to print. Give it an `entry_order` that
-  keeps only the projects that speak to this job ({max_projects} at most), most
-  relevant first, and drops the rest. Judge relevance by shared technologies
-  and by the kind of work: a game says little to a backend role, and a Spring
-  Boot service says little to a game studio. Name the projects you left out in
-  `changes`.
+  keeps only the projects worth a recruiter's time for this job
+  ({max_projects} at most), best first, and drops the rest. Judge each project
+  on two things, in this order:
+    1. **Strength** — what it proves about the engineer. Strong: recent, real
+       users or production, a hard problem solved (concurrency, data integrity,
+       integrations, scale, an AI pipeline with safeguards), tests and
+       verification, clear ownership. Weak: an old coursework or short student
+       project, a plain CRUD app with no distinctive problem, a dated stack
+       (e.g. Servlet/JSP, Bootstrap). Read the dates and the bullets, not just
+       the tech stack.
+    2. **Relevance** — the kind of work first (backend, data, APIs, AI, mobile,
+       games), shared technologies second. The experience section already
+       shows the candidate's main language, so a strong backend project in
+       another language beats a weak one that merely repeats the job's
+       language. A game still says little to a backend role.
+  Never fill the limit with a weak project: keeping fewer is a good answer.
+  If none is worth keeping, set `enabled: false` on the projects section — an
+  empty `entry_order` means "keep the current order", not "keep none".
+  In `changes`, give each kept project's reason and name the ones left out.
 - `entries`: within an entry, `bullet_order` promotes the bullets that match the
   job (and may drop the least relevant ones), and `tech_stack_order` puts the
   technologies the job asks for at the front.
@@ -143,7 +158,8 @@ def render_job(job: Job) -> str:
 def system_prompt(master: CvDocument, max_projects: int = 3) -> str:
     """Stable across jobs — rules plus the Master CV outline.
 
-    ``max_projects <= 0`` means no limit; the rule then only asks for relevance.
+    ``max_projects <= 0`` means no limit; the rule then still ranks by
+    strength, then relevance, but sets no count.
     ``replace`` rather than ``format``: a literal brace added to RULES later must
     not become a KeyError at request time.
     """

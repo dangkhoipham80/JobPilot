@@ -578,3 +578,30 @@ def test_apply_records_a_run(db, tmp_path):
     dispatcher.apply_job(db, "itviec:1")
     run = db.query(Run).filter(Run.kind == "apply").one()
     assert run.finished_at is not None and run.stats["result"] == "awaiting_user"
+
+
+def test_the_letter_writer_never_sees_a_parked_entry(db, tmp_path):
+    """The letter ships with the CV; an entry parked off the CV must not reach it."""
+    from jobpilot.apply.letter import LetterResult
+    from jobpilot.cv.sample import sample_document
+
+    doc = sample_document()
+    projects = next(s for s in doc.sections if s.key == "projects")
+    parked = projects.entries[1].title
+    projects.entries[1].tags = ["game"]
+    doc.hidden_tags = ["game"]
+    cv_store.save_version(db, cv_store.MASTER_SCOPE, doc, author="user")
+    db.commit()
+    _job(db, apply_channel="portal", apply_target="https://acme.com/apply")
+    _cv(tmp_path, "itviec:1")
+
+    seen = []
+
+    class Recorder:
+        def write(self, master, job, plan=None):
+            seen.append(master)
+            return LetterResult(letter=LETTER)
+
+    dispatcher.apply_job(db, "itviec:1", Recorder())
+    titles = [e.title for e in next(s for s in seen[0].sections if s.key == "projects").entries]
+    assert parked not in titles and titles

@@ -149,18 +149,20 @@ export function TagsField({
   value,
   onChange,
   hint,
+  placeholder = "Java, Spring Boot, Docker",
 }: {
   label: string;
   value: string[];
   onChange: (v: string[]) => void;
   hint?: string;
+  placeholder?: string;
 }) {
   const t = useT("cv");
   return (
     <Field label={label} hint={hint ?? t("tagsHint")}>
       <Input
         value={value.join(", ")}
-        placeholder="Java, Spring Boot, Docker"
+        placeholder={placeholder}
         onChange={(e) =>
           onChange(
             e.target.value

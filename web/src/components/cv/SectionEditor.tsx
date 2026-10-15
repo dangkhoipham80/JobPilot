@@ -4,9 +4,17 @@ import { Button, Card, Input } from "@/components/ui";
 import { AutoTextarea, BulletList, IconButton, ReorderHandle, TagsField, TextField } from "@/components/cv/fields";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
-import type { CvEducationEntry, CvEntry, CvSection } from "@/types";
+import { parkedBy, type CvEducationEntry, type CvEntry, type CvSection } from "@/types";
 
-const EMPTY_ENTRY: CvEntry = { title: "", date: "", url: null, items: [], role: null, tech_stack: [] };
+const EMPTY_ENTRY: CvEntry = {
+  title: "",
+  date: "",
+  url: null,
+  items: [],
+  role: null,
+  tech_stack: [],
+  tags: [],
+};
 const EMPTY_EDUCATION: CvEducationEntry = {
   degree: "",
   institution: "",
@@ -59,6 +67,7 @@ export function SectionEditor({
   onMove,
   disableUp,
   disableDown,
+  hiddenTags,
 }: {
   section: CvSection;
   onChange: (s: CvSection) => void;
@@ -66,6 +75,8 @@ export function SectionEditor({
   onMove: (delta: number) => void;
   disableUp: boolean;
   disableDown: boolean;
+  /** The document's `hidden_tags`, so a parked entry can say so. */
+  hiddenTags?: string[];
 }) {
   const t = useT("cv");
   // Collapsed by default: six expanded sections make the page ~10,000px tall,
@@ -121,7 +132,7 @@ export function SectionEditor({
               onChange={(v) => onChange({ ...section, key: v })}
             />
           </div>
-          <SectionBody section={section} onChange={onChange} />
+          <SectionBody section={section} onChange={onChange} hiddenTags={hiddenTags} />
         </div>
       )}
     </Card>
@@ -131,9 +142,11 @@ export function SectionEditor({
 function SectionBody({
   section,
   onChange,
+  hiddenTags,
 }: {
   section: CvSection;
   onChange: (s: CvSection) => void;
+  hiddenTags?: string[];
 }) {
   const t = useT("cv");
   switch (section.type) {
@@ -247,8 +260,14 @@ function SectionBody({
           empty={EMPTY_ENTRY}
           addLabel={section.type === "projects" ? t("addProject") : t("addRole")}
           onChange={(entries) => onChange({ ...section, entries } as CvSection)}
+          muted={(entry) => parkedBy(entry, hiddenTags) !== null}
           render={(entry, set) => (
             <>
+              {parkedBy(entry, hiddenTags) && (
+                <span className="self-start rounded border border-dashed px-1.5 py-px text-[11px] text-ink-muted">
+                  {t("parked", { tag: parkedBy(entry, hiddenTags) ?? "" })}
+                </span>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <TextField
                   label={t("entryTitle")}
@@ -282,6 +301,13 @@ function SectionBody({
                   value={entry.tech_stack}
                   onChange={(tech_stack) => set({ tech_stack })}
                 />
+                <TagsField
+                  label={t("entryTags")}
+                  hint={t("entryTagsHint")}
+                  placeholder="game, school"
+                  value={entry.tags ?? []}
+                  onChange={(tags) => set({ tags })}
+                />
               </div>
             </>
           )}
@@ -297,12 +323,15 @@ function EntryList<T>({
   addLabel,
   onChange,
   render,
+  muted,
 }: {
   entries: T[];
   empty: T;
   addLabel: string;
   onChange: (entries: T[]) => void;
   render: (entry: T, set: (patch: Partial<T>) => void) => React.ReactNode;
+  /** Dims an entry the PDF will leave out, the way a hidden section is dimmed. */
+  muted?: (entry: T) => boolean;
 }) {
   const t = useT("cv");
   const move = (i: number, delta: number) => {
@@ -316,7 +345,13 @@ function EntryList<T>({
   return (
     <div className="flex flex-col gap-3">
       {entries.map((entry, i) => (
-        <div key={i} className="group flex items-start gap-1.5 rounded-lg border bg-surface-2/60 p-3">
+        <div
+          key={i}
+          className={cn(
+            "group flex items-start gap-1.5 rounded-lg border bg-surface-2/60 p-3",
+            muted?.(entry) && "opacity-55",
+          )}
+        >
           <ReorderHandle
             onUp={() => move(i, -1)}
             onDown={() => move(i, 1)}

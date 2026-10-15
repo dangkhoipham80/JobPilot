@@ -80,7 +80,10 @@ def critique_master(
     role = role.strip()[:MAX_ROLE]
     lang = lang if lang in ("vi", "en") else "vi"
 
-    doc = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    full = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    doc = full.visible()
+    if cv_is_unfilled(doc) and not cv_is_unfilled(full):
+        raise CritiqueRefused("every entry of your Master CV is hidden by a tag — un-hide some first")
     if cv_is_unfilled(doc):
         # Same reason as the fit check: a review of the empty skeleton would be a
         # confident verdict about a CV that does not exist yet.

@@ -12,7 +12,7 @@ import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { AtsPanel } from "@/components/cv/AtsPanel";
 import { CritiquePanel } from "@/components/cv/CritiquePanel";
-import { MarkupLegend } from "@/components/cv/fields";
+import { MarkupLegend, TagsField } from "@/components/cv/fields";
 import { HeaderEditor } from "@/components/cv/HeaderEditor";
 import { ImportBox, releaseDraft, type ImportedDraft } from "@/components/cv/ImportBox";
 import { InstructionBox } from "@/components/cv/InstructionBox";
@@ -547,11 +547,23 @@ export function CvStudio({ version: wsVersion }: { version: number }) {
                 onHeader={(header) => setDraft({ ...draft, header })}
                 onTheme={(theme) => setDraft({ ...draft, theme })}
               />
+              <Card>
+                <CardBody>
+                  <TagsField
+                    label={t("hiddenTags")}
+                    hint={t("hiddenTagsHint")}
+                    placeholder="game"
+                    value={draft.hidden_tags ?? []}
+                    onChange={(hidden_tags) => setDraft({ ...draft, hidden_tags })}
+                  />
+                </CardBody>
+              </Card>
 
               {draft.sections.map((section, i) => (
                 <SectionEditor
                   key={`${section.key}-${i}`}
                   section={section}
+                  hiddenTags={draft.hidden_tags}
                   disableUp={i === 0}
                   disableDown={i === draft.sections.length - 1}
                   onMove={(delta) => moveSection(i, delta)}
