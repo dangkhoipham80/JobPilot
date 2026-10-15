@@ -2778,3 +2778,31 @@ có khối "không có kết quả", 9 hit — sửa parser không biến trang 
   `crawl.queries`, thông báo có nêu tên key); từ khoá 0 kết quả trên ITviec trả 404 nên site hiện
   "failed" chứ không phải "0 found" — có từ trước, phạm vi hẹp thì dễ gặp hơn.
 
+
+## Phase tailor-project-strength — chọn project theo độ mạnh trước, trùng công nghệ sau (2026-10-15)
+
+**Vấn đề (user báo, đo lại trên DB thật):** kho project của Master CV có cả project production lẫn
+bài tập thời đi học (Servlet/JSP, CRUD ngắn hạn). Prompt bảo model "judge relevance by shared
+technologies", và model làm đúng như thế: với ba job Java, nó giữ hai project Java thời đi học và
+**bỏ hai project production** vì chúng viết bằng Python/TypeScript ("TypeScript, Python and game
+projects do not speak to it"). Trùng ngôn ngữ thắng chất lượng.
+
+**Sửa:** chỉ đổi prompt (`tailor/prompt.py`). Project được chấm theo hai bậc: **strength** (gần đây,
+có người dùng/production, bài toán khó, có test, sở hữu rõ; yếu = bài tập cũ, CRUD không có gì riêng,
+stack lỗi thời) rồi mới **relevance** (loại việc trước, công nghệ sau). Mục Experience đã chứng minh
+ngôn ngữ chính, nên project backend mạnh ở ngôn ngữ khác thắng project yếu chỉ lặp lại ngôn ngữ của
+job. **Không lấp đủ limit bằng project yếu.** `changes` phải ghi lý do từng project được giữ.
+`limit_projects` (sàn khi model để trống `entry_order`) **không đổi** — nó vẫn xếp theo overlap,
+vì "độ mạnh" không đo được bằng đếm từ.
+
+### Chạy thật
+Dry-run bằng model thật (`claude_cli`, code của worktree), **không ghi version CV**, trên 3 job Java
+đã tailor trước đó: cả 3 giờ giữ project production làm project thứ 2, bỏ hai project CRUD thời đi
+học. Một job vẫn giữ project Servlet/JSP — JD của nó **ghi tên** Servlet/JSP + MSSQL + Bootstrap và
+đó là bằng chứng duy nhất cho yêu cầu ấy, nên đây là lựa chọn đúng chứ không phải lỗi cũ quay lại.
+Hai job còn lại chọn một project game nhưng giữ đúng bullet server (idempotency, ledger) và bỏ bullet
+đồ hoạ.
+
+### Chưa làm
+- Không có cờ "đừng bao giờ in project này" trên từng entry; muốn loại hẳn thì xoá khỏi Master.
+- Chất lượng chọn là phán đoán của model — test chỉ ghim *chữ* của luật, không ghim hành vi.

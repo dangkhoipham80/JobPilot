@@ -127,3 +127,13 @@ def test_prompt_tells_the_model_the_limit(master):
     assert "(2 at most)" in system_prompt(master, max_projects=2)
     unlimited = system_prompt(master, max_projects=0)
     assert "{max_projects}" not in unlimited and "as many as fit" in unlimited
+
+
+def test_prompt_ranks_projects_by_strength_before_overlap(master):
+    """A coursework project that shares the job's language must not outrank a
+    production one in another language — the model was told to rank by overlap
+    and did exactly that (PHASES.md, tailor-project-strength)."""
+    prompt = system_prompt(master)
+    assert prompt.index("**Strength**") < prompt.index("**Relevance**")
+    assert "Never fill the limit with a weak project" in prompt
+    assert "Judge relevance by shared technologies" not in prompt
