@@ -289,8 +289,9 @@ CV thì không.**
   (`intake`), critique, `llm bench`.
 - Không đi qua: sửa Master bằng câu lệnh (`tailor/edit.py`), CV Studio, export/import — entry bị gác
   vẫn là của user để sửa.
-- Gác **hết** entry của một section experience/projects thì `visible()` tắt luôn section đó: PDF
-  không in một heading trơ. Section vốn rỗng thì để nguyên.
+- Gác **hết** entry của một section experience/projects thì `visible()` tắt luôn section đó, và
+  `render_document` **không bao giờ** in section experience/projects có 0 entry — vì plan tailor
+  (`SectionPlan.enabled` mặc định `True`) có thể bật lại section vừa bị tắt.
 - Đổi `hidden_tags` giữa hai round tailor ⇒ round sau **không** mang plan cũ theo: index của nó trỏ
   vào outline cũ (`_hidden` trong `tailor/service.py`).
 - Gác hết thì fit/critique nói "bị ẩn bởi tag", không nói "CV còn trống" — *không thấy* ≠ *trống*.

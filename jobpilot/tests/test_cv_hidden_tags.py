@@ -159,3 +159,18 @@ def test_fit_check_says_hidden_not_empty_when_every_entry_is_parked(db):
     db.commit()
     with pytest.raises(IntakeRefused, match="hidden by a tag"):
         assess_fit(db, "itviec:9", engine=None)
+
+
+def test_a_tailor_plan_cannot_bring_back_a_bare_heading(doc):
+    """A plan whose SectionPlan omits `enabled` defaults it to True and switches
+    the emptied section back on; the render still prints no heading."""
+    from jobpilot.tailor.apply import apply_plan
+    from jobpilot.tailor.schema import SectionPlan
+
+    for entry in _projects(doc).entries:
+        entry.tags = ["game"]
+    doc.hidden_tags = ["game"]
+    plan = TailorPlan(match_score=0.5, sections=[SectionPlan(key="projects")])
+    tailored = apply_plan(doc.visible(), plan)
+    assert _projects(tailored).enabled is True  # the plan did switch it on
+    assert "resume/projects.tex" not in render_document(tailored)
