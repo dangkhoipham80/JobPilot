@@ -365,7 +365,7 @@ def assess_fit(db: Session, job_id: str, engine: IntakeEngine) -> FitOutcome:
             "this job has no description yet — paste one in before asking how well it fits"
         )
 
-    master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    master = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
     if cv_is_unfilled(master):
         # A fresh database bootstraps an *empty* Master CV (`cv/skeleton.py`), and
         # sending that outline would come back "weak, 0%" — a confident verdict

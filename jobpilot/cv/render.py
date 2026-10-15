@@ -146,7 +146,9 @@ def render_letter(doc: CvDocument, context: dict) -> str:
 
 
 def render_document(doc: CvDocument) -> dict[str, str]:
-    """Render to ``{relative_path: file_text}``. Only enabled sections are emitted."""
+    """Render to ``{relative_path: file_text}``. Only enabled sections and
+    entries without a hidden tag are emitted."""
+    doc = doc.visible()
     env = template_env(doc.template)
     sections = doc.active_sections()
 

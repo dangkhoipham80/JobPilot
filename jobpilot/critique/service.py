@@ -80,7 +80,7 @@ def critique_master(
     role = role.strip()[:MAX_ROLE]
     lang = lang if lang in ("vi", "en") else "vi"
 
-    doc = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    doc = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
     if cv_is_unfilled(doc):
         # Same reason as the fit check: a review of the empty skeleton would be a
         # confident verdict about a CV that does not exist yet.

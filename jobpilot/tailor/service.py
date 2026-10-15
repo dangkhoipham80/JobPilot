@@ -127,7 +127,9 @@ def tailor_job(
     say = progress or (lambda _message: None)
     job, round_no = check_tailorable(db, job_id, instruction)
 
-    master = cv_store.get_document(db, cv_store.MASTER_SCOPE)
+    # Parked entries (hidden tags) are not offered: the plan's indices, the
+    # diff and the tailored version are all against the CV a reader would see.
+    master = cv_store.get_document(db, cv_store.MASTER_SCOPE).visible()
     previous = latest_plan(db, job_id) if instruction else None
 
     run = Run(kind="tailor", started_at=vn_now())

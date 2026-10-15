@@ -310,7 +310,7 @@ def bench_tailor(db, limit: int = 4, provider: str = "", model: str = "") -> Ben
     client, name = resolve("tailor", provider, model)
     result = BenchResult(task="tailor", provider=name, model=client.model)
 
-    master = get_document(db, MASTER_SCOPE)
+    master = get_document(db, MASTER_SCOPE).visible()
     jobs = [
         job
         for job in db.execute(select(Job).order_by(Job.crawled_at.desc()).limit(limit * 5))

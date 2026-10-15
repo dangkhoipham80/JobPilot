@@ -108,6 +108,10 @@ class Entry(_Model):
     # against a JD without rewriting the sentence -- SKILL.md §2.
     role: str | None = None
     tech_stack: list[str] = Field(default_factory=list)
+    # Free labels ("game", "school") the owner sorts entries by. They never
+    # render; ``CvDocument.hidden_tags`` decides which of them keep an entry off
+    # every CV without deleting it from the Master.
+    tags: list[str] = Field(default_factory=list)
 
 
 class ExperienceSection(_Section):
@@ -140,6 +144,28 @@ class CvDocument(_Model):
     theme: Theme = Field(default_factory=Theme)
     header: Header = Field(default_factory=Header)
     sections: list[Section] = Field(default_factory=list)
+    # Entries carrying any of these tags are parked: kept in the document, left
+    # off every rendered CV and out of the tailor's sight. Case-insensitive.
+    hidden_tags: list[str] = Field(default_factory=list)
 
     def active_sections(self) -> list[Section]:
         return [s for s in self.sections if s.enabled]
+
+    def is_hidden(self, entry: Entry) -> bool:
+        hidden = {t.strip().lower() for t in self.hidden_tags if t.strip()}
+        return any(t.strip().lower() in hidden for t in entry.tags)
+
+    def visible(self) -> CvDocument:
+        """A copy without the parked entries — what a reader of the CV sees.
+
+        Everything that *shows* the CV (render) or reasons about what it shows
+        (tailor, fit check) goes through this; editing the Master does not,
+        because a parked entry is still the owner's to edit.
+        """
+        if not self.hidden_tags:
+            return self
+        doc = self.model_copy(deep=True)
+        for section in doc.sections:
+            if isinstance(section, (ExperienceSection, ProjectsSection)):
+                section.entries = [e for e in section.entries if not self.is_hidden(e)]
+        return doc
