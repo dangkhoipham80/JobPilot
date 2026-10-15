@@ -85,7 +85,9 @@ class Change(_Model):
 
     section: str = Field(description="Section key the change applies to.")
     what: str = Field(description="What changed, in one short sentence.")
-    reason: str = Field(description="Which JD requirement motivated it.")
+    reason: str = Field(
+        description="Why: the JD requirement that motivated it, or for a project, its strength."
+    )
 
 
 class TailorPlan(_Model):

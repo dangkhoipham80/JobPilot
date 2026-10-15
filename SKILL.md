@@ -125,8 +125,13 @@ Model không sửa `.tex` và không viết lại bullet. Nó điền các trư�
 Không có trường nào để đổi tiêu đề, ngày tháng, công ty hay nội dung một bullet.
 
 **Project là một kho, không phải danh sách để in hết.** Master CV giữ **mọi** project (CV Studio
-là kho); CV tailored chỉ giữ những project hợp job, nhiều nhất `app.tailor_max_projects` (mặc định
-3, `0` = không giới hạn). Prompt dặn model chọn bằng `entry_order` của section projects; sau khi
+là kho); CV tailored chỉ giữ những project đáng đọc cho job này, nhiều nhất `app.tailor_max_projects`
+(mặc định 3, `0` = không giới hạn). Model chấm **độ mạnh trước** (gần đây, production/người dùng
+thật, bài toán khó, có test, sở hữu rõ — bài tập cũ, CRUD trơn, stack lỗi thời là yếu) rồi mới tới
+**độ liên quan** (loại việc trước, công nghệ trùng sau): project backend mạnh viết bằng ngôn ngữ
+khác thắng project yếu chỉ lặp lại ngôn ngữ của job. **Không lấp đủ trần bằng project yếu**; không
+cái nào đáng giữ thì ẩn cả section (`enabled: false`), vì `entry_order` rỗng nghĩa là "giữ nguyên".
+Model chọn bằng `entry_order` của section projects; sau khi
 guard qua, `tailor/projects.py:limit_projects` là lớp sàn tất định:
 - model đã chọn mà dài quá trần → giữ `cap` cái đầu **theo thứ tự của model**, không xếp lại;
 - model để trống → xếp theo số tech trong `tech_stack` mà JD nhắc tới (khớp nguyên từ: "Java"

@@ -137,3 +137,13 @@ def test_prompt_ranks_projects_by_strength_before_overlap(master):
     assert prompt.index("**Strength**") < prompt.index("**Relevance**")
     assert "Never fill the limit with a weak project" in prompt
     assert "Judge relevance by shared technologies" not in prompt
+
+
+def test_prompt_and_floor_agree_on_keeping_no_project(master):
+    """Keeping zero projects must be expressible: an empty entry_order means
+    "keep the order", so the prompt points at hiding the section, and the floor
+    leaves a hidden projects section alone instead of re-adding by overlap."""
+    assert "set `enabled: false` on the projects section" in system_prompt(master)
+    hidden = TailorPlan(match_score=0.5, sections=[SectionPlan(key="projects", enabled=False)])
+    out = limit_projects(hidden, master, _job("Java, Spring Boot"), cap=1)
+    assert out == hidden and not out.changes

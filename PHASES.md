@@ -2782,10 +2782,9 @@ có khối "không có kết quả", 9 hit — sửa parser không biến trang 
 ## Phase tailor-project-strength — chọn project theo độ mạnh trước, trùng công nghệ sau (2026-10-15)
 
 **Vấn đề (user báo, đo lại trên DB thật):** kho project của Master CV có cả project production lẫn
-bài tập thời đi học (Servlet/JSP, CRUD ngắn hạn). Prompt bảo model "judge relevance by shared
+bài tập thời đi học. Prompt bảo model "judge relevance by shared
 technologies", và model làm đúng như thế: với ba job Java, nó giữ hai project Java thời đi học và
-**bỏ hai project production** vì chúng viết bằng Python/TypeScript ("TypeScript, Python and game
-projects do not speak to it"). Trùng ngôn ngữ thắng chất lượng.
+**bỏ các project production** vì chúng viết bằng ngôn ngữ khác. Trùng ngôn ngữ thắng chất lượng.
 
 **Sửa:** chỉ đổi prompt (`tailor/prompt.py`). Project được chấm theo hai bậc: **strength** (gần đây,
 có người dùng/production, bài toán khó, có test, sở hữu rõ; yếu = bài tập cũ, CRUD không có gì riêng,
@@ -2797,11 +2796,15 @@ vì "độ mạnh" không đo được bằng đếm từ.
 
 ### Chạy thật
 Dry-run bằng model thật (`claude_cli`, code của worktree), **không ghi version CV**, trên 3 job Java
-đã tailor trước đó: cả 3 giờ giữ project production làm project thứ 2, bỏ hai project CRUD thời đi
-học. Một job vẫn giữ project Servlet/JSP — JD của nó **ghi tên** Servlet/JSP + MSSQL + Bootstrap và
-đó là bằng chứng duy nhất cho yêu cầu ấy, nên đây là lựa chọn đúng chứ không phải lỗi cũ quay lại.
-Hai job còn lại chọn một project game nhưng giữ đúng bullet server (idempotency, ledger) và bỏ bullet
-đồ hoạ.
+đã tailor trước đó: cả 3 giờ giữ project production, bỏ các project CRUD thời đi học. Một job vẫn
+giữ một project cũ vì JD của nó **ghi đích danh** đúng stack đó và project ấy là bằng chứng duy nhất,
+nên đây là lựa chọn đúng chứ không phải lỗi cũ quay lại.
+Hai job còn lại chọn một project phụ có phần server và chỉ giữ bullet backend của nó.
+
+**Review gate — APPROVE**, đã sửa: (1) prompt khuyến khích "giữ ít hơn" nhưng `entry_order` rỗng
+nghĩa là "giữ nguyên" nên "giữ 0" rơi về fallback overlap — giờ prompt chỉ đường `enabled: false`
+cho section projects (và luật `enabled` nhận ca này), có test ghim `limit_projects` để yên section
+bị ẩn; (2) `SKILL.md` cập nhật tiêu chí; nit: docstring `system_prompt`, mô tả `Change.reason`.
 
 ### Chưa làm
 - Không có cờ "đừng bao giờ in project này" trên từng entry; muốn loại hẳn thì xoá khỏi Master.
