@@ -2807,12 +2807,13 @@ cho section projects (và luật `enabled` nhận ca này), có test ghim `limit
 bị ẩn; (2) `SKILL.md` cập nhật tiêu chí; nit: docstring `system_prompt`, mô tả `Change.reason`.
 
 ### Chưa làm
-- Không có cờ "đừng bao giờ in project này" trên từng entry; muốn loại hẳn thì xoá khỏi Master.
+- (Phần 2 bên dưới thêm đúng cờ này: tag + `hidden_tags`.)
 - Chất lượng chọn là phán đoán của model — test chỉ ghim *chữ* của luật, không ghim hành vi.
 
 ### Phần 2 — gác entry bằng tag (cùng nhánh, 2026-10-15)
 
-User muốn tạm gác một nhóm project (không xoá) bằng một tag. Prompt không phải chỗ để nói "đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
+User muốn tạm gác một nhóm project (không xoá) bằng một tag. Prompt không phải chỗ để nói
+"đừng bao giờ chọn X" — đó là quyết định của user, nên nó là
 **dữ liệu**: `Entry.tags` (nhãn tự do, không in) + `CvDocument.hidden_tags`. Entry mang tag bị ẩn ở
 lại Master, ra khỏi mọi PDF và khỏi tầm nhìn của tailor (`CvDocument.visible()`). Bỏ tag khỏi
 `hidden_tags` là nó quay lại. Luật ai đi qua `visible()` ở `jobpilot/cv/CLAUDE.md`.
@@ -2830,3 +2831,13 @@ Chạy thật:
 
 **Thứ tự deploy:** `extra="forbid"` ⇒ Master có `tags` mà code cũ đọc vào là lỗi. Gắn tag trên DB
 thật **sau** khi service đã chạy code này.
+
+**Review gate phần 2 — CHANGES REQUESTED → đã sửa:**
+- *Blocker:* cover letter được viết từ Master đầy đủ — model thấy entry bị gác và có thể khen nó
+  trong thư gửi đi, kèm một CV không có nó. Giờ người viết + guard của thư đọc `visible()`; test ghi
+  lại Master mà letter engine nhận.
+- Gác hết entry của section ⇒ PDF in heading trơ (reviewer build thật cả 2 template). `visible()`
+  tắt section đó.
+- Đổi tag giữa hai round ⇒ index của plan cũ trỏ sai entry. Round sau bỏ plan cũ.
+- Gác hết ⇒ fit/critique báo "CV trống". Giờ nói "bị ẩn bởi tag".
+Mỗi bản sửa có test, và hoàn tác riêng từng bản sửa thì đúng test của nó đỏ.
